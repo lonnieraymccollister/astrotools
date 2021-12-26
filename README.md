@@ -16,4 +16,4 @@ step 3
 x - y - z(intensity in color and 3d)
 
 
-The python program is compiled as a windows program which is nearly 400 meg and can be downloaded at https://lonnieraymccollister.info/Misc/astrotools.zip
+The python program is also compiled as a windows program which is nearly 400 meg and can be downloaded at https://lonnieraymccollister.info/Misc/astrotools.zip
