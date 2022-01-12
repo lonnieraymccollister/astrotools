@@ -66,7 +66,22 @@ def plotto3d16(img):
   # show it
   plt.show()
 
-
+def PNGcreateimage16():
+  my_data = np.array(Image.open(sys.argv[2]))
+  img = np.array(Image.open(sys.argv[2]))
+  for x in range(int(sys.argv[3])+1):
+    for y in range(int(sys.argv[3])+1):
+      my_data[x,y]=img[x,y]-min(img[x,y],img[x,int(sys.argv[3])-y],img[int(sys.argv[3])-x,y],img[int(sys.argv[3])-x,int(sys.argv[3])-y])
+      print (x,y,img[x,y],my_data[x,y])
+  #Rescale to 0-65535 and convert to uint16
+  rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
+  im = Image.fromarray(rescaled)
+  im.save('img_pixels2.png')
+  image_1 = imread('img_pixels2.png')
+  # plot raw pixel data
+  pyplot.imshow(image_1)
+  # show the figure
+  pyplot.show()
 
 if sys.argv[1] == '1':
     img = np.array(Image.open(sys.argv[2]))
@@ -83,3 +98,8 @@ if sys.argv[1] == '4':
 
 if sys.argv[1] == '5':
     plotto3d16(sys.argv[2])
+
+if sys.argv[1] == '6':
+    PNGcreateimage16()
+
+
