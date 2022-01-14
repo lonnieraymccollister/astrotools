@@ -69,10 +69,9 @@ def plotto3d16(img):
 def PNGcreateimage16():
   my_data = np.array(Image.open(sys.argv[2]))
   img = np.array(Image.open(sys.argv[2]))
-  for x in range(int(sys.argv[3])+1):
-    for y in range(int(sys.argv[3])+1):
-      my_data[x,y]=img[x,y]-min(img[x,y],img[x,int(sys.argv[3])-y],img[int(sys.argv[3])-x,y],img[int(sys.argv[3])-x,int(sys.argv[3])-y])
-      print (x,y,img[x,y],my_data[x,y])
+  for x in range(121):
+    for y in range(121):
+        my_data[x,y]=img[x,y]-min(img[x,y],img[x,120-y],img[120-x,y],img[120-x,120-y])
   #Rescale to 0-65535 and convert to uint16
   rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
   im = Image.fromarray(rescaled)
