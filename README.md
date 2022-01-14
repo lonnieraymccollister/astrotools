@@ -12,12 +12,13 @@ create img_pixels2.csv from img_pixel.csv then enter the above command which the
 
 step (3 - 8bit_im)/(5 - 16bit)
 ((python astrotools.py) or (astrotools.exe(windows10/11))) 3 img_pixels2.png
-shows:  x - y - z(intensity in color and 3d)
+shows graph:  x - y - z(intensity in color and 3d)
 
-The following will create an image without using a spreadsheet.  The output file is img_pixels2.png
+The following will create an image and display image without using a spreadsheet.  The output file is img_pixels2.png ---
 
-((python astrotools.py) or (astrotools.exe(windows10/11))) 6 luminance.png 
-
+((python astrotools.py) or (astrotools.exe(windows10/11))) 6 luminance.png 60 893 687
+ 
+60 is radius to be displayed.  --  893 687 --x y cordinates of the image centroid to be removed.
 
 ====================================================================================
 The python program is also compiled as a windows program which is nearly 400 meg and can be downloaded at https://lonnieraymccollister.info/Misc/astrotools.zip

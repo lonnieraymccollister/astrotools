@@ -67,11 +67,24 @@ def plotto3d16(img):
   plt.show()
 
 def PNGcreateimage16():
-  my_data = np.array(Image.open(sys.argv[2]))
-  img = np.array(Image.open(sys.argv[2]))
-  for x in range(121):
-    for y in range(121):
-        my_data[x,y]=img[x,y]-min(img[x,y],img[x,120-y],img[120-x,y],img[120-x,120-y])
+  radius = 0
+  radiusp1 = 0
+  one = 0
+  two = 0
+  three = 0
+  four = 0
+  diameter = 0
+  diameterp1 = 0
+  imgcrop()
+  radius, radiusp1, diameter, diameterp1, one, two, three, four = imgcoord(radius, radiusp1, diameter, diameterp1, one, two, three, four)
+  my_data = np.array(Image.open('crop.png'))
+  img = np.array(Image.open('crop.png'))
+#  for x in range(121):
+#    for y in range(121):
+#        my_data[x,y]=img[x,y]-min(img[x,y],img[x,120-y],img[120-x,y],img[120-x,120-y])
+  for x in range(diameterp1):
+    for y in range(diameterp1):
+        my_data[x,y]=img[x,y]-min(img[x,y],img[x,diameter-y],img[diameter-x,y],img[diameter-x,diameter-y])
   #Rescale to 0-65535 and convert to uint16
   rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
   im = Image.fromarray(rescaled)
@@ -81,6 +94,34 @@ def PNGcreateimage16():
   pyplot.imshow(image_1)
   # show the figure
   pyplot.show()
+
+def imgcoord(radius, radiusp1, diameter, diameterp1, one, two, three, four):
+  radius = int(int(sys.argv[3]))
+  radiusp1 = int((int(sys.argv[3]))+1)
+  diameter = int(int(sys.argv[3])*2)
+  diameterp1 = int((int(sys.argv[3])*2)+1)
+  one = int((int(sys.argv[4]) - radius))
+  two = int((int(sys.argv[5]) - radius))
+  three = int((int(sys.argv[4]) + radiusp1))
+  four = int((int(sys.argv[5]) + radiusp1))
+  #print(radius, radiusp1, diameter, diameterp1, one, two, three, four)
+  return radius, radiusp1, diameter, diameterp1, one, two, three, four
+
+def imgcrop():
+  radius = 0
+  radiusp1 = 0
+  one = 0
+  two = 0
+  three = 0
+  four = 0
+  diameter = 0
+  diameterp1 = 0
+  radius, radiusp1, diameter, diameterp1, one, two, three, four = imgcoord(radius, radiusp1, diameter, diameterp1, one, two, three, four)
+  #print(radius, radiusp1, diameter, diameterp1, one, two, three, four)
+  im = Image.open(sys.argv[2])
+  im1 = im.crop((one, two, three, four))
+  im1.save('crop.png')
+
 
 if sys.argv[1] == '1':
     img = np.array(Image.open(sys.argv[2]))
@@ -100,5 +141,8 @@ if sys.argv[1] == '5':
 
 if sys.argv[1] == '6':
     PNGcreateimage16()
+
+if sys.argv[1] == '7':
+  imgcrop()
 
 
