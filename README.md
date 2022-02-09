@@ -34,7 +34,7 @@ The following will dynamically remove the background of an image and display ima
 
 The following will use Lucy Richardson deconvolution on an image.  The output file is img_pixels2.png ---
 
-((python astrotools.py) or (astrotools.exe(windows10/11))) 9 RGB.png 50 3
+((python astrotools.py) or (astrotools.exe(windows10/11))) 9 RGB.png 
 
 The psf of the star is generated internally by the program. (Requires RGB image) 30 iterations are run to produce a low contrast output file.
 
