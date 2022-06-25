@@ -20,7 +20,7 @@ The following will create an image and display image without using a spreadsheet
  
 60 is radius to be displayed.  --  893 687 --x y cordinates of the image centroid to be removed.
 
-The following will crop an image and display image without using a spreadsheet.  The output file is img_pixels2.png ---
+The following will crop an image and display image without using a spreadsheet.  The output file is crop.png ---
 
 ((python astrotools.py) or (astrotools.exe(windows10/11))) 7 luminance.png 60 893 687
  
