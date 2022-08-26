@@ -38,6 +38,10 @@ The following will use Lucy Richardson deconvolution on an image.  The output fi
 
 The psf of the star is generated internally by the program. (Requires RGB image) 30 iterations are run to produce a low contrast output file.
 
+The following will create an image running astrotoolsa.py as a tile of radius 50 pixels. Stack the created images for the final image --- 
+
+((python astrotools_tileloop.py) luminance.png 800 (image width in pixels) (image height in pixels)
+
 ====================================================================================
 The python program is also compiled as a windows program which is nearly 400 meg and can be downloaded at https://lonnieraymccollister.info/Misc/astrotools.zip
 ====================================================================================
