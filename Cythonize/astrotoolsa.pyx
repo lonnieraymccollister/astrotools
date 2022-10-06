@@ -94,7 +94,7 @@ def PNGcreateimage16():
   rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
   im = Image.fromarray(rescaled)
 #  im.save('img_pixels2.png')
-  symfile = ("img_pixels2"+"_"+sys.argv[4]+"_"+sys.argv[5]+".png")
+  symfile = ("img_pixels2"+"_"+sys.argv[4]+"_"+sys.argv[5]+".tif")
   im.save(symfile)
   image_1 = imread(symfile)
   # plot raw pixel data
