@@ -90,16 +90,21 @@ def PNGcreateimage16():
   for x in range(diameterp1):
     for y in range(diameterp1):
         my_data[x,y]=img[x,y]-min(img[x,y],img[x,diameter-y],img[diameter-x,y],img[diameter-x,diameter-y])   
-  #Rescale to 0-65535 and convert to uint16
+  
+#Rescale to 0-65535 and convert to uint16
+  my_data = my_data[my_data.any(axis=1)]
+  my_data = np.transpose(my_data)
+  my_data = my_data[my_data.any(axis=1)]
+  my_data = np.transpose(my_data)
   rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
   im = Image.fromarray(rescaled)
 #  im.save('img_pixels2.png')
-  symfile = ("img_pixels2"+"_"+sys.argv[4]+"_"+sys.argv[5]+".tif")
+  symfile = ("img_pixels2"+"_"+sys.argv[4]+"_"+sys.argv[5]+".png")
   im.save(symfile)
-  image_1 = imread(symfile)
+  #image_1 = imread(symfile)
   # plot raw pixel data
-  blur = cv2.blur(image_1,(3,3)) 
-  pyplot.imshow(blur,cmap='gray')
+  #blur = cv2.blur(image_1,(3,3)) 
+  #pyplot.imshow(blur,cmap='gray')
   # show the figure
   #pyplot.show()
 
