@@ -1,6 +1,7 @@
 #!python
 #cython: language_level=3
 
+#python astrotools_tileloop.py B.tif 950 950 700 1 4
 import subprocess
 import shutil, os
 import sys
