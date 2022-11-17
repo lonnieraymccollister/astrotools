@@ -1,4 +1,5 @@
 #python astrotools_tileloop.py B.tif 950 950 700 1 4
+from numba import jit
 import subprocess, shutil, os, sys
 import numpy as np
 from PIL import Image
@@ -38,9 +39,10 @@ def main():
         for j in range(3):
           j1=int(j + y - 1)
           file1 = str(j1)
+          imgcrop()
           PNGcreateimage16()
 
-
+@jit(nopython=False)
 def PNGcreateimage16():
   global file, file1
   radius = 0  
@@ -51,7 +53,6 @@ def PNGcreateimage16():
   four = 0
   diameter = 0
   diameterp1 = 0
-  imgcrop()
   radius, radiusp1, diameter, diameterp1, one, two, three, four = imgcoord(radius, radiusp1, diameter, diameterp1, one, two, three, four)
   my_data = np.array(im1)
   img = my_data
@@ -92,7 +93,7 @@ def imgcrop():
   diameter = 0
   diameterp1 = 0
   radius, radiusp1, diameter, diameterp1, one, two, three, four = imgcoord(radius, radiusp1, diameter, diameterp1, one, two, three, four)
-  im1 = im.crop((one, two, three, four))
+  im1 = im.crop((one, two, three, four)) 
 
 if __name__ == "__main__":
   main()
