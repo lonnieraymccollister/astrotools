@@ -8,7 +8,7 @@ import numpy as np
 
 file_list = os.listdir(sys.argv[1])
 file_list = [os.path.join(sys.argv[1], x)
-                 for x in file_list if x.endswith(('.jpg', '.png','.bmp'))]
+                 for x in file_list if x.endswith(('.png'))]
 M = np.eye(3, 3, dtype=np.float32)
 first_image = None
 stacked_image = None
