@@ -38,9 +38,14 @@ The following will use Lucy Richardson deconvolution on an image.  The output fi
 
 The psf of the star is generated internally by the program. (Requires RGB image) 30 iterations are run to produce a low contrast output file.
 
-The following will increase s/n create an image running astrotoolsa.py as a tile of radius 100/(s/n computation level) pixels. Stack the created images for the final image Deep Sky Stacker recomended) --- 
+The following will increase image intensity. create an image as a tile of radius 100/(s/n computation level) pixels. (Stack the created images in auto_stack_16bit.py -- example -- python auto_stacks_16bit.py H:\lonnielaptop\Astrotools\test  resultnew.png) --- 
 
-((python astrotools_tileloop.py) luminance.png (image width in pixels) (image width in pixels) (image height in pixels)(x-column start pixel) (s/n computation level use 1,2,4,5,10)
+((python astrotools_tileloop.py) luminance.png (image width in pixels) (image width in pixels) (image height in pixels)(x-column start pixel) (intensity computation level use 1,2,4,5,10) 
+
+recomended example settings
+
+#---> python astrotools_tileloop.py B.tif 950 950 700 1 4
+#To stack above images---> python auto_stacks_16bit.py H:\lonnielaptop\Astrotools\test resultnew.png
 
 ====================================================================================
 The python program is also compiled as a windows program which is nearly 400 meg and can be downloaded at https://lonnieraymccollister.info/Misc/astrotools.zip
