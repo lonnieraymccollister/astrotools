@@ -40,12 +40,11 @@ The psf of the star is generated internally by the program. (Requires RGB image)
 
 The following will increase image intensity. create an image as a tile of radius 100/(s/n computation level) pixels. (Stack the created images in auto_stack_16bit.py -- example -- python auto_stacks_16bit.py H:\lonnielaptop\Astrotools\test  resultnew.png) --- 
 
-((python astrotools_tileloop.py) luminance.png (image width in pixels) (image width in pixels) (image height in pixels)(x-column start pixel) (intensity computation level use 1,2,4,5,10) 
+((python astrotools_tileloop.py) Lngc4449t4.tif (image width in pixels) (image width in pixels) (image height in pixels)(x-column start pixel) (intensity computation level use 1,2,4,5,10) (current directory) (file name increased image intensity)
 
 recomended example settings
 
-#---> python astrotools_tileloop.py B.tif 950 950 700 1 4
-#To stack above images---> python auto_stacks_16bit.py H:\lonnielaptop\Astrotools\test resultnew.png
+#---> astrotools_tileloop.exe Lngc4449t4.tif 950 950 700 1 4 H:\lonnielaptop\Astrotools\Cythonize\aL resultnewLngc4449t4.tif
 
 ====================================================================================
 The python program is also compiled as a windows program which is nearly 400 meg and can be downloaded at https://lonnieraymccollister.info/Misc/astrotools.zip

@@ -19,7 +19,10 @@ im1 = im.crop((one, two, three, four))
 
 def main():
   i = 0
-  global file, file1
+  n = 0
+  first_image = None
+  stacked_image = None
+  global file, file1, im1
   xa = (int(sys.argv[5])) + 0
   for k in range(int(int((int(sys.argv[3])/100)*(int(sys.argv[6])))-1)):
     ya = 0
@@ -29,18 +32,28 @@ def main():
   # centroid location rounded x,y
       x = int(xa)
       y = int(ya)
-      print (xa)
-      print (ya)
+      print (xa, ya)
       if xa >= (int(sys.argv[3])):
         sys.exit()
       for i in range(3):
         i1=int(i + x - 1)
         file = str(i1)
-        for j in range(3):
+        for j in range(1):
           j1=int(j + y - 1)
           file1 = str(j1)
-          imgcrop()
-          PNGcreateimage16()
+          imgcrop()        
+          my_data = PNGcreateimage16()
+          n = n + 1
+          image = my_data.astype(np.float32) / 65535
+          if first_image is None:
+              first_image = image
+              stacked_image = image
+          else:
+              stacked_image += image   
+  stacked_image /= n
+  stacked_image = (stacked_image*65535).astype(np.uint16)
+  cv2.imwrite(('resultnew'+sys.argv[1]),stacked_image)
+  print (n)
 
 @jit(nopython=True)
 def PNGcreateimage16loop(img, my_data, diameterp1):
@@ -68,27 +81,27 @@ def PNGcreateimage16():
   my_data = np.transpose(my_data)
   my_data = my_data[my_data.any(axis=1)]
   my_data = np.transpose(my_data)
-  rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
-  im = Image.fromarray(rescaled)
-  symfile = ("img_pixels2"+"_"+file+"_"+file1+".png")
-  print(symfile)
-  im.save(symfile)
+  #rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
+  #im = Image.fromarray(rescaled)
+  #symfile = ("img_pixels2"+"_"+file+"_"+file1+".png")
+  #print(symfile)
+  #im.save(symfile)
+  return my_data
 
 def imgcoord(radius, radiusp1, diameter, diameterp1, one, two, three, four):
   radius = int(int(sys.argv[2]))
   radiusp1 = int((int(sys.argv[2]))+1)
   diameter = int(int(sys.argv[2])*2)
   diameterp1 = int((int(sys.argv[2])*2)+1)
-  one = int((int(sys.argv[3]) - radius))
-  two = int((int(sys.argv[4]) - radius))
-  three = int((int(sys.argv[3]) + radiusp1))
-  four = int((int(sys.argv[4]) + radiusp1))
+  one = int((int(file) - radius))
+  two = int((int(file1) - radius))
+  three = int((int(file) + radiusp1))
+  four = int((int(file1) + radiusp1))
   #print(radius, radiusp1, diameter, diameterp1, one, two, three, four)
   return radius, radiusp1, diameter, diameterp1, one, two, three, four
 
 def imgcrop():
-  global im
-  global im1
+  global im, im1 
   radius = 0
   radiusp1 = 0
   one = 0
@@ -126,7 +139,7 @@ def auto_stack_16bit():
   print("===>Stacking complete<===")
 
 def CLAHE():
-  image = cv2.imread((sys.argv[8]),-1) 
+  image = cv2.imread(('resultnew'+sys.argv[1]),-1) 
   image_bw = image 
   # The declaration of CLAHE
   # clipLimit -> Threshold for contrast limiting
@@ -134,9 +147,9 @@ def CLAHE():
   #final_img = clahe.apply(image_bw) + 30
   clahe = cv2.createCLAHE(clipLimit = 2)
   final_img = clahe.apply(image_bw)
-  cv2.imwrite(('final_img'+sys.argv[1]),final_img)
+  cv2.imwrite(('final_img'+('resultnew'+sys.argv[1])),final_img)
 
 if __name__ == "__main__":
   main()
-  auto_stack_16bit()
+  #auto_stack_16bit()
   CLAHE()
