@@ -1,5 +1,6 @@
 #python astrotools_tileloop.py Lm33t2.tif 950 950 700 1 4 H:\lonnielaptop\Astrotools\Cythonize\aL resultnew.tif
 from numba import jit
+from numba import prange
 import subprocess, shutil, os, sys
 import numpy as np
 from PIL import Image
@@ -55,9 +56,9 @@ def main():
   cv2.imwrite(('resultnew'+sys.argv[1]),stacked_image)
   print (n)
 
-@jit(nopython=True)
+@jit(nopython=True, parallel = True, nogil = True)
 def PNGcreateimage16loop(img, my_data, diameterp1):
-  for x in range(diameterp1):
+  for x in prange(diameterp1):
     for y in range(diameterp1):
       my_data[x,y]=img[x,y]-min(img[x,y],img[x,diameter-y],img[diameter-x,y],img[diameter-x,diameter-y]) 
   return my_data
