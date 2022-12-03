@@ -1,4 +1,4 @@
-#python astrotools_tileloop.py Lm33t2.tif 950 950 700 0 100 
+#python astrotools_tileloop.py Lm33t2.tif 950 950 700 0 99 
 from numba import jit
 from numba import prange
 import subprocess, shutil, os, sys
