@@ -128,7 +128,7 @@ def CLAHE():
 def sn_incr():
   image = cv2.imread(('resultnew'+sys.argv[1]), flags=cv2.IMREAD_ANYDEPTH).astype(np.float32) / 4294836225.0
   my_data = image * image
-  rescaled = (655350.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
+  rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
   #rescaled = (rescaled).astype(np.uint16)
   cv2.imwrite(('resultnew'+('sn_incr'+sys.argv[1])), rescaled)
 
