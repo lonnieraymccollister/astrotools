@@ -38,7 +38,3 @@ The following will use Lucy Richardson deconvolution on an image.  The output fi
 
 The psf of the star is generated internally by the program. (Requires RGB image) 30 iterations are run to produce a low contrast output file.
 
-
-====================================================================================
-The python program is also compiled as a windows program which is nearly 400 meg and can be downloaded at https://lonnieraymccollister.info/Misc/astrotools.zip
-====================================================================================
