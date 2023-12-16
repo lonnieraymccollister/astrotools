@@ -9,10 +9,9 @@ def click_event(event, x, y, flags, params):
 
   # checking for left mouse clicks 
   if event == cv2.EVENT_LBUTTONDOWN: 
-
     # displaying the coordinates 
     # on the Shell 
-    print(" x ", ' ', " y ")
+    print(' x ', ' ', ' y ')
     print(x, ' ', y) 
 
     # displaying the coordinates 
@@ -21,31 +20,29 @@ def click_event(event, x, y, flags, params):
     cv2.putText(img, str(x) + ',' + str(y), (x,y), font, 1, (255, 0, 0), 2) 
     cv2.imshow('image', img) 
 
-    # checking for right mouse clicks	 
-    if event==cv2.EVENT_RBUTTONDOWN: 
-
+  # checking for right mouse clicks	 
+  if event==cv2.EVENT_RBUTTONDOWN: 
     # displaying the coordinates 
     # on the Shell
-     print(" x ", ' ', " y ")
-      print(x, ' ', y) 
+    print(' x ', ' ', ' y ')
+    print(x, ' ', y) 
 
     # displaying the coordinates 
     # on the image window 
-      font = cv2.FONT_HERSHEY_SIMPLEX 
-      b = img[y, x, 0] 
-      g = img[y, x, 1] 
-      r = img[y, x, 2] 
-      cv2.putText(img, str(b) + ',' + str(g) + ',' + str(r), (x,y), font, 1, (255, 255, 0), 2) 
-      cv2.imshow('image', img) 
+    font = cv2.FONT_HERSHEY_SIMPLEX 
+    b = img[y, x, 0] 
+    g = img[y, x, 1] 
+    r = img[y, x, 2] 
+    cv2.putText(img, str(b) + ',' + str(g) + ',' + str(r), (x,y), font, 1, (255, 255, 0), 2) 
+    cv2.imshow('image', img) 
 
-
-sysargv1  = input("Enter the the original file name -->")
+sysargv1  = input("Enter the the original mask file name -->")
 sysargv2  = input("Enter the comparison      file name -->")
-sysargv2a  = input("Enter the new      file name -->")
+sysargv2a  = input("Enter the new mask      file name -->")
 sysargv3  = int(input("Enter the x-coordinate size new file -->"))
 sysargv4  = int(input("Enter the y-coordinate size new file -->"))
 
-# reading the image 
+# reading the image
 win_name = "visualization"  #  1. use var to specify window name everywhere
 cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)  #  2. use 'normal' flag
 img = cv2.imread(sysargv1, 1) 
@@ -116,4 +113,19 @@ cv2.waitKey(0)
 cv2.destroyAllWindows()
 im = Image.fromarray(dst, "RGB")
 im.save(sysargv2a)
+
+# create the masked_image 
+sysargv17  = input("Enter the Image to be masked  -->")
+#sysargv2a  = input("Enter the Mask or image  white- and black  -->")
+sysargv18  = input("Enter the filename of the masked image to save  -->")
+
+image = cv2.imread(sysargv17)
+mask = cv2.imread(sysargv2a)
+
+# Apply the mask to the image
+masked_image = cv2.bitwise_and(image, mask)
+cv2.imwrite(sysargv18, masked_image)
+
+
+
 
