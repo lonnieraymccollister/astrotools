@@ -114,6 +114,13 @@ cv2.destroyAllWindows()
 im = Image.fromarray(dst, "RGB")
 im.save(sysargv2a)
 
+# create inverted mask
+sysargv3  = input("Enter the output invert Mask -->")
+image = cv2.imread(sysargv2a)
+# Apply the inverted mask to the image
+masked_image = cv2.bitwise_not(image)
+cv2.imwrite(sysargv3, masked_image) 
+
 # create the masked_image 
 sysargv17  = input("Enter the Image to be masked  -->")
 #sysargv2a  = input("Enter the Mask or image  white- and black  -->")
@@ -126,6 +133,24 @@ mask = cv2.imread(sysargv2a)
 masked_image = cv2.bitwise_and(image, mask)
 cv2.imwrite(sysargv18, masked_image)
 
+sysargv1  = input("Enter the Image1  -->")
+sysargv3  = input("Enter the inverted Mask for image  white- and black  -->")
+sysargv4  = input("Enter the filename of the masked image to save  -->")
 
+image = cv2.imread(sysargv1)
+mask = cv2.imread(sysargv3)
 
+# Apply the mask to the image
+masked_image = cv2.bitwise_and(image, mask)
+cv2.imwrite(sysargv4, masked_image)
 
+sysargv1  = input("Enter the final first masked Image  -->")
+sysargv3  = input("Enter the final second masked Image  -->")
+sysargv4  = input("Enter the final filename of the added images to save  -->")
+
+image = cv2.imread(sysargv1)
+mask = cv2.imread(sysargv3)
+
+# Apply the mask to the image
+masked_image = cv2.add(image, mask)
+cv2.imwrite(sysargv4, masked_image)
