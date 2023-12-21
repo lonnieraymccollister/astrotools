@@ -60,8 +60,8 @@ def maskinvert():
   exit()
 
 def add2images():
-  sysargv1  = input("Enter the enter fist masked Image  -->")
-  sysargv3  = input("Enter the enter second masked Image  -->")
+  sysargv1  = input("Enter the fist masked Image  -->")
+  sysargv3  = input("Enter the second masked Image  -->")
   sysargv4  = input("Enter the filename of the added images to save  -->")
 
   image = cv2.imread(sysargv1)
@@ -72,7 +72,45 @@ def add2images():
   cv2.imwrite(sysargv4, masked_image)
   exit()
 
-sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< add2images  >>5<< Exit  -->")
+def splittricolor():
+  sysargv1  = input("Enter the Color Image to be split  -->")
+  img = cv2.imread(sysargv1)
+
+  # split the Blue, Green and Red color channels
+  blue,green,red = cv2.split(img)
+  sysargv2 = "Blue" + sysargv1
+  cv2.imwrite(sysargv2, blue)
+  sysargv2 = "Green" + sysargv1
+  cv2.imwrite(sysargv2, green)
+  sysargv2 = "Red" + sysargv1
+  cv2.imwrite(sysargv2, red)
+  exit()
+
+def combinetricolor():
+  sysargv1  = input("Enter the Blue image to be combined  -->")
+  blue = cv2.imread(sysargv1, cv2.IMREAD_GRAYSCALE)
+  sysargv2  = input("Enter the Green image to be combined  -->")
+  green = cv2.imread(sysargv2, cv2.IMREAD_GRAYSCALE)
+  sysargv3  = input("Enter the Red image to be combined  -->")
+  red = cv2.imread(sysargv3, cv2.IMREAD_GRAYSCALE)
+  sysargv4  = input("Enter the Red image to be combined  -->")
+
+  # Merge the Blue, Green and Red color channels
+  newRGBImage = cv2.merge((red,green,blue))
+  cv2.imwrite(sysargv4, newRGBImage)
+  exit()
+
+def createLuminance():
+  sysargv1  = input("Enter the Color Image  -->")
+  sysargv2  = input("Enter the Luminance image to be created  -->")
+  img = cv2.imread(sysargv1)
+
+  # createLuminance not percieved
+  grayscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+  cv2.imwrite(sysargv2, grayscale_img)
+  exit()
+
+sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Exit  -->")
 
 if sysargv1 == '2':
   mask()
@@ -84,6 +122,15 @@ if sysargv1 == '4':
   add2images()
 
 if sysargv1 == '5':
+  splittricolor()
+
+if sysargv1 == '6':
+  combinetricolor()
+
+if sysargv1 == '7':
+  createLuminance()
+
+if sysargv1 == '8':
   exit()
 
 sysargv1  = input("Enter the the original mask file name -->")
