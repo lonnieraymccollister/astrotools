@@ -251,16 +251,18 @@ if sysargv1 == '8':
   align2img()
 
 if sysargv1 == '9':
+  plotto3d16(sysargv2)
   exit()
 
 if sysargv1 == '10':
-  plotto3d16(sysargv2)
-
-if sysargv1 == '11':
   sysargv3 = input("Enter the radius of the file-->")
   sysargv4 = input("Enter the x-coordinate of the centroid-->")
   sysargv5 = input("Enter the y-coordinate of the centroid-->")
   PNGcreateimage16()
+  exit()
+
+if sysargv1 == '11':
+  exit()
 
 sysargv1  = input("Enter the original mask file name -->")
 sysargv2  = input("Enter the comparison      file name -->")
