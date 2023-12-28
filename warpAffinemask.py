@@ -1,7 +1,15 @@
 # import required libraries
+import os
 from PIL import Image
 import cv2, sys
 import numpy as np
+import matplotlib
+from numpy import genfromtxt
+import matplotlib.pyplot as plt
+from matplotlib import pyplot
+from matplotlib.image import imread
+from mpl_toolkits.mplot3d import Axes3D
+
 
 # function to display the coordinates of 
 # of the points clicked on the image 
@@ -156,7 +164,8 @@ def align2img():
   cv2.imwrite( sysargv3, aligned_img)
   exit()
 
-def plotto3d16(img):
+def plotto3d16(sysargv2):
+  img = sysargv2
   #lena = cv2.imread(img, 0)
   lena = cv2.imread(img, cv2.IMREAD_GRAYSCALE | cv2.IMREAD_ANYDEPTH)
   # downscaling has a "smoothing" effect
@@ -169,7 +178,7 @@ def plotto3d16(img):
   # show it
   plt.show()
 
-def PNGcreateimage16():
+def PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5):
   radius = 0
   radiusp1 = 0
   one = 0
@@ -251,14 +260,16 @@ if sysargv1 == '8':
   align2img()
 
 if sysargv1 == '9':
+  sysargv2  = input("Enter the file name -->")
   plotto3d16(sysargv2)
   exit()
 
 if sysargv1 == '10':
+  sysargv2  = input("Enter the file name -->")
   sysargv3 = input("Enter the radius of the file-->")
   sysargv4 = input("Enter the x-coordinate of the centroid-->")
   sysargv5 = input("Enter the y-coordinate of the centroid-->")
-  PNGcreateimage16()
+  PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5)
   exit()
 
 if sysargv1 == '11':
