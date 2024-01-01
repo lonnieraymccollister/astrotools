@@ -55,7 +55,7 @@ def mask():
   # Apply the mask to the image
   masked_image = cv2.bitwise_and(image, mask)
   cv2.imwrite(sysargv4, masked_image)
-  exit()
+  sys.exit()
 
 def maskinvert():
   sysargv1  = input("Enter the mask Image  -->")
@@ -65,7 +65,7 @@ def maskinvert():
     # Apply the inverted mask to the image
   masked_image = cv2.bitwise_not(image)
   cv2.imwrite(sysargv3, masked_image)
-  exit()
+  sys.exit()
 
 def add2images():
   sysargv1  = input("Enter the fist masked Image  -->")
@@ -78,7 +78,7 @@ def add2images():
   # Apply the mask to the image
   masked_image = cv2.add(image, mask)
   cv2.imwrite(sysargv4, masked_image)
-  exit()
+  sys.exit()
 
 def splittricolor():
   sysargv1  = input("Enter the Color Image to be split  -->")
@@ -92,7 +92,7 @@ def splittricolor():
   cv2.imwrite(sysargv2, green)
   sysargv2 = "Red" + sysargv1
   cv2.imwrite(sysargv2, red)
-  exit()
+  sys.exit()
 
 def combinetricolor():
   sysargv1  = input("Enter the Blue image to be combined  -->")
@@ -106,7 +106,7 @@ def combinetricolor():
   # Merge the Blue, Green and Red color channels
   newRGBImage = cv2.merge((red,green,blue))
   cv2.imwrite(sysargv4, newRGBImage)
-  exit()
+  sys.exit()
 
 def createLuminance():
   sysargv1  = input("Enter the Color Image  -->")
@@ -116,7 +116,7 @@ def createLuminance():
   # createLuminance not percieved
   grayscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
   cv2.imwrite(sysargv2, grayscale_img)
-  exit()
+  sys.exit()
 
 def align2img():
 
@@ -162,7 +162,7 @@ def align2img():
   cv2.destroyAllWindows()
 
   cv2.imwrite( sysargv3, aligned_img)
-  exit()
+  sys.exit()
 
 def plotto3d16(sysargv2):
   img = sysargv2
@@ -262,7 +262,7 @@ if sysargv1 == '8':
 if sysargv1 == '9':
   sysargv2  = input("Enter the file name -->")
   plotto3d16(sysargv2)
-  exit()
+  sys.exit()
 
 if sysargv1 == '10':
   sysargv2  = input("Enter the file name -->")
@@ -270,10 +270,10 @@ if sysargv1 == '10':
   sysargv4 = input("Enter the x-coordinate of the centroid-->")
   sysargv5 = input("Enter the y-coordinate of the centroid-->")
   PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5)
-  exit()
+  sys.exit()
 
 if sysargv1 == '11':
-  exit()
+  sys.exit()
 
 sysargv1  = input("Enter the original mask file name -->")
 sysargv2  = input("Enter the comparison      file name -->")
