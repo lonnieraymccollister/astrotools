@@ -55,7 +55,7 @@ def mask():
   # Apply the mask to the image
   masked_image = cv2.bitwise_and(image, mask)
   cv2.imwrite(sysargv4, masked_image)
-  sys.exit()
+  menue()
 
 def maskinvert():
   sysargv1  = input("Enter the mask Image  -->")
@@ -65,7 +65,7 @@ def maskinvert():
     # Apply the inverted mask to the image
   masked_image = cv2.bitwise_not(image)
   cv2.imwrite(sysargv3, masked_image)
-  sys.exit()
+  menue()
 
 def add2images():
   sysargv1  = input("Enter the fist masked Image  -->")
@@ -78,7 +78,7 @@ def add2images():
   # Apply the mask to the image
   masked_image = cv2.add(image, mask)
   cv2.imwrite(sysargv4, masked_image)
-  sys.exit()
+  menue()
 
 def splittricolor():
   sysargv1  = input("Enter the Color Image to be split  -->")
@@ -92,7 +92,7 @@ def splittricolor():
   cv2.imwrite(sysargv2, green)
   sysargv2 = "Red" + sysargv1
   cv2.imwrite(sysargv2, red)
-  sys.exit()
+  menue()
 
 def combinetricolor():
   sysargv1  = input("Enter the Blue image to be combined  -->")
@@ -106,7 +106,7 @@ def combinetricolor():
   # Merge the Blue, Green and Red color channels
   newRGBImage = cv2.merge((red,green,blue))
   cv2.imwrite(sysargv4, newRGBImage)
-  sys.exit()
+  menue()
 
 def createLuminance():
   sysargv1  = input("Enter the Color Image  -->")
@@ -116,7 +116,7 @@ def createLuminance():
   # createLuminance not percieved
   grayscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
   cv2.imwrite(sysargv2, grayscale_img)
-  sys.exit()
+  menue()
 
 def align2img():
 
@@ -162,7 +162,7 @@ def align2img():
   cv2.destroyAllWindows()
 
   cv2.imwrite( sysargv3, aligned_img)
-  sys.exit()
+  menue()
 
 def plotto3d16(sysargv2):
   img = sysargv2
@@ -236,120 +236,127 @@ def imgcrop():
   im1 = im.crop((one, two, three, four))
   im1.save('crop.png')
 
-sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid custom filter >>11<< Exit -->")
+def menue(sysargv1):
+  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid custom filter >>1313<< Exit -->")
+  return sysargv1
 
-if sysargv1 == '2':
-  mask()
+sysargv1 = ''
+while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
+  sysargv1 = ''
+  sysargv1 = menue(sysargv1)
 
-if sysargv1 == '3':
-  maskinvert()
+  if sysargv1 == '2':
+    mask()
 
-if sysargv1 == '4':
-  add2images()
+  if sysargv1 == '3':
+    maskinvert()
 
-if sysargv1 == '5':
-  splittricolor()
+  if sysargv1 == '4':
+    add2images()
 
-if sysargv1 == '6':
-  combinetricolor()
+  if sysargv1 == '5':
+    splittricolor()
 
-if sysargv1 == '7':
-  createLuminance()
+  if sysargv1 == '6':
+    combinetricolor()
 
-if sysargv1 == '8':
-  align2img()
+  if sysargv1 == '7':
+    createLuminance()
 
-if sysargv1 == '9':
-  sysargv2  = input("Enter the file name -->")
-  plotto3d16(sysargv2)
-  sys.exit()
+  if sysargv1 == '8':
+    align2img()
 
-if sysargv1 == '10':
-  sysargv2  = input("Enter the file name -->")
-  sysargv3 = input("Enter the radius of the file-->")
-  sysargv4 = input("Enter the x-coordinate of the centroid-->")
-  sysargv5 = input("Enter the y-coordinate of the centroid-->")
-  PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5)
-  sys.exit()
+  if sysargv1 == '9':
+    sysargv2  = input("Enter the file name -->")
+    plotto3d16(sysargv2)
+    menue(sysargv1)
 
-if sysargv1 == '11':
-  sys.exit()
+  if sysargv1 == '10':
+    sysargv2  = input("Enter the file name -->")
+    sysargv3 = input("Enter the radius of the file-->")
+    sysargv4 = input("Enter the x-coordinate of the centroid-->")
+    sysargv5 = input("Enter the y-coordinate of the centroid-->")
+    PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5)
+    menue(sysargv1)
 
-sysargv1  = input("Enter the original mask file name -->")
-sysargv2  = input("Enter the comparison      file name -->")
-sysargv2a  = input("Enter the new mask      file name -->")
-sysargv3  = int(input("Enter the x-coordinate size new file -->"))
-sysargv4  = int(input("Enter the y-coordinate size new file -->"))
+  if sysargv1 == '1313':
+    sys.exit()
 
-# reading the image
-win_name = "visualization"  #  1. use var to specify window name everywhere
-cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)  #  2. use 'normal' flag
-img = cv2.imread(sysargv1, 1) 
+  if sysargv1 == '1':
+    sysargv1  = input("Enter the original mask file name -->")
+    sysargv2  = input("Enter the comparison      file name -->")
+    sysargv2a  = input("Enter the new mask      file name -->")
+    sysargv3  = int(input("Enter the x-coordinate size new file -->"))
+    sysargv4  = int(input("Enter the y-coordinate size new file -->"))
 
-# displaying the image 
-cv2.imshow('image', img) 
+    # reading the image
+    win_name = "visualization"  #  1. use var to specify window name everywhere
+    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)  #  2. use 'normal' flag
+    img = cv2.imread(sysargv1, 1) 
 
-# setting mouse handler for the image 
-# and calling the click_event() function 
-cv2.setMouseCallback('image', click_event) 
+    # displaying the image 
+    cv2.imshow('image', img) 
 
-# wait for a key to be pressed to exit 
-cv2.waitKey(0) 
+    # setting mouse handler for the image 
+    # and calling the click_event() function 
+    cv2.setMouseCallback('image', click_event) 
 
-# close the window 
-cv2.destroyAllWindows() 
+    # wait for a key to be pressed to exit 
+    cv2.waitKey(0) 
 
-sysargv5  = input("Enter the x-coordinate of p1 origin file name-->")
-sysargv6  = input("Enter the y-coordinate of p1 origin file name-->")
-sysargv7  = input("Enter the x-coordinate of p2 origin file name-->")
-sysargv8  = input("Enter the y-coordinate of p2 origin file name-->")
-sysargv9  = input("Enter the x-coordinate of p3 origin file name-->")
-sysargv10 = input("Enter the y-coordinate of p3 origin file name-->")
+    # close the window 
+    cv2.destroyAllWindows() 
 
-# reading the image 
-img = cv2.imread(sysargv2, 1) 
+    sysargv5  = input("Enter the x-coordinate of p1 origin file name-->")
+    sysargv6  = input("Enter the y-coordinate of p1 origin file name-->")
+    sysargv7  = input("Enter the x-coordinate of p2 origin file name-->")
+    sysargv8  = input("Enter the y-coordinate of p2 origin file name-->")
+    sysargv9  = input("Enter the x-coordinate of p3 origin file name-->")
+    sysargv10 = input("Enter the y-coordinate of p3 origin file name-->")
 
-# displaying the image 
-cv2.imshow('image', img) 
+    # reading the image 
+    img = cv2.imread(sysargv2, 1) 
 
-# setting mouse handler for the image 
-# and calling the click_event() function 
-cv2.setMouseCallback('image', click_event) 
+    # displaying the image 
+    cv2.imshow('image', img) 
 
-# wait for a key to be pressed to exit 
-cv2.waitKey(0) 
+    # setting mouse handler for the image 
+    # and calling the click_event() function 
+    cv2.setMouseCallback('image', click_event) 
 
-  # close the window 
-cv2.destroyAllWindows() 
+    # wait for a key to be pressed to exit 
+    cv2.waitKey(0) 
 
-sysargv11 = input("Enter the X-coordinate of p1 new    file name-->")
-sysargv12 = input("Enter the y-coordinate of p1 new    file name-->")
-sysargv13 = input("Enter the x-coordinate of p2 new    file name-->")
-sysargv14 = input("Enter the y-coordinate of p2 new    file name-->")
-sysargv15 = input("Enter the x-coordinate of p3 new    file name-->")
-sysargv16 = input("Enter the y-coordinate of p3 new    file name-->")
+    # close the window 
+    cv2.destroyAllWindows() 
 
-# read the input image
-win_name = "visualization"  #  1. use var to specify window name everywhere
-cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)  #  2. use 'normal' flag
-img = cv2.imread(sysargv1)
-# access the image height and width
-rows,cols,_ = img.shape 
-# define at three point on input image
-pts1 = np.float32([[sysargv5,sysargv6],[sysargv7,sysargv8],[sysargv9,sysargv10]])
+    sysargv11 = input("Enter the X-coordinate of p1 new    file name-->")
+    sysargv12 = input("Enter the y-coordinate of p1 new    file name-->")
+    sysargv13 = input("Enter the x-coordinate of p2 new    file name-->")
+    sysargv14 = input("Enter the y-coordinate of p2 new    file name-->")
+    sysargv15 = input("Enter the x-coordinate of p3 new    file name-->")
+    sysargv16 = input("Enter the y-coordinate of p3 new    file name-->")
 
-# define three points corresponding location to output image
-pts2 = np.float32([[sysargv11,sysargv12],[sysargv13,sysargv14],[sysargv15,sysargv16]])
+    # read the input image
+    win_name = "visualization"  #  1. use var to specify window name everywhere
+    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)  #  2. use 'normal' flag
+    img = cv2.imread(sysargv1)
+    # access the image height and width
+    rows,cols,_ = img.shape 
+    # define at three point on input image
+    pts1 = np.float32([[sysargv5,sysargv6],[sysargv7,sysargv8],[sysargv9,sysargv10]])
 
-# get the affine transformation Matrix
-M = cv2.getAffineTransform(pts1,pts2)
+    # define three points corresponding location to output image
+    pts2 = np.float32([[sysargv11,sysargv12],[sysargv13,sysargv14],[sysargv15,sysargv16]])
 
-# apply affine transformation on the input image
-#dst = cv2.warpAffine(img,M,(cols,rows))
-dst = cv2.warpAffine(img,M,(sysargv3,sysargv4))
-cv2.imshow("Affine Transform", dst)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
-im = Image.fromarray(dst, "RGB")
-im.save(sysargv2a)
+    # get the affine transformation Matrix
+    M = cv2.getAffineTransform(pts1,pts2)
 
+    # apply affine transformation on the input image
+    #dst = cv2.warpAffine(img,M,(cols,rows))
+    dst = cv2.warpAffine(img,M,(sysargv3,sysargv4))
+    cv2.imshow("Affine Transform", dst)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    im = Image.fromarray(dst, "RGB")
+    im.save(sysargv2a)
