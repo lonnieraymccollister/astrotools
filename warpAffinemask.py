@@ -55,6 +55,7 @@ def mask():
   # Apply the mask to the image
   masked_image = cv2.bitwise_and(image, mask)
   cv2.imwrite(sysargv4, masked_image)
+  return sysargv1
   menue()
 
 def maskinvert():
@@ -65,6 +66,7 @@ def maskinvert():
     # Apply the inverted mask to the image
   masked_image = cv2.bitwise_not(image)
   cv2.imwrite(sysargv3, masked_image)
+  return sysargv1
   menue()
 
 def add2images():
@@ -78,6 +80,7 @@ def add2images():
   # Apply the mask to the image
   masked_image = cv2.add(image, mask)
   cv2.imwrite(sysargv4, masked_image)
+  return sysargv1
   menue()
 
 def splittricolor():
@@ -92,6 +95,7 @@ def splittricolor():
   cv2.imwrite(sysargv2, green)
   sysargv2 = "Red" + sysargv1
   cv2.imwrite(sysargv2, red)
+  return sysargv1
   menue()
 
 def combinetricolor():
@@ -106,6 +110,7 @@ def combinetricolor():
   # Merge the Blue, Green and Red color channels
   newRGBImage = cv2.merge((red,green,blue))
   cv2.imwrite(sysargv4, newRGBImage)
+  return sysargv1
   menue()
 
 def createLuminance():
@@ -116,6 +121,7 @@ def createLuminance():
   # createLuminance not percieved
   grayscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
   cv2.imwrite(sysargv2, grayscale_img)
+  return sysargv1
   menue()
 
 def align2img():
@@ -162,6 +168,7 @@ def align2img():
   cv2.destroyAllWindows()
 
   cv2.imwrite( sysargv3, aligned_img)
+  return sysargv1
   menue()
 
 def plotto3d16(sysargv2):
