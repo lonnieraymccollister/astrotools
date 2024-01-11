@@ -105,7 +105,7 @@ def combinetricolor():
   green = cv2.imread(sysargv2, cv2.IMREAD_GRAYSCALE)
   sysargv3  = input("Enter the Red image to be combined  -->")
   red = cv2.imread(sysargv3, cv2.IMREAD_GRAYSCALE)
-  sysargv4  = input("Enter the Red image to be combined  -->")
+  sysargv4  = input("Enter the RGB file to be created  -->")
 
   # Merge the Blue, Green and Red color channels
   newRGBImage = cv2.merge((red,green,blue))
