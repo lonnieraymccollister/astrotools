@@ -243,8 +243,115 @@ def imgcrop():
   im1 = im.crop((one, two, three, four))
   im1.save('crop.png')
 
+def unsharpMask():
+  sysargv1  = input("Enter the Color Image  -->")
+  sysargv2  = input("Enter the unsharpMask image to be created  -->")
+  image = cv2.imread(sysargv1)
+  gaussian_3 = cv2.GaussianBlur(image, (0, 0), 2.0)
+  unsharp_image = cv2.addWeighted(image, 2.0, gaussian_3, -1.0, 0)
+  cv2.imwrite( sysargv2, unsharp_image)
+  return sysargv1
+  menue()
+
+def FFT():
+  #From Python for Microscopists-Bhattiprolu, S. (2023). python_for_microscopists. GitHub. https://github.com/bnsreenu/python_for_microscopists/blob/master/330_Detectron2_Instance_3D_EM_Platelet.ipynb
+  sysargv1  = input("Enter the Greyscale Image  -->")
+  sysargv2  = input("Enter the FFT HP image to be created  -->")
+  img = cv2.imread(sysargv1, 0) # load an image
+
+  #Output is a 2D complex array. 1st channel real and 2nd imaginary
+  #For fft in opencv input image needs to be converted to float32
+  dft = cv2.dft(np.float32(img), flags=cv2.DFT_COMPLEX_OUTPUT)
+
+  #Rearranges a Fourier transform X by shifting the zero-frequency 
+  #component to the center of the array.
+  #Otherwise it starts at the tope left corenr of the image (array)
+  dft_shift = np.fft.fftshift(dft)
+
+  ##Magnitude of the function is 20.log(abs(f))
+  #For values that are 0 we may end up with indeterminate values for log. 
+  #So we can add 1 to the array to avoid seeing a warning. 
+  magnitude_spectrum = 20 * np.log(cv2.magnitude(dft_shift[:, :, 0], dft_shift[:, :, 1]))
+
+
+  # Circular HPF mask, center circle is 0, remaining all ones
+  #Can be used for edge detection because low frequencies at center are blocked
+  #and only high frequencies are allowed. Edges are high frequency components.
+  #Amplifies noise.
+
+  rows, cols = img.shape
+  crow, ccol = int(rows / 2), int(cols / 2)
+
+  mask = np.ones((rows, cols, 2), np.uint8)
+  r = 80
+  center = [crow, ccol]
+  x, y = np.ogrid[:rows, :cols]
+  mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
+  mask[mask_area] = 0
+
+
+  # Circular LPF mask, center circle is 1, remaining all zeros
+  # Only allows low frequency components - smooth regions
+  #Can smooth out noise but blurs edges.
+  #
+  
+  rows, cols = img.shape
+  crow, ccol = int(rows / 2), int(cols / 2)
+
+  mask = np.zeros((rows, cols, 2), np.uint8)
+  r = 100
+  center = [crow, ccol]
+  x, y = np.ogrid[:rows, :cols]
+  mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
+  mask[mask_area] = 1
+
+  # Band Pass Filter - Concentric circle mask, only the points living in concentric circle are ones
+  rows, cols = img.shape
+  crow, ccol = int(rows / 2), int(cols / 2)
+
+  mask = np.zeros((rows, cols, 2), np.uint8)
+  r_out = 80
+  r_in = 10
+  center = [crow, ccol]
+  x, y = np.ogrid[:rows, :cols]
+  mask_area = np.logical_and(((x - center[0]) ** 2 + (y - center[1]) ** 2 >= r_in ** 2),
+                             ((x - center[0]) ** 2 + (y - center[1]) ** 2 <= r_out ** 2))
+  mask[mask_area] = 1
+  
+
+
+  # apply mask and inverse DFT
+  fshift = dft_shift * mask
+
+  fshift_mask_mag = 2000 * np.log(cv2.magnitude(fshift[:, :, 0], fshift[:, :, 1]))
+
+  f_ishift = np.fft.ifftshift(fshift)
+  img_back = cv2.idft(f_ishift)
+  img_back = cv2.magnitude(img_back[:, :, 0], img_back[:, :, 1])
+
+  fig = plt.figure(figsize=(12, 12))
+  ax1 = fig.add_subplot(2,2,1)
+  ax1.imshow(img, cmap='gray')
+  ax1.title.set_text('Input Image')
+  ax2 = fig.add_subplot(2,2,2)
+  ax2.imshow(magnitude_spectrum, cmap='gray')
+  ax2.title.set_text('FFT of image')
+  ax3 = fig.add_subplot(2,2,3)
+  ax3.imshow(fshift_mask_mag, cmap='gray')
+  ax3.title.set_text('FFT + Mask')
+  ax4 = fig.add_subplot(2,2,4)
+  ax4.imshow(img_back, cmap='gray')
+  ax4.title.set_text('After inverse FFT')
+  plt.show()
+  img = cv2.convertScaleAbs(img_back, alpha=(255.0))
+  #cv2.imwrite( sysargv2, img_back)
+  matplotlib.pyplot.imsave(sysargv2, img_back, cmap='gray')
+   
+  return sysargv1
+  menue()
+
 def menue(sysargv1):
-  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid custom filter >>1313<< Exit -->")
+  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid custom filter >>11<< UnsharpMask >>12<< FFT-Bandpass >>1313<< Exit -->")
   return sysargv1
 
 sysargv1 = ''
@@ -285,6 +392,12 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
     sysargv5 = input("Enter the y-coordinate of the centroid-->")
     PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5)
     menue(sysargv1)
+
+  if sysargv1 == '11':
+    unsharpMask()
+
+  if sysargv1 == '12':
+    FFT()
 
   if sysargv1 == '1313':
     sys.exit()
