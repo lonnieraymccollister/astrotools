@@ -350,8 +350,33 @@ def FFT():
   return sysargv1
   menue()
 
+from scipy.signal import convolve2d as conv2
+import skimage as skimage
+from skimage import color, data, restoration
+from skimage import io, img_as_ubyte
+
+def  LrDeconv():
+  sysargv1  = input("Enter the Image name  -->")
+  sysargv2  = input("Enter the psf image name  -->")
+  sysargv3  = input("Enter the name of deconvoluted image name  -->")
+  sysargv4  = input("Enter the number of iterations for deconvolions image name  -->")
+  astro = color.rgb2gray(io.imread(sysargv1))
+  psf = color.rgb2gray(io.imread(sysargv2))
+  
+  astro = conv2(astro, psf, 'same')
+  # Restore Image using Richardson-Lucy algorithm
+  deconvolved_RL = restoration.richardson_lucy(astro, psf, num_iter=(int(sysargv4)))
+  deconvolved_RL1 = skimage.img_as_uint(deconvolved_RL)
+  io.imsave(sysargv3, deconvolved_RL1)
+  plt.imshow(deconvolved_RL, cmap='gray', vmin=deconvolved_RL.min(), vmax=deconvolved_RL.max())
+  plt.show()
+  
+  return sysargv1
+  menue()
+
+
 def menue(sysargv1):
-  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid custom filter >>11<< UnsharpMask >>12<< FFT-Bandpass >>1313<< Exit -->")
+  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid custom filter >>11<< UnsharpMask >>12<< FFT-Bandpass >>13<< Img-Deconv >>1313<< Exit -->")
   return sysargv1
 
 sysargv1 = ''
@@ -399,6 +424,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
   if sysargv1 == '12':
     FFT()
 
+  if sysargv1 == '13':
+    LrDeconv()
+ 
   if sysargv1 == '1313':
     sys.exit()
 
