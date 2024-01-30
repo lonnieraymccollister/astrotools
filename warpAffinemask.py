@@ -207,8 +207,9 @@ def PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5):
   #Rescale to 0-65535 and convert to uint16
   rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
   im = Image.fromarray(rescaled)
-  im.save('img_pixels2.png')
-  image_1 = imread('img_pixels2.png')
+  symfile = (sysargv2+"_"+sysargv4+"_"+sysargv5+".png")
+  im.save(symfile)
+  image_1 = imread(symfile)
   # plot raw pixel data
   blur = cv2.blur(image_1,(3,3)) 
   pyplot.imshow(blur,cmap='gray')
@@ -376,7 +377,7 @@ def  LrDeconv():
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid custom filter >>11<< UnsharpMask >>12<< FFT-Bandpass >>13<< Img-Deconv >>1313<< Exit -->")
+  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid Custom filter >>11<< UnsharpMask >>12<< FFT-Bandpass >>13<< Img-Deconv >>14<< Centroid Custom Array >>1313<< Exit -->")
   return sysargv1
 
 sysargv1 = ''
@@ -426,6 +427,24 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '13':
     LrDeconv()
+
+  if sysargv1 == '14':
+    sysargv2  = input("Enter the file name -->")
+    sysargv3 = input("Enter the radius of the file-->")
+    sysargv4 = input("Enter the x-coordinate of the centroid-->")
+    sysargv5 = input("Enter the y-coordinate of the centroid-->")
+    x = int(sysargv4)
+    y = int(sysargv5)
+    for i in range(3):
+      i1=int(i + x - 1)
+      file = str(i1)
+      for j in range(3):
+        j1=int(j + y - 1)
+        file1 = str(j1)
+        sysargv4 = file
+        sysargv5 = file1
+        PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5)
+    menue(sysargv1)
  
   if sysargv1 == '1313':
     sys.exit()
