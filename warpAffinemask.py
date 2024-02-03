@@ -70,7 +70,7 @@ def maskinvert():
   menue()
 
 def add2images():
-  sysargv1  = input("Enter the fist masked Image  -->")
+  sysargv1  = input("Enter the first masked Image  -->")
   sysargv3  = input("Enter the second masked Image  -->")
   sysargv4  = input("Enter the filename of the added images to save  -->")
 
@@ -375,9 +375,60 @@ def  LrDeconv():
   return sysargv1
   menue()
 
+def erosion():
+  sysargv2  = input("Enter the input file name --> ")
+  sysargv3  = input("Enter number of iterations example 3,5,7 --> ")
+  sysargv4  = input("Enter (Kernel)structuring element of radius example 3,5,7 --> ")
+
+  # Read the image as grayscale
+  img = color.rgb2gray(io.imread(sysargv2))
+  # Define a kernel (a matrix of odd size) for the erosion operation
+  # You can choose different shapes and sizes for the kernel
+  kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ((int(sysargv4)), (int(sysargv4))))
+
+  # Apply the erosion operation using cv2.erode()
+  # You can adjust the number of iterations for more or less erosion
+  img_erosion = cv2.erode(img, kernel, iterations=(int(sysargv3)))
+  cv2.imshow('output', img)
+  cv2.imshow('Erosion', img_erosion)
+
+  # Wait for a key press to exit
+  cv2.waitKey(0)
+  # close the window 
+  cv2.destroyAllWindows() 
+
+  return sysargv1
+  menue()
+
+def dilation():
+  sysargv2  = input("Enter the input file name --> ")
+  sysargv3  = input("Enter number of iterations example 3,5,7 --> ")
+  sysargv4  = input("Enter (Kernel)structuring element of radius example 3,5,7 --> ")
+
+  # Create a disk-shaped structuring element of radius 5
+  # Read the image as grayscale
+  img = color.rgb2gray(io.imread(sysargv2))
+  # Define a kernel (a matrix of odd size) for the erosion operation
+  # You can choose different shapes and sizes for the kernel
+  kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ((int(sysargv4)), (int(sysargv4))))
+
+  # Apply the erosion operation using cv2.erode()
+  # You can adjust the number of iterations for more or less erosion
+  img_dilated = cv2.dilate(img, kernel, iterations=(int(sysargv3)))
+
+  cv2.imshow('output', img)
+  cv2.imshow('Dilation', img_dilated)
+
+  # Wait for a key press to exit
+  cv2.waitKey(0)
+  # close the window 
+  cv2.destroyAllWindows() 
+
+  return sysargv1
+  menue()
 
 def menue(sysargv1):
-  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot 16-bit image to 3d graph >>10<< Centroid Custom filter >>11<< UnsharpMask >>12<< FFT-Bandpass >>13<< Img-Deconv >>14<< Centroid Custom Array >>1313<< Exit -->")
+  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot_16-bit_image_to_3d graphL >>10<< Centroid_Custom_filterL >>11<< UnsharpMask >>12<< FFT-BandpassL >>13<< Img-DeconvClr >>14<< Centroid_Custom_ArrayL >>15<< ErosionClr >>16<< DilationClr >>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -446,6 +497,12 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
         PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5)
     menue(sysargv1)
  
+  if sysargv1 == '15':
+    erosion()
+ 
+  if sysargv1 == '16':
+    dilation()
+
   if sysargv1 == '1313':
     sys.exit()
 
