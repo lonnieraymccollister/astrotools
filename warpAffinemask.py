@@ -216,7 +216,6 @@ def PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5):
   # show the figure
   pyplot.show()
 
-
 def imgcoord(radius, radiusp1, diameter, diameterp1, one, two, three, four):
   radius = int(int(sysargv3))
   radiusp1 = int((int(sysargv3))+1)
@@ -253,6 +252,37 @@ def unsharpMask():
   cv2.imwrite( sysargv2, unsharp_image)
   return sysargv1
   menue()
+
+def unsharpMaskDiff():
+  sysargv1  = input("Enter the Color Image(.png or .tif)  -->")
+  sysargv2  = input("Enter the Difference image to be created(.png or .tif)  -->")
+  sysargv3  = input("Enter the Difference Ratio as (950 for 0.950)  -->")
+  sysargv4a  = input("Enter the gausian blur 3, 5, or 7  -->")
+  sysargv4 = float(sysargv4a)
+  image1 = cv2.imread(sysargv1,cv2.IMREAD_ANYDEPTH)
+  image = image1.astype(np.float32)
+  percent = (int(sysargv3)/1000)
+  selfavg = np.array((cv2.GaussianBlur(image, (0, 0), sysargv4) * percent), dtype='float32')
+  unsharp_image = (cv2.absdiff(image, selfavg))
+  unsharp_image1 = unsharp_image.astype(np.uint16)
+  cv2.imwrite( sysargv2, unsharp_image1)
+  return sysargv1
+  menue()
+
+def gaussian():
+  sysargv1  = input("Enter the Color Image(.png or .tif)  -->")
+  sysargv2  = input("Enter the Difference image to be created(.png or .tif)  -->")
+  sysargv4a  = input("Enter the gausian blur 3, 5, or 7  -->")
+  sysargv4 = float(sysargv4a)
+  image1 = cv2.imread(sysargv1,cv2.IMREAD_ANYDEPTH)
+  image = image1.astype(np.float32)
+  selfavg = np.array((cv2.GaussianBlur(image, (0, 0), sysargv4)), dtype='float32')
+  unsharp_image1 = selfavg.astype(np.uint16)
+  cv2.imwrite( sysargv2, unsharp_image1)
+  return sysargv1
+  menue()
+
+
 
 def FFT():
   #From Python for Microscopists-Bhattiprolu, S. (2023). python_for_microscopists. GitHub. https://github.com/bnsreenu/python_for_microscopists/blob/master/330_Detectron2_Instance_3D_EM_Platelet.ipynb
@@ -428,7 +458,7 @@ def dilation():
   menue()
 
 def menue(sysargv1):
-  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot_16-bit_image_to_3d graphL >>10<< Centroid_Custom_filterL >>11<< UnsharpMask >>12<< FFT-BandpassL >>13<< Img-DeconvClr >>14<< Centroid_Custom_ArrayL >>15<< ErosionClr >>16<< DilationClr >>1313<< Exit --> ")
+  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot_16-bit_image_to_3d graphL >>10<< Centroid_Custom_filterL >>11<< UnsharpMask >>12<< FFT-BandpassL >>13<< Img-DeconvClr >>14<< Centroid_Custom_ArrayL >>15<< ErosionClr >>16<< DilationClr >>17<< UnsharpMaskDiff >>18<< Gaussian >>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -502,6 +532,13 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
  
   if sysargv1 == '16':
     dilation()
+
+  if sysargv1 == '17':
+    unsharpMaskDiff()
+
+
+  if sysargv1 == '18':
+    gaussian()
 
   if sysargv1 == '1313':
     sys.exit()
