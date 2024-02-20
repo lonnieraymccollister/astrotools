@@ -270,7 +270,7 @@ def DynamicRescale16():
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
       rescaled = (65535.0 / my_data1.max() * (my_data1 - my_data1.min())).astype(np.uint16)
-      my_data[xw:(xw+50), yh:(yh+50)] = rescaled
+      my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
   im1 = Image.fromarray(my_data)
   im1.save(sysargv5)
   return sysargv1
@@ -418,7 +418,7 @@ def erosion():
   sysargv4  = input("Enter (Kernel)structuring element of radius example 3,5,7 --> ")
 
   # Read the image as grayscale
-  img = color.rgb2gray(io.imread(sysargv2))
+  img = (io.imread(sysargv2))
   # Define a kernel (a matrix of odd size) for the erosion operation
   # You can choose different shapes and sizes for the kernel
   kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ((int(sysargv4)), (int(sysargv4))))
@@ -444,7 +444,7 @@ def dilation():
 
   # Create a disk-shaped structuring element of radius 5
   # Read the image as grayscale
-  img = color.rgb2gray(io.imread(sysargv2))
+  img = (io.imread(sysargv2))
   # Define a kernel (a matrix of odd size) for the erosion operation
   # You can choose different shapes and sizes for the kernel
   kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ((int(sysargv4)), (int(sysargv4))))
@@ -465,7 +465,7 @@ def dilation():
   menue()
 
 def menue(sysargv1):
-  sysargv1 = input("Enter >>1<< AffineTransform or >>2<< Mask an image  >>3<< Mask Invert >>4<< Add2images  >>5<< Split tricolor  >>6<< Combine Tricolor  >>7<< Create Luminance  >>8<< Align2img  >>9<< Plot_16-bit_image_to_3d graphL >>10<< Centroid_Custom_filterL >>11<< UnsharpMask >>12<< FFT-BandpassL >>13<< Img-DeconvClr >>14<< Centroid_Custom_ArrayL >>15<< ErosionClr >>16<< DilationClr >>17<< DynamicRescale >>18<< Gaussian >>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
