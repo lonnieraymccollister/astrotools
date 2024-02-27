@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib import pyplot
 from matplotlib.image import imread
 from mpl_toolkits.mplot3d import Axes3D
+from astropy.io import fits
 
 
 # function to display the coordinates of 
@@ -254,13 +255,25 @@ def unsharpMask():
   menue()
 
 def DynamicRescale16():
-  sysargv1  = input("Enter the grayscale image  -->")
-  sysargv2  = input("Enter the the width of square(50)  -->")
+  sysargv1  = input("Enter the grayscale image(fits Siril)  -->")
+  sysargv2  = input("Enter the the width of square(5)  -->")
   sysargv4  = input("Enter the image width in pixels(1000)  -->")
   sysargv3  = input("Enter the image height in pixels(1000)  -->")
-  sysargv5  = input("Enter the final image name  -->") 
-  my_data = np.array(Image.open(sysargv1 ))
-  img = np.array(Image.open(sysargv1 ))
+  sysargv5  = input("Enter the final image name fits  -->") 
+  # Replace 'your_fits_file.fits' with the actual path to your FITS file
+  fits_image_filename = sysargv1
+  # Open the FITS file
+  with fits.open(fits_image_filename) as hdul:
+      # Access the primary HDU (extension 0)
+      image_data = hdul[0].data
+  # Now 'image_data' contains the data from the FITS file as a 2D numpy array
+  hdul.close()
+
+  print(image_data.shape)
+  print(image_data.dtype.name)
+
+  my_data = (image_data * 65535)
+  img = (image_data * 65535)
   #make the Dynamic square loops
   for xw in range(0, int(sysargv3), int(sysargv2)):
     for yh in range(0, int(sysargv4), int(sysargv2)): 
@@ -269,10 +282,16 @@ def DynamicRescale16():
         for (y) in range(int(sysargv2)):
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
-      rescaled = (65535.0 / my_data1.max() * (my_data1 - my_data1.min())).astype(np.uint16)
+      rescaled = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.uint16)
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
-  im1 = Image.fromarray(my_data)
-  im1.save(sysargv5)
+
+  hdu = fits.PrimaryHDU(my_data)
+  # Create an HDU list and add the primary HDU
+  hdulist = fits.HDUList([hdu])
+  # Specify the output FITS file path
+  output_fits_filename = sysargv5
+  # Write the HDU list to the FITS file
+  hdulist.writeto(output_fits_filename, overwrite=True)
   return sysargv1
   menue()
 
