@@ -101,11 +101,11 @@ def splittricolor():
 
 def combinetricolor():
   sysargv1  = input("Enter the Blue image to be combined  -->")
-  blue = cv2.imread(sysargv1, cv2.IMREAD_GRAYSCALE)
+  blue = cv2.imread(sysargv1, -1)
   sysargv2  = input("Enter the Green image to be combined  -->")
-  green = cv2.imread(sysargv2, cv2.IMREAD_GRAYSCALE)
+  green = cv2.imread(sysargv2, -1)
   sysargv3  = input("Enter the Red image to be combined  -->")
-  red = cv2.imread(sysargv3, cv2.IMREAD_GRAYSCALE)
+  red = cv2.imread(sysargv3, -1)
   sysargv4  = input("Enter the RGB file to be created  -->")
 
   # Merge the Blue, Green and Red color channels
@@ -259,7 +259,8 @@ def DynamicRescale16():
   sysargv2  = input("Enter the the width of square(5)  -->")
   sysargv4  = input("Enter the image width in pixels(1000)  -->")
   sysargv3  = input("Enter the image height in pixels(1000)  -->")
-  sysargv5  = input("Enter the final image name fits  -->") 
+  sysargv5  = input("Enter the final image name progrm will output a .fit and .tif   -->") 
+  gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
   # Replace 'your_fits_file.fits' with the actual path to your FITS file
   fits_image_filename = sysargv1
   # Open the FITS file
@@ -284,14 +285,19 @@ def DynamicRescale16():
       #Rescale to 0-65535 and convert to uint16
       rescaled = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.uint16)
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
+  
+  for gamma in [.3981]: 
+    # Apply gamma correction. 
+    gamma_corrected = np.array(65535*(my_data / 65535) ** gamma, dtype = 'uint16') 
+  cv2.imwrite(str(sysargv5)+'.tif', gamma_corrected)  
 
-  hdu = fits.PrimaryHDU(my_data)
+  hdu = fits.PrimaryHDU(gamma_corrected)
   # Create an HDU list and add the primary HDU
   hdulist = fits.HDUList([hdu])
   # Specify the output FITS file path
   output_fits_filename = sysargv5
   # Write the HDU list to the FITS file
-  hdulist.writeto(output_fits_filename, overwrite=True)
+  hdulist.writeto(str(sysargv5)+'.fit', overwrite=True)
   return sysargv1
   menue()
 
