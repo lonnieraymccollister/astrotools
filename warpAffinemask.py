@@ -12,6 +12,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from astropy.io import fits
 
 
+
 # function to display the coordinates of 
 # of the points clicked on the image 
 def click_event(event, x, y, flags, params): 
@@ -86,7 +87,7 @@ def add2images():
 
 def splittricolor():
   sysargv1  = input("Enter the Color Image to be split  -->")
-  img = cv2.imread(sysargv1)
+  img = cv2.imread(sysargv1, -1)
 
   # split the Blue, Green and Red color channels
   blue,green,red = cv2.split(img)
@@ -113,11 +114,16 @@ def combinetricolor():
   cv2.imwrite(sysargv4, newRGBImage)
   return sysargv1
   menue()
+  # Merge the Blue, Green and Red color channels
+  newRGBImage = cv2.merge((red,green,blue))
+  cv2.imwrite(sysargv4, newRGBImage)
+  return sysargv1
+  menue()
 
 def createLuminance():
   sysargv1  = input("Enter the Color Image  -->")
   sysargv2  = input("Enter the Luminance image to be created  -->")
-  img = cv2.imread(sysargv1)
+  img = cv2.imread(sysargv1, -1)
 
   # createLuminance not percieved
   grayscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -131,8 +137,8 @@ def align2img():
   sysargv1  = input("Enter the reference image -->")
   sysargv2  = input("Enter the image to be aligned -->")
   sysargv3  = input("Enter the aligned image file name -->")
-  img1 = cv2.imread( sysargv2 )
-  img2 = cv2.imread( sysargv1 )
+  img1 = cv2.imread( sysargv2, -1 )
+  img2 = cv2.imread( sysargv1, -1 )
 
   # Convert the images to grayscale
   gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
@@ -247,7 +253,7 @@ def imgcrop():
 def unsharpMask():
   sysargv1  = input("Enter the Color Image  -->")
   sysargv2  = input("Enter the unsharpMask image to be created  -->")
-  image = cv2.imread(sysargv1)
+  image = cv2.imread(sysargv1, -1)
   gaussian_3 = cv2.GaussianBlur(image, (0, 0), 2.0)
   unsharp_image = cv2.addWeighted(image, 2.0, gaussian_3, -1.0, 0)
   cv2.imwrite( sysargv2, unsharp_image)
@@ -283,12 +289,14 @@ def DynamicRescale16():
         for (y) in range(int(sysargv2)):
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
-      rescaled = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.uint16)
+      rescaled1 = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.float32)
+      rescaled = (np.round(rescaled1))
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
   
-  for gamma in [.3981]: 
+  for gamma in [float(gamma)]: 
     # Apply gamma correction. 
-    gamma_corrected = np.array(65535*(my_data / 65535) ** gamma, dtype = 'uint16') 
+    gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'uint16') 
+    gamma_corrected = (np.round(gamma_corrected1))
   cv2.imwrite(str(sysargv5)+'.tif', gamma_corrected)  
 
   hdu = fits.PrimaryHDU(gamma_corrected)
