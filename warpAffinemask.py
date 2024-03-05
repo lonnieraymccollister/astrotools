@@ -1,7 +1,7 @@
 # import required libraries
-import os
+import fnmatch
 from PIL import Image
-import cv2, sys
+import cv2, sys, os, shutil
 import numpy as np
 import matplotlib
 from numpy import genfromtxt
@@ -70,6 +70,25 @@ def maskinvert():
   cv2.imwrite(sysargv3, masked_image)
   return sysargv1
   menue()
+
+def filecount():
+  sysargv1  = input("Enter the  directory path from explorer  -->")
+  sysargv2  = input("Enter file type as (*.fit)  -->")
+  count = len(fnmatch.filter(os.listdir(sysargv1), sysargv2))
+  print('File Count:', count)
+  return sysargv1
+  menue()
+
+def resize():
+  sysargv1  = input("Enter the Image to be resized(bicubic)  -->")
+  sysargv2  = input("Enter the scale(2,3, or 4   -->")
+  sysargv3  = input("Enter the filename of the resized image to be saved  -->")    
+  image = cv2.imread(sysargv1)      
+  img = cv2.resize(image,None,fx=int(sysargv2),fy=int(sysargv2),interpolation=cv2.INTER_CUBIC)
+  cv2.imwrite(sysargv3, img)
+  return sysargv1
+  menue()
+
 
 def add2images():
   sysargv1  = input("Enter the first masked Image  -->")
@@ -498,7 +517,7 @@ def dilation():
   menue()
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -579,6 +598,12 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '18':
     gaussian()
+
+  if sysargv1 == '19':
+    filecount()
+
+  if sysargv1 == '20':
+    resize()
 
   if sysargv1 == '1313':
     sys.exit()
