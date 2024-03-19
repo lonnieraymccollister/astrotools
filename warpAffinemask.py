@@ -83,7 +83,7 @@ def resize():
   sysargv1  = input("Enter the Image to be resized(bicubic)  -->")
   sysargv2  = input("Enter the scale(2,3, or 4   -->")
   sysargv3  = input("Enter the filename of the resized image to be saved  -->")    
-  image = cv2.imread(sysargv1)      
+  image = cv2.imread(sysargv1, -1)      
   img = cv2.resize(image,None,fx=int(sysargv2),fy=int(sysargv2),interpolation=cv2.INTER_CUBIC)
   cv2.imwrite(sysargv3, img)
   return sysargv1
