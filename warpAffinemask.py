@@ -489,6 +489,19 @@ def erosion():
   return sysargv1
   menue()
 
+def jpgcomp():
+  sysargv2  = input("Enter the input file name --> ")
+  sysargv3  = input("Enter number percent to compress to (10) ")
+  sysargv4  = input("Enter the output file name --> ")
+
+  # Read the image as grayscale
+  image = cv2.imread(sysargv2)
+  cv2.imwrite(sysargv4, image, [cv2.IMWRITE_JPEG_QUALITY, int(sysargv3)])
+
+  return sysargv1
+  menue()
+
+
 def dilation():
   sysargv2  = input("Enter the input file name --> ")
   sysargv3  = input("Enter number of iterations example 3,5,7 --> ")
@@ -517,7 +530,7 @@ def dilation():
   menue()
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgComp \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -604,6 +617,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '20':
     resize()
+
+  if sysargv1 == '21':
+    jpgcomp()
 
   if sysargv1 == '1313':
     sys.exit()
