@@ -89,17 +89,218 @@ def resize():
   return sysargv1
   menue()
 
-
 def add2images():
   sysargv1  = input("Enter the first masked Image  -->")
   sysargv3  = input("Enter the second masked Image  -->")
   sysargv4  = input("Enter the filename of the added images to save  -->")
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
 
-  image = cv2.imread(sysargv1)
-  mask = cv2.imread(sysargv3)
+  image2 = cv2.imread(sysargv1, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)
+  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+  mask2 = cv2.imread(sysargv3, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)  
+  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+  # Apply the mask to the image 
+  masked_image = cv2.add(image, mask)
+  cv2.imwrite(sysargv4, masked_image)
+  return sysargv1
+  menue()
+
+def subtract2images():
+  sysargv1  = input("Enter the first masked Image  -->")
+  sysargv3  = input("Enter the second masked Image  -->")
+  sysargv4  = input("Enter the filename of the added images to save  -->")
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
+
+  image2 = cv2.imread(sysargv1, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)
+  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+  mask2 = cv2.imread(sysargv3, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)  
+  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
 
   # Apply the mask to the image
-  masked_image = cv2.add(image, mask)
+  masked_image = cv2.subtract(image, mask)
+  cv2.imwrite(sysargv4, masked_image)
+  return sysargv1
+  menue()
+
+def multiply2images():
+  sysargv1  = input("Enter the first masked Image  -->")
+  sysargv3  = input("Enter the second masked Image  -->")
+  sysargv4  = input("Enter the filename of the added images to save  -->")
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
+
+  image2 = cv2.imread(sysargv1, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)
+  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+  mask2 = cv2.imread(sysargv3, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)  
+  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+  # Apply the mask to the image
+  masked_image = cv2.multiply(image, mask)
+  cv2.imwrite(sysargv4, masked_image)
+  return sysargv1
+  menue()
+
+def divide2images():
+  sysargv1  = input("Enter the first masked Image  -->")
+  sysargv3  = input("Enter the second masked Image  -->")
+  sysargv4  = input("Enter the filename of the added images to save  -->")
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
+
+  image2 = cv2.imread(sysargv1, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)
+  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+  mask2 = cv2.imread(sysargv3, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)  
+  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+  # Apply the mask to the image
+  masked_image = cv2.divide(image, mask)
+  cv2.imwrite(sysargv4, masked_image)
+  return sysargv1
+  menue()
+
+def max2images():
+  sysargv1  = input("Enter the first masked Image  -->")
+  sysargv3  = input("Enter the second masked Image  -->")
+  sysargv4  = input("Enter the filename of the added images to save  -->")
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
+
+  image2 = cv2.imread(sysargv1, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)
+  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+  mask2 = cv2.imread(sysargv3, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)  
+  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+  # Apply the mask to the image
+  masked_image = cv2.max(image, mask)
+  cv2.imwrite(sysargv4, masked_image)
+  return sysargv1
+  menue()
+
+def min2images():
+  sysargv1  = input("Enter the first masked Image  -->")
+  sysargv3  = input("Enter the second masked Image  -->")
+  sysargv4  = input("Enter the filename of the added images to save  -->")
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
+
+  image2 = cv2.imread(sysargv1, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)
+  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+  mask2 = cv2.imread(sysargv3, -1)
+  # Apply the mask to the image
+  # Adjust the brightness and contrast 
+  # Adjusts the brightness by adding 10 to each pixel value 
+  brightness = int(sysargv5) 
+  # Adjusts the contrast by scaling the pixel values by 2.3 
+  contrast = int(sysargv6) / int(sysargv7)  
+  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+  # Apply the mask to the image
+  masked_image = cv2.min(image, mask)
   cv2.imwrite(sysargv4, masked_image)
   return sysargv1
   menue()
@@ -530,7 +731,7 @@ def dilation():
   menue()
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgComp \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -620,6 +821,21 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '21':
     jpgcomp()
+
+  if sysargv1 == '22':
+    subtract2images()
+
+  if sysargv1 == '23':
+    multiply2images()
+
+  if sysargv1 == '24':
+    divide2images()
+
+  if sysargv1 == '25':
+    max2images()
+
+  if sysargv1 == '26':
+    min2images()
 
   if sysargv1 == '1313':
     sys.exit()
