@@ -542,8 +542,6 @@ def gaussian():
   return sysargv1
   menue()
 
-
-
 def FFT():
   #From Python for Microscopists-Bhattiprolu, S. (2023). python_for_microscopists. GitHub. https://github.com/bnsreenu/python_for_microscopists/blob/master/330_Detectron2_Instance_3D_EM_Platelet.ipynb
   sysargv1  = input("Enter the Greyscale Image  -->")
@@ -730,8 +728,38 @@ def dilation():
   return sysargv1
   menue()
 
+def imgcrop():
+  sysargv1  = input("Enter the Image to crop  -->")
+  sysargv3  = input("Enter the filename of the image to save  -->")
+
+  # Opens a image in RGB mode
+  img = cv2.imread(sysargv1)
+
+  # Size of the image in pixels (size of original image)
+  # (This is not mandatory)
+  height, width = img.shape[:2]
+  print("width", width)
+  print("height", height)
+
+  # Setting the points for cropped image
+  sysargv4  = input("Enter x point of new image -->")
+  sysargv5  = input("Enter y point of new image   -->")
+  sysargv6  = input("Enter width of new image   -->")
+  sysargv7  = input("Enter height of new image  -->")
+  x = int(sysargv4)
+  y = int(sysargv5)
+
+  cropped_image = img[y:y+int(height), x:x+int(width)]
+
+  # Cropped image of above dimension
+  # (It will not change original image)
+  cv2.imshow('image',cropped_image)
+  cv2.waitKey(0)  
+  cv2.imwrite(sysargv3, cropped_image)
+
+
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -836,6 +864,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '26':
     min2images()
+
+  if sysargv1 == '27':
+    imgcrop()
 
   if sysargv1 == '1313':
     sys.exit()
