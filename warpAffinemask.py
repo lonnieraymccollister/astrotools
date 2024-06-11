@@ -51,8 +51,8 @@ def mask():
   sysargv3  = input("Enter the Mask for image  white- and black  -->")
   sysargv4  = input("Enter the filename of the masked image to save  -->")
 
-  image = cv2.imread(sysargv1)
-  mask = cv2.imread(sysargv3)
+  image = cv2.imread(sysargv1, -1)
+  mask = cv2.imread(sysargv3, -1)
 
   # Apply the mask to the image
   masked_image = cv2.bitwise_and(image, mask)
@@ -64,7 +64,7 @@ def maskinvert():
   sysargv1  = input("Enter the mask Image  -->")
   #sysargv2  = input("Enter the Image2  -->")
   sysargv3  = input("Enter the output invert Mask -->")
-  image = cv2.imread(sysargv1)
+  image = cv2.imread(sysargv1, -1)
     # Apply the inverted mask to the image
   masked_image = cv2.bitwise_not(image)
   cv2.imwrite(sysargv3, masked_image)
