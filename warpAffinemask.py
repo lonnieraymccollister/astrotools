@@ -759,9 +759,52 @@ def imgcrop():
   cv2.waitKey(0)  
   cv2.imwrite(sysargv3, cropped_image)
 
+  return sysargv1
+  menue()
+
+def imghiststretch():
+  sysargv2  = input("Enter the greyscale Image for hist  -->")
+  sysargv3  = input("Enter the Image depth(256/16536)  -->")
+  image = cv2.imread(sysargv2)
+  image1 = cv2.imread(sysargv2)
+  image_Height = image.shape[0]
+  image_Width = image.shape[1]	
+  histogram = np.zeros([int(sysargv3)], np.int32)
+  for x in range(1, image_Height):
+    for y in range(1, image_Width):
+      histogram[image[x,y]] +=1
+
+  plt.figure()
+  plt.title("GrayScale Histogram")
+  plt.xlabel("Intensity Level")
+  plt.ylabel("Intensity Frequency")
+  plt.xlim([0, int(sysargv3)])
+  plt.plot(histogram)
+  plt.show()
+
+  sysargv4  = input("Enter min int value of stretch  -->")
+  sysargv5  = input("Enter max int value of stretch  -->")
+  sysargv6  = input("Enter the greyscale image save  -->")
+  
+  sysargv4a=int(sysargv4)
+  sysargv5a=int(sysargv5)
+  for x in range(1, image_Height):
+    for y in range(1, image_Width):
+      image1[x,y] = np.where(image[x,y] < sysargv4a, 0, image[x,y])
+      image1[x,y] = np.where(image[x,y] > sysargv5a, 0, image[x,y])
+      image1[x,y] = ((int(sysargv3)-1) / ((int(sysargv5)-1) - (int(sysargv4)-1)))*(image1[x,y]-(int(sysargv4)-1))
+
+  img_normalized = cv2.normalize(image1, None, 0, (int(sysargv3)-1), cv2.NORM_MINMAX)
+  cv2.imshow('Image', img_normalized)
+  cv2.waitKey(0)  
+  cv2.imwrite(sysargv6, img_normalized)
+
+  return sysargv1
+  menue()
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -869,6 +912,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '27':
     imgcrop()
+
+  if sysargv1 == '28':
+    imghiststretch()
 
   if sysargv1 == '1313':
     sys.exit()
