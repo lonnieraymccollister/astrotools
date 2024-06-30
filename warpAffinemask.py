@@ -819,6 +819,7 @@ def gif():
       newImg = Image.open(i)
       frames.append(newImg)
  
+
   # Save into a GIF file that loops forever: duration is in milli-second
   frames[0].save(fGIF, format='GIF', optimize=False, append_images=frames[1:],
       save_all=True, duration=int(sysargv5), loop=0)
@@ -826,9 +827,69 @@ def gif():
   return sysargv1
   menue()
 
+def alingimg():
+  sysargv2  = input("jpg enter reference Image  -->")
+  sysargv3  = input("jpg enter alignment Image  -->")
+  sysargv4  = input("Enter Image to save -->")
+
+  # Open the image files.
+  img1_color = cv2.imread(sysargv3)  # Image to be aligned.
+  img2_color = cv2.imread(sysargv2)    # Reference image.
+
+  # Convert to grayscale.
+  img1 = cv2.cvtColor(img1_color, cv2.COLOR_BGR2GRAY)
+  img2 = cv2.cvtColor(img2_color, cv2.COLOR_BGR2GRAY)
+  height, width = img2.shape
+
+  # Create ORB detector with 5000 features.
+  orb_detector = cv2.ORB_create(5000)
+
+  # Find keypoints and descriptors.
+  # The first arg is the image, second arg is the mask
+  #  (which is not required in this case).
+  kp1, d1 = orb_detector.detectAndCompute(img1, None)
+  kp2, d2 = orb_detector.detectAndCompute(img2, None)
+
+  # Match features between the two images.
+  # We create a Brute Force matcher with 
+  # Hamming distance as measurement mode.
+  matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck = True)
+
+  # Match the two sets of descriptors.
+  matches = matcher.match(d1, d2)
+
+  # Sort matches on the basis of their Hamming distance.
+  matches.sort(key = lambda x: x.distance)
+
+  # Take the top 90 % matches forward.
+  matches = matches[:int(len(matches)*0.9)]
+  no_of_matches = len(matches)
+
+  # Define empty matrices of shape no_of_matches * 2.
+  p1 = np.zeros((no_of_matches, 2))
+  p2 = np.zeros((no_of_matches, 2))
+
+  for i in range(len(matches)):
+    p1[i, :] = kp1[matches[i].queryIdx].pt
+    p2[i, :] = kp2[matches[i].trainIdx].pt
+
+  # Find the homography matrix.
+  homography, mask = cv2.findHomography(p1, p2, cv2.RANSAC)
+
+  # Use this matrix to transform the
+  # colored image wrt the reference image.
+  transformed_img = cv2.warpPerspective(img1_color,
+                      homography, (width, height))
+
+  # Save the output.
+  cv2.imwrite(sysargv4, transformed_img)
+
+  return sysargv1
+  menue()
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -942,6 +1003,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '29':
     gif()
+
+  if sysargv1 == '30':
+    alingimg()
 
   if sysargv1 == '1313':
     sys.exit()
