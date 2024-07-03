@@ -828,6 +828,32 @@ def gif():
   return sysargv1
   menue()
 
+def video():
+  sysargv3  = input("Enter file to save(avi/mp4) -->")
+  sysargv4  = input("Enter (*.jpg)etc to use for Video -->")
+  sysargv5  = input("Enter frames per second -->")
+  sysargv6  = input("Enter codec(1 for avi/DIVX)(2 for mp4/MP4V) -->")
+
+  img_array = []
+  for filename in glob.glob(sysargv4):
+    img = cv2.imread(filename)
+    height, width, layers = img.shape
+    size = (width,height)
+    img_array.append(img)
+
+  # Save into a video file duration is in fps
+  if sysargv6 == '1':
+    out = cv2.VideoWriter(sysargv3,cv2.VideoWriter_fourcc(*'DIVX'), int(sysargv5), size)
+  if sysargv6 == '2':
+     out = cv2.VideoWriter(sysargv3,cv2.VideoWriter_fourcc(*'MP4V'), int(sysargv5), size)
+  
+  for i in range(len(img_array)):
+    out.write(img_array[i])
+  out.release()
+  
+  return sysargv1
+  menue()
+
 def alingimg():
   sysargv2  = input("jpg enter reference Image  -->")
   sysargv3  = input("jpg enter alignment Image  -->")
@@ -890,7 +916,7 @@ def alingimg():
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts)  >>31<< Video \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1007,6 +1033,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '30':
     alingimg()
+
+  if sysargv1 == '31':
+    video()
 
   if sysargv1 == '1313':
     sys.exit()
