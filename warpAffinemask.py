@@ -829,10 +829,9 @@ def gif():
   menue()
 
 def video():
-  sysargv3  = input("Enter file to save(avi/mp4) -->")
+  sysargv3  = input("Enter file name to save mp4 Video -->")
   sysargv4  = input("Enter (*.jpg)etc to use for Video -->")
   sysargv5  = input("Enter frames per second -->")
-  sysargv6  = input("Enter codec(1 for avi/DIVX)(2 for mp4/MP4V) -->")
 
   img_array = []
   for filename in glob.glob(sysargv4):
@@ -842,10 +841,7 @@ def video():
     img_array.append(img)
 
   # Save into a video file duration is in fps
-  if sysargv6 == '1':
-    out = cv2.VideoWriter(sysargv3,cv2.VideoWriter_fourcc(*'DIVX'), int(sysargv5), size)
-  if sysargv6 == '2':
-     out = cv2.VideoWriter(sysargv3,cv2.VideoWriter_fourcc(*'MP4V'), int(sysargv5), size)
+  out = cv2.VideoWriter(sysargv3,cv2.VideoWriter_fourcc(*'mp4v'), int(sysargv5), size)
   
   for i in range(len(img_array)):
     out.write(img_array[i])
