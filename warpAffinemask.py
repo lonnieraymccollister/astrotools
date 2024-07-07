@@ -520,7 +520,7 @@ def DynamicRescale16():
     # Apply gamma correction. 
     gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'uint16') 
     gamma_corrected = (np.round(gamma_corrected1))
-  cv2.imwrite(str(sysargv5)+'.tif', gamma_corrected)  
+  #cv2.imwrite(str(sysargv5)+'.tif', gamma_corrected)  
 
   hdu = fits.PrimaryHDU(gamma_corrected)
   # Create an HDU list and add the primary HDU
@@ -910,9 +910,43 @@ def alingimg():
   return sysargv1
   menue()
 
+def gamma():
+  sysargv1  = input("Enter the grayscale image(fits Siril)  -->")
+  sysargv5  = input("Enter the final image name progrm will output a .fit and .tif   -->") 
+  gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
+  # Replace 'your_fits_file.fits' with the actual path to your FITS file
+  fits_image_filename = sysargv1
+  # Open the FITS file
+  with fits.open(fits_image_filename) as hdul:
+      # Access the primary HDU (extension 0)
+      image_data = hdul[0].data
+  # Now 'image_data' contains the data from the FITS file as a 2D numpy array
+  hdul.close()
+
+  print(image_data.shape)
+  print(image_data.dtype.name)
+
+  my_data = (image_data * 65535)
+  
+  for gamma in [float(gamma)]: 
+    # Apply gamma correction. 
+    gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'uint16') 
+    gamma_corrected = (np.round(gamma_corrected1))
+  cv2.imwrite(str(sysargv5)+'gamma_corrected'+'.tif', gamma_corrected)  
+
+  hdu = fits.PrimaryHDU(gamma_corrected)
+  # Create an HDU list and add the primary HDU
+  hdulist = fits.HDUList([hdu])
+  # Specify the output FITS file path
+  output_fits_filename = sysargv5
+  # Write the HDU list to the FITS file
+  hdulist.writeto(str(sysargv5)+'gamma_corrected'+'.fit', overwrite=True)
+  return sysargv1
+  menue()
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts)  >>31<< Video \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts)  >>31<< Video \n>>32<< gammaCor \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1032,6 +1066,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '31':
     video()
+
+  if sysargv1 == '32':
+    gamma()
 
   if sysargv1 == '1313':
     sys.exit()
