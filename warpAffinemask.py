@@ -488,7 +488,7 @@ def DynamicRescale16():
   sysargv2  = input("Enter the the width of square(5)  -->")
   sysargv4  = input("Enter the image width in pixels(1000)  -->")
   sysargv3  = input("Enter the image height in pixels(1000)  -->")
-  sysargv5  = input("Enter the final image name progrm will output a .fit and .tif   -->") 
+  sysargv5  = input("Enter the final image name progrm will output a .fit file   -->") 
   gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
   # Replace 'your_fits_file.fits' with the actual path to your FITS file
   fits_image_filename = sysargv1
@@ -912,7 +912,7 @@ def alingimg():
 
 def gamma():
   sysargv1  = input("Enter the grayscale image(fits Siril)  -->")
-  sysargv5  = input("Enter the final image name progrm will output a .fit and .tif   -->") 
+  sysargv5  = input("Enter the final image name progrm will output a .fit   -->") 
   gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
   # Replace 'your_fits_file.fits' with the actual path to your FITS file
   fits_image_filename = sysargv1
@@ -932,7 +932,7 @@ def gamma():
     # Apply gamma correction. 
     gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'uint16') 
     gamma_corrected = (np.round(gamma_corrected1))
-  cv2.imwrite(str(sysargv5)+'gamma_corrected'+'.tif', gamma_corrected)  
+  #cv2.imwrite(str(sysargv5)+'gamma_corrected'+'.tif', gamma_corrected)  
 
   hdu = fits.PrimaryHDU(gamma_corrected)
   # Create an HDU list and add the primary HDU
