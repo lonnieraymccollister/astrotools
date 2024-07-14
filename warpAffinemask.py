@@ -1048,7 +1048,7 @@ def subtract2images():
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts)  >>31<< Video \n>>32<< gammaCor \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1171,6 +1171,12 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '32':
     gamma()
+
+  if sysargv1 == '33':
+    add2imagesx()
+
+  if sysargv1 == '34':
+    subtract2imagesx()
 
   if sysargv1 == '1313':
     sys.exit()
