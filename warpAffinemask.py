@@ -528,7 +528,7 @@ def DynamicRescale16():
   # Specify the output FITS file path
   output_fits_filename = sysargv5
   # Write the HDU list to the FITS file
-  hdulist.writeto(str(sysargvb)+'gamma_corrected_drs.fit', overwrite=True)
+  hdulist.writeto(str(sysargv5)+'gamma_corrected_drs.fit', overwrite=True)
   return sysargv1
   menue()
 
