@@ -489,6 +489,7 @@ def DynamicRescale16():
   sysargv4  = input("Enter the image width in pixels(1000)  -->")
   sysargv3  = input("Enter the image height in pixels(1000)  -->")
   sysargv5  = input("Enter the final image name progrm will output a .fit file   -->") 
+  sysargv6  = input("Enter the bin value   -->") 
   gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
   # Replace 'your_fits_file.fits' with the actual path to your FITS file
   fits_image_filename = sysargv1
@@ -522,13 +523,39 @@ def DynamicRescale16():
     gamma_corrected = (np.round(gamma_corrected1))
   #cv2.imwrite(str(sysargv5)+'.tif', gamma_corrected)  
 
-  hdu = fits.PrimaryHDU(gamma_corrected)
+  ##hdu = fits.PrimaryHDU(gamma_corrected)
+  # Create an HDU list and add the primary HDU
+  ##hdulist = fits.HDUList([hdu])
+  # Specify the output FITS file path
+  ##output_fits_filename = sysargv5
+  # Write the HDU list to the FITS file
+  ##hdulist.writeto(str(sysargv5)+'gamma_corrected_drs.fit', overwrite=True)
+  
+  
+  img_array = np.asarray(gamma_corrected / 6553500, dtype = 'float64')
+  bin_factor = int(sysargv6) 
+  # Get image dimensions
+  height, width = img_array.shape
+
+  # Calculate new dimensions
+  new_height = height // bin_factor
+  new_width = width // bin_factor
+
+  # Bin the image using summation
+  binned_image = np.zeros((new_height, new_width), dtype=img_array.dtype)
+  for y in range(new_height):
+    for x in range(new_width):
+      # Sum pixel values within the bin
+      binned_image[y, x] = np.sum(img_array[y*bin_factor:(y+1)*bin_factor, x*bin_factor:(x+1)*bin_factor])
+
+  hdu = fits.PrimaryHDU(binned_image)
   # Create an HDU list and add the primary HDU
   hdulist = fits.HDUList([hdu])
   # Specify the output FITS file path
   output_fits_filename = sysargv5
   # Write the HDU list to the FITS file
-  hdulist.writeto(str(sysargv5)+'gamma_corrected_drs.fit', overwrite=True)
+  hdulist.writeto(str(sysargv5)+'_binned_gamma_corrected_drs.fit', overwrite=True)
+
   return sysargv1
   menue()
 
@@ -930,8 +957,8 @@ def gamma():
   
   for gamma in [float(gamma)]: 
     # Apply gamma correction. 
-    gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'uint16') 
-    gamma_corrected = (np.round(gamma_corrected1))
+    gamma_corrected1 = gamma_corrected = np.array((65535.0 *(my_data / 65535) ** gamma/65535), dtype = 'float64') 
+    #gamma_corrected = (np.round(gamma_corrected1))
   #cv2.imwrite(str(sysargv5)+'gamma_corrected'+'.tif', gamma_corrected)  
 
   hdu = fits.PrimaryHDU(gamma_corrected)
@@ -983,7 +1010,7 @@ def add2images():
   print(image_data.shape)
   print(image_data.dtype.name)
 
-  my_data = np.array((((image_data * 65535)*contrast)+brightness) + (((image_data1 * 65535)*contrast1)+brightness1), dtype = 'uint16') 
+  my_data = np.array(((((image_data * 65535)*contrast)+brightness) + (((image_data1 * 65535)*contrast1)+brightness1) / 65535), dtype = 'float64') 
 
   hdu = fits.PrimaryHDU(my_data)
   # Create an HDU list and add the primary HDU
@@ -1034,7 +1061,7 @@ def subtract2images():
   print(image_data.shape)
   print(image_data.dtype.name)
 
-  my_data = np.array((((image_data * 65535)*contrast)+brightness) - (((image_data1 * 65535)*contrast1)+brightness1), dtype = 'uint16') 
+  my_data = np.array(((((image_data * 65535)*contrast)+brightness) - (((image_data1 * 65535)*contrast1)+brightness1) / 65535), dtype = 'float64') 
 
   hdu = fits.PrimaryHDU(my_data)
   # Create an HDU list and add the primary HDU
