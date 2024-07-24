@@ -957,7 +957,7 @@ def gamma():
   
   for gamma in [float(gamma)]: 
     # Apply gamma correction. 
-    gamma_corrected1 = gamma_corrected = np.array((65535.0 *(my_data / 65535) ** gamma/65535), dtype = 'float64') 
+    gamma_corrected1 = gamma_corrected = np.array(((65535.0 *(my_data / 65535) ** gamma/65535)/100), dtype = 'float64') 
     #gamma_corrected = (np.round(gamma_corrected1))
   #cv2.imwrite(str(sysargv5)+'gamma_corrected'+'.tif', gamma_corrected)  
 
