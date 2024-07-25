@@ -435,7 +435,7 @@ def PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5):
     for y in range(diameterp1):
         my_data[x,y]=img[x,y]-min(img[x,y],img[x,diameter-y],img[diameter-x,y],img[diameter-x,diameter-y])   
   #Rescale to 0-65535 and convert to uint16
-  rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
+  rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.float64)
   im = Image.fromarray(rescaled)
   symfile = (sysargv2+"_"+sysargv4+"_"+sysargv5+".png")
   im.save(symfile)
@@ -513,13 +513,13 @@ def DynamicRescale16():
         for (y) in range(int(sysargv2)):
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
-      rescaled1 = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.float32)
+      rescaled1 = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.float64)
       rescaled = (np.round(rescaled1))
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
   
   for gamma in [float(gamma)]: 
     # Apply gamma correction. 
-    gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'uint16') 
+    gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'float64') 
     gamma_corrected = (np.round(gamma_corrected1))
   #cv2.imwrite(str(sysargv5)+'.tif', gamma_corrected)  
 
