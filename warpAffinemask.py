@@ -1289,9 +1289,27 @@ def subtract2images():
   return sysargv1
   menue()
 
+def clahe():
+  sysargv2  = input("Enter file name of color image to enter -->")
+  sysargv3  = input("Enter clip limit (3) -->")
+  sysargv4  = input("Enter tile Grid Size (8) -->")
+  sysargv5  = input("Enter output filename -->")
+
+  colorimage = cv2.imread(sysargv2, -1) 
+  clahe_model = cv2.createCLAHE(clipLimit=int(sysargv3), tileGridSize=(int(sysargv4),int(sysargv4)))
+  colorimage_b = clahe_model.apply(colorimage[:,:,0])
+  colorimage_g = clahe_model.apply(colorimage[:,:,1])
+  colorimage_r = clahe_model.apply(colorimage[:,:,2])
+  colorimage_clahe = np.stack((colorimage_b,colorimage_g,colorimage_r), axis=2)
+  cv2.imwrite(sysargv5, colorimage_clahe)
+  
+  return sysargv1
+  menue()
+
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1369,7 +1387,6 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
   if sysargv1 == '17':
     DynamicRescale16()
 
-
   if sysargv1 == '18':
     gaussian()
 
@@ -1423,6 +1440,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '35':
     DynamicRescale16RGB()
+  
+  if sysargv1 == '36':
+    clahe()
 
   if sysargv1 == '1313':
     sys.exit()
