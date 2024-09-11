@@ -1344,8 +1344,8 @@ def pm_vector_line():
   menue()
 
 def hist_match():
-  sysargv1  = input("Enter the Image  -->")
-  sysargv3  = input("Enter the reference Image  -->")
+  sysargv1  = input("Enter the reference Image  -->")
+  sysargv3  = input("Enter the Image  -->")
   sysargv4  = input("Enter the filename of the added images to save  -->")
 
   # Load example images
