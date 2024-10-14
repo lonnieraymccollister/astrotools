@@ -1315,7 +1315,7 @@ def pm_vector_line():
   sysargv6  = input("Enter ending point(mas_y) -->")
   sysargv7  = input("Enter color b val(255) -->")
   sysargv8  = input("Enter color g val(255) -->")
-  sysargv9  = input("Enter color g val(255) -->")
+  sysargv9  = input("Enter color r val(255) -->")
   sysargv10  = input("Enter thickness(1) -->")
   sysargv11  = input("Enter file name of color image to save -->")
 
@@ -1360,9 +1360,20 @@ def hist_match():
   return sysargv1
   menue()
 
+def distance():
+  sysargv1  = float(input("parallax angle in milliarcseconds  -->"))
+
+  distancepar = 1 / (sysargv1 / 1000)
+  distanceltyr = 3.26 * distancepar
+  print('distance parsecs', distancepar)
+  print('distance parsecs', distanceltyr)
+
+  return sysargv1
+  menue()
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1502,6 +1513,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '38':
     hist_match()
+  
+  if sysargv1 == '39':
+    distance()
 
   if sysargv1 == '1313':
     sys.exit()
