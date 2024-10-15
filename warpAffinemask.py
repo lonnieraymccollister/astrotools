@@ -1366,7 +1366,7 @@ def distance():
   distancepar = 1 / (sysargv1 / 1000)
   distanceltyr = 3.26 * distancepar
   print('distance parsecs', distancepar)
-  print('distance parsecs', distanceltyr)
+  print('distance light year', distanceltyr)
 
   return sysargv1
   menue()
