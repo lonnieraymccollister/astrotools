@@ -1,7 +1,7 @@
 # import required libraries
 import fnmatch
 from PIL import Image
-import cv2, sys, os, shutil
+import cv2, sys, os, shutil, ffmpeg
 import numpy as np
 import matplotlib
 from numpy import genfromtxt
@@ -1074,6 +1074,8 @@ def gif():
 
 def video():
   sysargv3  = input("Enter file name to save mp4 Video -->")
+  sysargv3a = input("Enter file name to save gif Video -->")
+  sysargv3b = input("Enter scale (800) pixels size to save gif Video -->")
   sysargv4  = input("Enter (*.jpg)etc to use for Video -->")
   sysargv5  = input("Enter frames per second -->")
 
@@ -1090,6 +1092,8 @@ def video():
   for i in range(len(img_array)):
     out.write(img_array[i])
   out.release()
+
+  ffmpeg.input(sysargv3).filter('scale', sysargv3b, -1).output(sysargv3a).run()
   
   return sysargv1
   menue()
