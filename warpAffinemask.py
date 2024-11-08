@@ -1375,9 +1375,27 @@ def distance():
   return sysargv1
   menue()
 
+def edgedetect():
+  sysargv1  = input("Enter the filename of the Image  -->")
+  sysargv2  = input("Enter the filename of the Edge Image to save  -->")
+  sysargv3  = input("Enter the lower threshold(100)  -->")
+  sysargv4  = input("Enter the upper threshold(200)  -->")
+
+  # Read the original image
+  img = cv2.imread(sysargv1, -1) 
+  # Convert to graycsale
+  img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+  # Blur the image for better edge detection
+  img_blur = cv2.GaussianBlur(img_gray, (3,3), 0) 
+  # Canny Edge Detection
+  edges = cv2.Canny(image=img_blur, threshold1=int(sysargv3), threshold2=int(sysargv3)) # Canny Edge Detection
+
+  cv2.imwrite(sysargv2, edges)
+
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1520,6 +1538,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
   
   if sysargv1 == '39':
     distance()
+  
+  if sysargv1 == '40':
+    edgedetect()
 
   if sysargv1 == '1313':
     sys.exit()
