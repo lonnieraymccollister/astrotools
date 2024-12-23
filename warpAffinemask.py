@@ -1378,19 +1378,21 @@ def distance():
 def edgedetect():
   sysargv1  = input("Enter the filename of the Image  -->")
   sysargv2  = input("Enter the filename of the Edge Image to save  -->")
-  sysargv3  = input("Enter the lower threshold(100)  -->")
-  sysargv4  = input("Enter the upper threshold(200)  -->")
+  sysargv3  = input("Enter the lower threshold(100)(B)  -->")
+  sysargv4  = input("Enter the upper threshold(200)(B)  -->")
+  sysargv5  = input("Enter the lower threshold(100)(G)  -->")
+  sysargv6  = input("Enter the upper threshold(200)(G)  -->")
+  sysargv7  = input("Enter the lower threshold(100)(R)  -->")
+  sysargv8  = input("Enter the upper threshold(200)(R)  -->")
 
   # Read the original image
-  img = cv2.imread(sysargv1, -1) 
-  # Convert to graycsale
-  img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-  # Blur the image for better edge detection
-  img_blur = cv2.GaussianBlur(img_gray, (3,3), 0) 
-  # Canny Edge Detection
-  edges = cv2.Canny(image=img_blur, threshold1=int(sysargv3), threshold2=int(sysargv3)) # Canny Edge Detection
-
-  cv2.imwrite(sysargv2, edges)
+  img = cv2.imread(sysargv1) 
+  (B, G, R) = cv2.split(img)
+  B_cny = cv2.Canny(B, int(sysargv3), int(sysargv4))
+  G_cny = cv2.Canny(G, int(sysargv5), int(sysargv6))
+  R_cny = cv2.Canny(R, int(sysargv7), int(sysargv8))
+  img_cny = cv2.merge([B_cny, G_cny, R_cny]) 
+  cv2.imwrite(sysargv2, img_cny)
 
 
 
