@@ -1377,22 +1377,30 @@ def distance():
 
 def edgedetect():
   sysargv1  = input("Enter the filename of the Image  -->")
-  sysargv2  = input("Enter the filename of the Edge Image to save  -->")
-  sysargv3  = input("Enter the lower threshold(100)(B)  -->")
-  sysargv4  = input("Enter the upper threshold(200)(B)  -->")
-  sysargv5  = input("Enter the lower threshold(100)(G)  -->")
-  sysargv6  = input("Enter the upper threshold(200)(G)  -->")
-  sysargv7  = input("Enter the lower threshold(100)(R)  -->")
-  sysargv8  = input("Enter the upper threshold(200)(R)  -->")
+  sysargv2  = input("Enter the filename of Edge sbl/cny to save  -->")
+  sysargv3  = input("Enter the lower threshold(100)  -->")
+  sysargv4  = input("Enter the upper threshold(200)  -->")
 
   # Read the original image
   img = cv2.imread(sysargv1) 
-  (B, G, R) = cv2.split(img)
-  B_cny = cv2.Canny(B, int(sysargv3), int(sysargv4))
-  G_cny = cv2.Canny(G, int(sysargv5), int(sysargv6))
-  R_cny = cv2.Canny(R, int(sysargv7), int(sysargv8))
-  img_cny = cv2.merge([B_cny, G_cny, R_cny]) 
-  cv2.imwrite(sysargv2, img_cny)
+
+  # Convert to graycsale
+  img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+  # Blur the image for better edge detection
+  img_blur = cv2.GaussianBlur(img_gray, (3,3), 0) 
+ 
+  # Sobel Edge Detection
+  sobelx = cv2.Sobel(src=img_blur, ddepth=cv2.CV_64F, dx=1, dy=0, ksize=5) # Sobel Edge Detection on the X axis
+  sobely = cv2.Sobel(src=img_blur, ddepth=cv2.CV_64F, dx=0, dy=1, ksize=5) # Sobel Edge Detection on the Y axis
+  sobelxy = cv2.Sobel(src=img_blur, ddepth=cv2.CV_64F, dx=1, dy=1, ksize=5) # Combined X and Y Sobel Edge Detection 
+  img_sobel_xy = cv2.merge([sobelxy, sobelxy, sobelxy])
+  cv2.imwrite(sysargv2 + "sbl.jpg", img_sobel_xy)
+  imgcny = cv2.Canny(img_blur, int(sysargv3), int(sysargv4))
+  img_cny = cv2.merge([imgcny, imgcny, imgcny])
+  cv2.imwrite(sysargv2 + "cny.jpg", img_cny)
+
+  return sysargv1
+  menue()
 
 
 
