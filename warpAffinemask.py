@@ -514,7 +514,7 @@ def DynamicRescale16():
         for (y) in range(int(sysargv2)):
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
-      rescaled1 = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.float64)
+      rescaled1 = ((my_data1.max()+1) * ((my_data1+1) - my_data1.min()) / 65535.0).astype(np.float64)
       rescaled = (np.round(rescaled1))
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
   
@@ -593,7 +593,7 @@ def DynamicRescale16RGB():
         for (y) in range(int(sysargv2)):
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
-      rescaled1 = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.float64)
+      rescaled1 = ((my_data1.max()+1) * ((my_data1+1) - my_data1.min()) / 65535.0).astype(np.float64)
       rescaled = (np.round(rescaled1))
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
   
@@ -660,7 +660,7 @@ def DynamicRescale16RGB():
         for (y) in range(int(sysargv2)):
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
-      rescaled1 = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.float64)
+      rescaled1 = ((my_data1.max()+1) * ((my_data1+1) - my_data1.min()) / 65535.0).astype(np.float64)
       rescaled = (np.round(rescaled1))
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
   
@@ -727,7 +727,7 @@ def DynamicRescale16RGB():
         for (y) in range(int(sysargv2)):
           my_data1[x,y]=img[(x+xw),(y+yh)]
       #Rescale to 0-65535 and convert to uint16
-      rescaled1 = (65535.0 / (my_data1.max()+1) * ((my_data1+1) - my_data1.min())).astype(np.float64)
+      rescaled1 = ((my_data1.max()+1) * ((my_data1+1) - my_data1.min()) / 65535.0).astype(np.float64)
       rescaled = (np.round(rescaled1))
       my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
   
@@ -1376,7 +1376,7 @@ def distance():
   menue()
 
 def edgedetect():
-  sysargv1  = input("Enter the filename of the Image  -->")
+  sysargv1  = input("Enter the filename of the 3x(tif) Image  -->")
   sysargv2  = input("Enter the filename of Edge sbl/cny to save  -->")
   sysargv3  = input("Enter the lower threshold(100)  -->")
   sysargv4  = input("Enter the upper threshold(200)  -->")
@@ -1408,27 +1408,67 @@ def mosaic():
   sysargv4  = input("Enter file name of image 3 -->")
   sysargv5  = input("Enter file name of image 4 -->")
   sysargv6  = input("Enter file name of color image to save -->")
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
 
-  # Read the four images
-  img1 = cv2.imread(sysargv2)
-  img2 = cv2.imread(sysargv3)
-  img3 = cv2.imread(sysargv4)
-  img4 = cv2.imread(sysargv5)
+  if sysargv7 == '0':
 
-  # Get the size of the images
-  height, width, _ = img1.shape
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        data = hdul[0].data
+        hdul.close()
+        return data
 
-  # Create a new image with double the width and height
-  mosaic = np.zeros((height * 2, width * 2, 3), dtype=np.uint8)
+    # Read the FITS files
+    file1 = sysargv2
+    file2 = sysargv3
+    file3 = sysargv4
+    file4 = sysargv5
 
-  # Place the images in the mosaic
-  mosaic[0:height, 0:width] = img1
-  mosaic[0:height, width:width*2] = img2
-  mosaic[height:height*2, 0:width] = img3
-  mosaic[height:height*2, width:width*2] = img4
+    data1 = read_fits(file1)
+    data2 = read_fits(file2)
+    data3 = read_fits(file3)
+    data4 = read_fits(file4)
 
-  # Save the mosaic
-  cv2.imwrite( sysargv6, mosaic)
+    # Check dimensions
+    print("Data1 shape:", data1.shape)
+    print("Data2 shape:", data2.shape)
+    print("Data3 shape:", data3.shape)
+    print("Data4 shape:", data4.shape)
+
+    # Combine the images into a mosaic (2x2 grid)
+    mosaic = np.block([[data1, data2], [data3, data4]])
+
+    # Save the mosaic to a new FITS file
+    hdu = fits.PrimaryHDU(mosaic)
+    hdul = fits.HDUList([hdu])
+    hdul.writeto(sysargv6, overwrite=True)
+
+    print("Mosaic FITS file saved successfully!")
+
+  if sysargv7 == '1':
+
+    # Read the four images
+    img1 = cv2.imread(sysargv2)
+    img2 = cv2.imread(sysargv3)
+    img3 = cv2.imread(sysargv4)
+    img4 = cv2.imread(sysargv5)
+
+    # Get the size of the images
+    height, width, _ = img1.shape
+
+    # Create a new image with double the width and height
+    mosaic = np.zeros((height * 2, width * 2, 3), dtype=np.uint8)
+
+    # Place the images in the mosaic
+    mosaic[0:height, 0:width] = img1
+    mosaic[0:height, width:width*2] = img2
+    mosaic[height:height*2, 0:width] = img3
+    mosaic[height:height*2, width:width*2] = img4
+
+    # Save the mosaic
+    cv2.imwrite( sysargv6, mosaic)
+
 
   return sysargv1
   menue()
