@@ -1376,13 +1376,13 @@ def distance():
   menue()
 
 def edgedetect():
-  sysargv1  = input("Enter the filename of the 3x(tif) Image  -->")
+  sysargv1  = input("Enter the filename of the 3x(jpg) Image  -->")
   sysargv2  = input("Enter the filename of Edge sbl/cny to save  -->")
   sysargv3  = input("Enter the lower threshold(100)  -->")
   sysargv4  = input("Enter the upper threshold(200)  -->")
 
   # Read the original image
-  img = cv2.imread(sysargv1) 
+  img = cv2.imread(sysargv1, -1) 
 
   # Convert to graycsale
   img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -1469,15 +1469,89 @@ def mosaic():
     # Save the mosaic
     cv2.imwrite( sysargv6, mosaic)
 
+  return sysargv1
+  menue()
+
+def imgqtr():
+
+  sysargv2  = input("Enter file name of image(tif) -->")
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
+
+  if sysargv7 == '0':
+
+    # Function to read FITS file and return data
+    def read_fits(file1):
+      with fits.open(file1) as hdul:
+        data = hdul[0].data
+        hdul.close()
+        return data
+
+    # Read the FITS files
+    file1 = sysargv2
+
+    data1 = read_fits(file1)
+
+    # Get the dimensions of the image
+    channels, height, width = data1.shape
+
+    # Calculate the dimensions of each quarter
+    quarter_width = width // 2
+    quarter_height = height // 2
+
+    # Crop the image into four quarters for each channel
+    top_left = data1[:, :quarter_height, :quarter_width]
+    fits.writeto('mosaic_top_left_1.fits', top_left, overwrite=True)
+    top_right = data1[:, :quarter_height, quarter_width:]
+    fits.writeto('mosaic_top_right_2.fits', top_right, overwrite=True)
+
+    # Get the dimensions of the image
+    channels, height, width = data1.shape
+
+    # Calculate the dimensions of each quarter
+    quarter_width = width // 2
+    quarter_height = height // 2
+
+    # Crop the image into four quarters for each channel
+    bottom_left = data1[:, quarter_height:, :quarter_width]
+    fits.writeto('mosaic_bottom_left_3.fits', bottom_left, overwrite=True)
+    bottom_right = data1[:, quarter_height:, quarter_width:]
+    fits.writeto('mosaic_top_left_4.fits', top_left, overwrite=True)
+
+
+
+
+    fits.writeto('bottom_right.fits', bottom_right, overwrite=True)
+
+
+  if sysargv7 == '1':
+
+    image = cv2.imread(sysargv2)
+
+    # Get the dimensions of the image
+    height, width = image.shape[:2]
+
+    # Calculate the dimensions of each quarter
+    quarter_width = width // 2
+    quarter_height = height // 2
+
+    # Crop the image into four quarters
+    top_left = image[0:quarter_height, 0:quarter_width]
+    top_right = image[0:quarter_height, quarter_width:width]
+    bottom_left = image[quarter_height:height, 0:quarter_width]
+    bottom_right = image[quarter_height:height, quarter_width:width]
+
+    # Save the quarters as separate images
+    cv2.imwrite(sysargv2 + 'mosaictop_left.tif', top_left)
+    cv2.imwrite(sysargv2 + 'mosaictop_right.tif', top_right)
+    cv2.imwrite(sysargv2 + 'mosaicbottom_left.tif', bottom_left)
+    cv2.imwrite(sysargv2 + 'mosaicbottom_right.tif', bottom_right)
 
   return sysargv1
   menue()
 
 
-
-
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< ImgQtr \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1626,6 +1700,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '41':
     mosaic()
+
+  if sysargv1 == '42':
+    imgqtr()
 
   if sysargv1 == '1313':
     sys.exit()
