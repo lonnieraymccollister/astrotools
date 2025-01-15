@@ -310,37 +310,130 @@ def min2images():
   menue()
 
 def splittricolor():
-  sysargv1  = input("Enter the Color Image to be split  -->")
-  img = cv2.imread(sysargv1, -1)
+  sysargv2  = input("Enter the Color Image to be split  -->")
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
 
-  # split the Blue, Green and Red color channels
-  blue,green,red = cv2.split(img)
-  sysargv2 = "Blue" + sysargv1
-  cv2.imwrite(sysargv2, blue)
-  sysargv2 = "Green" + sysargv1
-  cv2.imwrite(sysargv2, green)
-  sysargv2 = "Red" + sysargv1
-  cv2.imwrite(sysargv2, red)
+  if sysargv7 == '0':
+
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        data = hdul[0].data
+        hdul.close()
+        return data
+
+    # Read the FITS files
+    file1 = sysargv2
+
+    # Read the image data from the FITS file
+    image_data = read_fits(file1)
+
+    # Split the color image into its individual channels
+    #b, g, r = cv2.split(image_data)
+    b, g, r = np.split(image_data, image_data.shape[0], axis=0)
+
+    # Save each channel as a separate file
+    fits.writeto(f'channel_0_64bit.fits', b, overwrite=True)
+    fits.writeto(f'channel_1_64bit.fits', g, overwrite=True)
+    fits.writeto(f'channel_2_64bit.fits', r, overwrite=True)
+
+  if sysargv7 == '1':
+
+    img = cv2.imread(sysargv2, -1)
+
+    # split the Blue, Green and Red color channels
+    blue,green,red = cv2.split(img)
+    sysargv2 = "Blue" + sysargv1
+    cv2.imwrite(sysargv2, blue)
+    sysargv2 = "Green" + sysargv1
+    cv2.imwrite(sysargv2, green)
+    sysargv2 = "Red" + sysargv1
+    cv2.imwrite(sysargv2, red)
+
   return sysargv1
   menue()
 
 def combinetricolor():
-  sysargv1  = input("Enter the Blue image to be combined  -->")
-  blue = cv2.imread(sysargv1, -1)
-  sysargv2  = input("Enter the Green image to be combined  -->")
-  green = cv2.imread(sysargv2, -1)
-  sysargv3  = input("Enter the Red image to be combined  -->")
-  red = cv2.imread(sysargv3, -1)
-  sysargv4  = input("Enter the RGB file to be created  -->")
 
-  # Merge the Blue, Green and Red color channels
-  newRGBImage = cv2.merge((red,green,blue))
-  cv2.imwrite(sysargv4, newRGBImage)
-  return sysargv1
-  menue()
-  # Merge the Blue, Green and Red color channels
-  newRGBImage = cv2.merge((red,green,blue))
-  cv2.imwrite(sysargv4, newRGBImage)
+  sysargv1  = input("Enter the Blue image to be combined  -->")
+  sysargv2  = input("Enter the Green image to be combined  -->")
+  sysargv3  = input("Enter the Red image to be combined  -->")
+  sysargv4  = input("Enter the RGB file to be created  -->")
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
+
+  if sysargv7 == '0':
+
+    # Function to read FITS file and return data
+    def read_fits(file):
+      with fits.open(file) as hdul:#
+        data = hdul[0].data
+        # hdul.close()
+      return data
+
+    # Read the FITS files
+    file1 = sysargv1
+    file2 = sysargv2
+    file3 = sysargv3
+
+    # Read the image data from the FITS file
+    blue = read_fits(file1)
+    green = read_fits(file2)
+    red = read_fits(file3)
+
+    # Check dimensions
+    print("Data1 shape:", blue.shape)
+    print("Data2 shape:", green.shape)
+    print("Data3 shape:", red.shape)
+
+    #newRGBImage = cv2.merge((red,green,blue))
+    RGB_Image1 = np.stack((red,green,blue))
+
+    # Remove the extra dimension
+    RGB_Image = np.squeeze(RGB_Image1)
+
+    # Create a FITS header with NAXIS = 3
+    header = fits.Header()
+    header['NAXIS'] = 3
+    header['NAXIS1'] = RGB_Image.shape[2]
+    header['NAXIS2'] = RGB_Image.shape[1]
+    header['NAXIS3'] = RGB_Image.shape[0]
+
+    # Ensure the data type is correct 
+    newRGB_Image = RGB_Image.astype(np.float64)
+
+    print("newRGB_Image shape:", newRGB_Image.shape)
+
+    fits.writeto( sysargv4, newRGB_Image, overwrite=True)
+    # Save the RGB image as a new FITS file with the correct header
+    hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
+    hdu.writeto(sysargv4, overwrite=True)
+
+    # Function to read and verify the saved FITS file
+    def verify_fits(sysargv4):
+      with fits.open(sysargv4) as hdul:
+        data = hdul[0].data
+    return data
+
+    # Verify the saved RGB image
+    verified_image = verify_fits(sysargv4)
+    print("Verified image shape:", verified_image.shape)
+
+
+  if sysargv7 == '1':
+
+    sysargv1  = input("Enter the Blue image to be combined  -->")
+    blue = cv2.imread(sysargv1, -1)
+    sysargv2  = input("Enter the Green image to be combined  -->")
+    green = cv2.imread(sysargv2, -1)
+    sysargv3  = input("Enter the Red image to be combined  -->")
+    red = cv2.imread(sysargv3, -1)
+    sysargv4  = input("Enter the RGB file to be created  -->")
+
+    # Merge the Blue, Green and Red color channels
+    newRGBImage = cv2.merge((red,green,blue))
+    cv2.imwrite(sysargv4, newRGBImage)
+    return sysargv1
+
   return sysargv1
   menue()
 
@@ -1295,7 +1388,7 @@ def subtract2images():
   menue()
 
 def clahe():
-  sysargv2  = input("Enter file name of color image to enter -->")
+  sysargv2  = input("Enter file name of color image to enter(16bit tif/png) -->")
   sysargv3  = input("Enter clip limit (3) -->")
   sysargv4  = input("Enter tile Grid Size (8) -->")
   sysargv5  = input("Enter output filename -->")
@@ -1515,13 +1608,7 @@ def imgqtr():
     bottom_left = data1[:, quarter_height:, :quarter_width]
     fits.writeto('mosaic_bottom_left_3.fits', bottom_left, overwrite=True)
     bottom_right = data1[:, quarter_height:, quarter_width:]
-    fits.writeto('mosaic_top_left_4.fits', top_left, overwrite=True)
-
-
-
-
-    fits.writeto('bottom_right.fits', bottom_right, overwrite=True)
-
+    fits.writeto('mosaic_bottom_right_4.fits', bottom_right, overwrite=True)
 
   if sysargv7 == '1':
 
