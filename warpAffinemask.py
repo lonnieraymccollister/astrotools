@@ -1,7 +1,7 @@
 # import required libraries
 import fnmatch
 from PIL import Image
-import cv2, sys, os, shutil, ffmpeg
+import cv2, sys, os, shutil, ffmpeg, tifffile
 import numpy as np
 import matplotlib
 from numpy import genfromtxt
@@ -85,11 +85,9 @@ def resize():
   sysargv2  = input("Enter the scale(num)(1,2,3, or 4)   -->")
   sysargv2a = input("Enter the scale(denom)(1,2,3, or 4)   -->")
   sysargv3  = input("Enter the filename of the resized image to be saved(16bit uses .tif)  -->")    
-  image = cv2.imread(sysargv1, -1)      
-  img = cv2.resize(image,None,fx=int(sysargv2) / int(sysargv2a),fy=int(sysargv2) / int(sysargv2a),interpolation=cv2.INTER_CUBIC)
-  cv2.imwrite("INTER_CUBIC" + sysargv3, img)
+  image = tifffile.imread(sysargv1)      
   img = cv2.resize(image,None,fx=int(sysargv2) / int(sysargv2a),fy=int(sysargv2) / int(sysargv2a),interpolation=cv2.INTER_LANCZOS4)
-  cv2.imwrite("INTER_LANCZOS4" + sysargv3, img)
+  tifffile.imwrite("INTER_LANCZOS4" + sysargv3, img)
   return sysargv1
   menue()
 
@@ -318,24 +316,25 @@ def splittricolor():
     # Function to read FITS file and return data
     def read_fits(file):
         hdul = fits.open(file)
+        header = hdul[0].header
         data = hdul[0].data
         hdul.close()
-        return data
+        return data, header
 
     # Read the FITS files
     file1 = sysargv2
 
     # Read the image data from the FITS file
-    image_data = read_fits(file1)
+    image_data, header = read_fits(file1)
 
     # Split the color image into its individual channels
     #b, g, r = cv2.split(image_data)
     b, g, r = np.split(image_data, image_data.shape[0], axis=0)
 
     # Save each channel as a separate file
-    fits.writeto(f'channel_0_64bit.fits', b, overwrite=True)
-    fits.writeto(f'channel_1_64bit.fits', g, overwrite=True)
-    fits.writeto(f'channel_2_64bit.fits', r, overwrite=True)
+    fits.writeto(f'channel_0_64bit.fits', b, header, overwrite=True)
+    fits.writeto(f'channel_1_64bit.fits', g, header, overwrite=True)
+    fits.writeto(f'channel_2_64bit.fits', r, header, overwrite=True)
 
   if sysargv7 == '1':
 
@@ -362,10 +361,16 @@ def combinetricolor():
   sysargv7  = input("Enter 0 for fits or 1 for other file -->")
 
   if sysargv7 == '0':
+ 
 
+    with fits.open(sysargv1) as old_hdul:
+        # Access the header of the primary HDU
+      old_header = old_hdul[0].header
+      old_data = old_hdul[0].data
+    
     # Function to read FITS file and return data
     def read_fits(file):
-      with fits.open(file) as hdul:#
+      with fits.open(file, mode='update') as hdul:#
         data = hdul[0].data
         # hdul.close()
       return data
@@ -392,7 +397,7 @@ def combinetricolor():
     RGB_Image = np.squeeze(RGB_Image1)
 
     # Create a FITS header with NAXIS = 3
-    header = fits.Header()
+    header = old_header
     header['NAXIS'] = 3
     header['NAXIS1'] = RGB_Image.shape[2]
     header['NAXIS2'] = RGB_Image.shape[1]
@@ -417,7 +422,6 @@ def combinetricolor():
     # Verify the saved RGB image
     verified_image = verify_fits(sysargv4)
     print("Verified image shape:", verified_image.shape)
-
 
   if sysargv7 == '1':
 
