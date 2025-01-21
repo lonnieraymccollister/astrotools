@@ -594,6 +594,7 @@ def DynamicRescale16():
   # Open the FITS file
   with fits.open(fits_image_filename) as hdul:
       # Access the primary HDU (extension 0)
+      header = hdul[0].header
       image_data = hdul[0].data
   # Now 'image_data' contains the data from the FITS file as a 2D numpy array
   hdul.close()
@@ -646,7 +647,7 @@ def DynamicRescale16():
       # Sum pixel values within the bin
       binned_image[y, x] = np.sum(img_array[y*bin_factor:(y+1)*bin_factor, x*bin_factor:(x+1)*bin_factor])
 
-  hdu = fits.PrimaryHDU(binned_image)
+  hdu = fits.PrimaryHDU(binned_image, header)
   # Create an HDU list and add the primary HDU
   hdulist = fits.HDUList([hdu])
   # Specify the output FITS file path
@@ -673,6 +674,7 @@ def DynamicRescale16RGB():
   # Open the FITS file
   with fits.open(fits_image_filename) as hdul:
       # Access the primary HDU (extension 0)
+      header = hdul[0].header
       image_data = hdul[0].data
   # Now 'image_data' contains the data from the FITS file as a 2D numpy array
   hdul.close()
@@ -725,7 +727,7 @@ def DynamicRescale16RGB():
       # Sum pixel values within the bin
       binned_image[y, x] = np.sum(img_array[y*bin_factor:(y+1)*bin_factor, x*bin_factor:(x+1)*bin_factor])
 
-  hdu = fits.PrimaryHDU(binned_image)
+  hdu = fits.PrimaryHDU(binned_image, header)
   # Create an HDU list and add the primary HDU
   hdulist = fits.HDUList([hdu])
   # Specify the output FITS file path
@@ -740,6 +742,7 @@ def DynamicRescale16RGB():
   # Open the FITS file
   with fits.open(fits_image_filename) as hdul:
       # Access the primary HDU (extension 0)
+      header = hdul[0].header
       image_data = hdul[0].data
   # Now 'image_data' contains the data from the FITS file as a 2D numpy array
   hdul.close()
@@ -792,7 +795,7 @@ def DynamicRescale16RGB():
       # Sum pixel values within the bin
       binned_image[y, x] = np.sum(img_array[y*bin_factor:(y+1)*bin_factor, x*bin_factor:(x+1)*bin_factor])
 
-  hdu = fits.PrimaryHDU(binned_image)
+  hdu = fits.PrimaryHDU(binned_image, header)
   # Create an HDU list and add the primary HDU
   hdulist = fits.HDUList([hdu])
   # Specify the output FITS file path
@@ -807,6 +810,7 @@ def DynamicRescale16RGB():
   # Open the FITS file
   with fits.open(fits_image_filename) as hdul:
       # Access the primary HDU (extension 0)
+      header = hdul[0].header
       image_data = hdul[0].data
   # Now 'image_data' contains the data from the FITS file as a 2D numpy array
   hdul.close()
@@ -859,7 +863,7 @@ def DynamicRescale16RGB():
       # Sum pixel values within the bin
       binned_image[y, x] = np.sum(img_array[y*bin_factor:(y+1)*bin_factor, x*bin_factor:(x+1)*bin_factor])
 
-  hdu = fits.PrimaryHDU(binned_image)
+  hdu = fits.PrimaryHDU(binned_image, header)
   # Create an HDU list and add the primary HDU
   hdulist = fits.HDUList([hdu])
   # Specify the output FITS file path
