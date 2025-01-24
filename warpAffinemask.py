@@ -458,46 +458,132 @@ def align2img():
   sysargv1  = input("Enter the reference image -->")
   sysargv2  = input("Enter the image to be aligned -->")
   sysargv3  = input("Enter the aligned image file name -->")
-  img1 = cv2.imread( sysargv2, -1 )
-  img2 = cv2.imread( sysargv1, -1 )
 
-  # Convert the images to grayscale
-  gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-  gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+  if sysargv7 == '0':
 
-  # Find the keypoints and descriptors with SIFT
-  sift = cv2.SIFT_create()
-  kp1, des1 = sift.detectAndCompute(gray1, None)
-  kp2, des2 = sift.detectAndCompute(gray2, None)
+    # Function to read FITS file and return data
+    # Read the FITS file
+    hdulist = fits.open(sysargv1)
+    header = hdulist[0].header
+    image_data = hdulist[0].data
+    hdulist.close()
 
-  # Match the descriptors
-  bf = cv2.BFMatcher()
-  matches = bf.knnMatch(des1, des2, k=2)
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
 
-  # Apply ratio test
-  good = []
-  for m, n in matches:
-      if m.distance < 0.75 * n.distance:
-          good.append(m)
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
 
-  # Get the coordinates of the matched keypoints
-  src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-  dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+    img1 = image_bgr
 
-  # Calculate the homography matrix
-  H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+    # Function to read FITS file and return data
+    # Read the FITS file
+    hdulist = fits.open(sysargv1)
+    header = hdulist[0].header
+    image_data = hdulist[0].data
+    hdulist.close()
 
-  # Warp the first image to align with the second image
-  aligned_img = cv2.warpPerspective(img1, H, (img2.shape[1], img2.shape[0]))
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
 
-  # Display the aligned image
-  cv2.imshow('Aligned Image', aligned_img)
-  cv2.waitKey(0)
-  cv2.destroyAllWindows()
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
 
-  cv2.imwrite( sysargv3, aligned_img)
-  return sysargv1
-  menue()
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+    img2 = image_bgr
+
+    # Convert the images to grayscale
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+
+    # Find the keypoints and descriptors with SIFT
+    sift = cv2.SIFT_create()
+    kp1, des1 = sift.detectAndCompute(gray1, None)
+    kp2, des2 = sift.detectAndCompute(gray2, None)
+
+    # Match the descriptors
+    bf = cv2.BFMatcher()
+    matches = bf.knnMatch(des1, des2, k=2)
+
+    # Apply ratio test
+    good = []
+    for m, n in matches:
+        if m.distance < 0.75 * n.distance:
+            good.append(m)
+
+    # Get the coordinates of the matched keypoints
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+
+    # Calculate the homography matrix
+    H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+
+    # Warp the first image to align with the second image
+    aligned_img = cv2.warpPerspective(img1, H, (img2.shape[1], img2.shape[0]))
+
+    # Display the aligned image
+    cv2.imshow('Aligned Image', aligned_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    # Save or display the result
+    image_rgb = np.transpose(aligned_img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv3,  overwrite=True)
+
+  if sysargv7 == '1':
+
+    img1 = cv2.imread( sysargv2, -1 )
+    img2 = cv2.imread( sysargv1, -1 )
+
+    # Convert the images to grayscale
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+
+    # Find the keypoints and descriptors with SIFT
+    sift = cv2.SIFT_create()
+    kp1, des1 = sift.detectAndCompute(gray1, None)
+    kp2, des2 = sift.detectAndCompute(gray2, None)
+
+    # Match the descriptors
+    bf = cv2.BFMatcher()
+    matches = bf.knnMatch(des1, des2, k=2)
+
+    # Apply ratio test
+    good = []
+    for m, n in matches:
+        if m.distance < 0.75 * n.distance:
+            good.append(m)
+
+    # Get the coordinates of the matched keypoints
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+
+    # Calculate the homography matrix
+    H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+
+    # Warp the first image to align with the second image
+    aligned_img = cv2.warpPerspective(img1, H, (img2.shape[1], img2.shape[0]))
+
+    # Display the aligned image
+    cv2.imshow('Aligned Image', aligned_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    cv2.imwrite( sysargv3, aligned_img)
+    return sysargv1
+    menue()
 
 def plotto3d16(sysargv2):
   img = sysargv2
@@ -1650,9 +1736,9 @@ def imgqtr():
 
     # Crop the image into four quarters for each channel
     top_left = data1[:, :quarter_height, :quarter_width]
-    fits.writeto('mosaic_top_left_1.fits', top_left, header, overwrite=True)
+    fits.writeto('mosaic_top_left_1.fits', top_left, overwrite=True)
     top_right = data1[:, :quarter_height, quarter_width:]
-    fits.writeto('mosaic_top_right_2.fits', top_right, header, overwrite=True)
+    fits.writeto('mosaic_top_right_2.fits', top_right, overwrite=True)
 
     # Get the dimensions of the image
     channels, height, width = data1.shape
@@ -1663,9 +1749,9 @@ def imgqtr():
 
     # Crop the image into four quarters for each channel
     bottom_left = data1[:, quarter_height:, :quarter_width]
-    fits.writeto('mosaic_bottom_left_3.fits', bottom_left, header, overwrite=True)
+    fits.writeto('mosaic_bottom_left_3.fits', bottom_left, overwrite=True)
     bottom_right = data1[:, quarter_height:, quarter_width:]
-    fits.writeto('mosaic_bottom_right_4.fits', bottom_right, header, overwrite=True)
+    fits.writeto('mosaic_bottom_right_4.fits', bottom_right, overwrite=True)
 
   if sysargv7 == '1':
 
