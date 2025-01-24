@@ -1400,14 +1400,62 @@ def clahe():
   sysargv3  = input("Enter clip limit (3) -->")
   sysargv4  = input("Enter tile Grid Size (8) -->")
   sysargv5  = input("Enter output filename -->")
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
 
-  colorimage = cv2.imread(sysargv2, -1) 
-  clahe_model = cv2.createCLAHE(clipLimit=int(sysargv3), tileGridSize=(int(sysargv4),int(sysargv4)))
-  colorimage_b = clahe_model.apply(colorimage[:,:,0])
-  colorimage_g = clahe_model.apply(colorimage[:,:,1])
-  colorimage_r = clahe_model.apply(colorimage[:,:,2])
-  colorimage_clahe = np.stack((colorimage_b,colorimage_g,colorimage_r), axis=2)
-  cv2.imwrite(sysargv5, colorimage_clahe)
+  if sysargv7 == '0':
+
+    # Function to read FITS file and return data
+    # Read the FITS file
+    hdulist = fits.open(sysargv2)
+    header = hdulist[0].header
+    image_data = hdulist[0].data
+    hdulist.close()
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    # Apply CLAHE to each channel
+    clahe = cv2.createCLAHE(clipLimit=int(sysargv3), tileGridSize=(int(sysargv4), int(sysargv4)))
+    channels = cv2.split(image_bgr)
+    clahe_channels = [clahe.apply(channel) for channel in channels]
+    clahe_image = cv2.merge(clahe_channels)
+    
+    cv2.imshow('CLAHE Image', clahe_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    # Save or display the result
+    image_rgb = np.transpose(clahe_image, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv5,  overwrite=True)
+    
+    # Save or display the result
+    #cv2.imshow('CLAHE Image', clahe_image)
+    #cv2.waitKey(0)
+    #cv2.destroyAllWindows()
+
+
+  if sysargv7 == '1':
+
+    colorimage = cv2.imread(sysargv2, -1) 
+    clahe_model = cv2.createCLAHE(clipLimit=int(sysargv3), tileGridSize=(int(sysargv4),int(sysargv4)))
+    colorimage_b = clahe_model.apply(colorimage[:,:,0])
+    colorimage_g = clahe_model.apply(colorimage[:,:,1])
+    colorimage_r = clahe_model.apply(colorimage[:,:,2])
+    colorimage_clahe = np.stack((colorimage_b,colorimage_g,colorimage_r), axis=2)
+    cv2.imwrite(sysargv5, colorimage_clahe)
   
   return sysargv1
   menue()
@@ -1584,6 +1632,7 @@ def imgqtr():
     def read_fits(file1):
       with fits.open(file1) as hdul:
         data = hdul[0].data
+        header = hdul[0].header
         hdul.close()
         return data
 
@@ -1601,9 +1650,9 @@ def imgqtr():
 
     # Crop the image into four quarters for each channel
     top_left = data1[:, :quarter_height, :quarter_width]
-    fits.writeto('mosaic_top_left_1.fits', top_left, overwrite=True)
+    fits.writeto('mosaic_top_left_1.fits', top_left, header, overwrite=True)
     top_right = data1[:, :quarter_height, quarter_width:]
-    fits.writeto('mosaic_top_right_2.fits', top_right, overwrite=True)
+    fits.writeto('mosaic_top_right_2.fits', top_right, header, overwrite=True)
 
     # Get the dimensions of the image
     channels, height, width = data1.shape
@@ -1614,9 +1663,9 @@ def imgqtr():
 
     # Crop the image into four quarters for each channel
     bottom_left = data1[:, quarter_height:, :quarter_width]
-    fits.writeto('mosaic_bottom_left_3.fits', bottom_left, overwrite=True)
+    fits.writeto('mosaic_bottom_left_3.fits', bottom_left, header, overwrite=True)
     bottom_right = data1[:, quarter_height:, quarter_width:]
-    fits.writeto('mosaic_bottom_right_4.fits', bottom_right, overwrite=True)
+    fits.writeto('mosaic_bottom_right_4.fits', bottom_right, header, overwrite=True)
 
   if sysargv7 == '1':
 
@@ -1880,3 +1929,4 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
     cv2.destroyAllWindows()
     im = Image.fromarray(dst, "RGB")
     im.save(sysargv2a)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
