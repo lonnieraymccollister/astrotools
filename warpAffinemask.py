@@ -1779,9 +1779,39 @@ def imgqtr():
   return sysargv1
   menue()
 
+def CpyOldHdr():
+
+  sysargv2  = input("Enter file name of image with correct old fitsheader  -->")
+  sysargv3  = input("Enter file name of image with correct image  -->")
+  sysargv4  = input("Enter new file name to be updated with old header new image -->")
+
+  with fits.open(sysargv2) as old_hdul:
+      # Access the header of the primary HDU
+    old_header = old_hdul[0].header
+    old_data = old_hdul[0].data
+ 
+  file = sysargv3
+   
+  # Function to read FITS file and return data
+  def read_fits(file):
+    with fits.open(file, mode='update') as hdul:#
+      data = hdul[0].data
+      # hdul.close()
+    return data
+
+  new_image_data = read_fits(file)
+
+  fits.writeto( sysargv4, new_image_data, old_header, overwrite=True)
+  # Save the RGB image as a new FITS file with the correct header
+  #hdu = fits.PrimaryHDU(data=new_image_data, header=old_header)
+  #hdu.writeto(sysargv3, overwrite=True)
+
+  return sysargv1
+  menue()
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< ImgQtr \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< Add2images(tif) >>34<< subtract2images(tif) >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< ImgQtr >>43<< CpyOldHdr \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -1933,6 +1963,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '42':
     imgqtr()
+
+  if sysargv1 == '43':
+    CpyOldHdr()
 
   if sysargv1 == '1313':
     sys.exit()
