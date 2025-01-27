@@ -670,11 +670,12 @@ def unsharpMask():
 def DynamicRescale16():
   sysargv1  = input("Enter the grayscale image(fits Siril)  -->")
   sysargv2  = input("Enter the the width of square(5)  -->")
-  sysargv4  = input("Enter the image width in pixels(1000)  -->")
-  sysargv3  = input("Enter the image height in pixels(1000)  -->")
+  #sysargv4  = input("Enter the image width in pixels(1000)  -->")
+  #sysargv3  = input("Enter the image height in pixels(1000)  -->")
   sysargv5  = input("Enter the final image name progrm will output a .fit file   -->") 
   sysargv6  = input("Enter the bin value   -->") 
   gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
+
   # Replace 'your_fits_file.fits' with the actual path to your FITS file
   fits_image_filename = sysargv1
   # Open the FITS file
@@ -687,6 +688,10 @@ def DynamicRescale16():
 
   print(image_data.shape)
   print(image_data.dtype.name)
+  height, width = image_data.shape
+  sysargv4 = str(width)
+  sysargv3 = str(height)
+
 
   my_data = (image_data * 65535)
   img = (image_data * 65535)
@@ -749,11 +754,13 @@ def DynamicRescale16RGB():
   sysargv1a  = input("Enter the G image(fits Siril)  -->")
   sysargv1b  = input("Enter the R image(fits Siril)  -->")
   sysargv2  = input("Enter the the width of square(5)  -->")
-  sysargv4  = input("Enter the image width in pixels(1000)  -->")
-  sysargv3  = input("Enter the image height in pixels(1000)  -->")
+  #sysargv4  = input("Enter the image width in pixels(1000)  -->")
+  #sysargv3  = input("Enter the image height in pixels(1000)  -->")
   sysargv5  = input("Enter the final image name progrm will output a .fit file   -->") 
   sysargv6  = input("Enter the bin value   -->") 
   gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
+
+
 #################################################################################
   # Replace 'your_fits_file.fits' with the actual path to your FITS file
   fits_image_filename = sysargv1
@@ -767,6 +774,9 @@ def DynamicRescale16RGB():
 
   print(image_data.shape)
   print(image_data.dtype.name)
+  height, width = image_data.shape
+  sysargv4 = str(width)
+  sysargv3 = str(height)
 
   my_data = (image_data * 65535)
   img = (image_data * 65535)
@@ -835,6 +845,9 @@ def DynamicRescale16RGB():
 
   print(image_data.shape)
   print(image_data.dtype.name)
+  height, width = image_data.shape
+  sysargv4 = str(width)
+  sysargv3 = str(height)
 
   my_data = (image_data * 65535)
   img = (image_data * 65535)
@@ -903,6 +916,9 @@ def DynamicRescale16RGB():
 
   print(image_data.shape)
   print(image_data.dtype.name)
+  height, width = image_data.shape
+  sysargv4 = str(width)
+  sysargv3 = str(height)
 
   my_data = (image_data * 65535)
   img = (image_data * 65535)
