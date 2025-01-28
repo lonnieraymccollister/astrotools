@@ -81,87 +81,231 @@ def filecount():
   menue()
 
 def resize():
-  sysargv1  = input("Enter the Image to be resized(bicubic)(16bit uses .tif)  -->")
+  sysargv1  = input("Enter the Image to be resized(bicubic)(16bit uses .tif/.fit)  -->")
   sysargv2  = input("Enter the scale(num)(1,2,3, or 4)   -->")
   sysargv2a = input("Enter the scale(denom)(1,2,3, or 4)   -->")
-  sysargv3  = input("Enter the filename of the resized image to be saved(16bit uses .tif)  -->")    
-  image = tifffile.imread(sysargv1)      
-  img = cv2.resize(image,None,fx=int(sysargv2) / int(sysargv2a),fy=int(sysargv2) / int(sysargv2a),interpolation=cv2.INTER_LANCZOS4)
-  tifffile.imwrite("INTER_LANCZOS4" + sysargv3, img)
+  sysargv3  = input("Enter the filename of the resized image to be saved(16bit uses .tif/.fit)  -->")    
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
+
+  if sysargv7 == '0':
+
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
+
+    # Read the FITS files
+    file1 = sysargv1
+
+    # Read the image data from the FITS file
+    image_data, header = read_fits(file1)
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    img = cv2.resize(image_bgr,None,fx=int(sysargv2) / int(sysargv2a),fy=int(sysargv2) / int(sysargv2a),interpolation=cv2.INTER_LANCZOS4)
+
+    # Save or display the result
+    image_rgb = np.transpose(img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv3,  overwrite=True)
+ 
+  if sysargv7 == '1':
+
+    image = tifffile.imread(sysargv1)      
+    img = cv2.resize(image,None,fx=int(sysargv2) / int(sysargv2a),fy=int(sysargv2) / int(sysargv2a),interpolation=cv2.INTER_LANCZOS4)
+    tifffile.imwrite("INTER_LANCZOS4" + sysargv3, img)
   return sysargv1
   menue()
 
 def add2imagesx():
-  sysargv1  = input("Enter the first masked Image  -->")
-  sysargv3  = input("Enter the second masked Image  -->")
+  sysargv1  = input("Enter the first Image  -->")
+  sysargv3  = input("Enter the second Image  -->")
   sysargv4  = input("Enter the filename of the added images to save  -->")
   sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
   sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
   sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
 
-  image2 = cv2.imread(sysargv1, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)
-  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+  sysargv8  = input("Enter 0 for fits or 1 for other file -->")
 
-  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
-  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
-  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+  if sysargv8 == '0':
 
-  mask2 = cv2.imread(sysargv3, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)  
-  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
 
-  # Apply the mask to the image 
-  masked_image = cv2.add(image, mask)
-  cv2.imwrite(sysargv4, masked_image)
-  return sysargv1
-  menue()
+    # Read the FITS files
+    file1 = sysargv1
+
+    # Read the image data from the FITS file
+    image_data, header = read_fits(file1)
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image 
+    masked_image = cv2.add(image, mask)
+
+    # Save or display the result
+    image_rgb = np.transpose(img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv4,  overwrite=True)
+ 
+  if sysargv8 == '1':
+
+    image2 = cv2.imread(sysargv1, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)
+    image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+    sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+    sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+    sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+    mask2 = cv2.imread(sysargv3, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image 
+    masked_image = cv2.add(image, mask)
+    cv2.imwrite(sysargv4, masked_image)
+    return sysargv1
+    menue()
 
 def subtract2imagesx():
-  sysargv1  = input("Enter the first masked Image  -->")
-  sysargv3  = input("Enter the second masked Image  -->")
-  sysargv4  = input("Enter the filename of the added images to save  -->")
+  sysargv1  = input("Enter the first Image  -->")
+  sysargv3  = input("Enter the second Image  -->")
+  sysargv4  = input("Enter the filename of the subtracted image to save  -->")
   sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
   sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
   sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
 
-  image2 = cv2.imread(sysargv1, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)
-  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+  sysargv8  = input("Enter 0 for fits or 1 for other file -->")
 
-  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
-  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
-  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+  if sysargv8 == '0':
 
-  mask2 = cv2.imread(sysargv3, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)  
-  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
 
-  # Apply the mask to the image
-  masked_image = cv2.subtract(image, mask)
-  cv2.imwrite(sysargv4, masked_image)
-  return sysargv1
-  menue()
+    # Read the FITS files
+    file1 = sysargv1
+
+    # Read the image data from the FITS file
+    image_data, header = read_fits(file1)
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image 
+    masked_image = cv2.subtract(image, mask)
+
+    # Save or display the result
+    image_rgb = np.transpose(img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv4,  overwrite=True)
+ 
+  if sysargv8 == '1':
+
+    image2 = cv2.imread(sysargv1, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)
+    image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+    sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+    sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+    sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+    mask2 = cv2.imread(sysargv3, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image
+    masked_image = cv2.subtract(image, mask)
+    cv2.imwrite(sysargv4, masked_image)
+    return sysargv1
+    menue()
 
 def multiply2images():
   sysargv1  = input("Enter the first masked Image  -->")
@@ -171,33 +315,84 @@ def multiply2images():
   sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
   sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
 
-  image2 = cv2.imread(sysargv1, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)
-  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+  sysargv8  = input("Enter 0 for fits or 1 for other file -->")
 
-  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
-  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
-  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+  if sysargv8 == '0':
 
-  mask2 = cv2.imread(sysargv3, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)  
-  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
 
-  # Apply the mask to the image
-  masked_image = cv2.multiply(image, mask)
-  cv2.imwrite(sysargv4, masked_image)
-  return sysargv1
-  menue()
+    # Read the FITS files
+    file1 = sysargv1
+
+    # Read the image data from the FITS file
+    image_data, header = read_fits(file1)
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image 
+    masked_image = cv2.multiply(image, mask)
+
+    # Save or display the result
+    image_rgb = np.transpose(img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv4,  overwrite=True)
+ 
+  if sysargv8 == '1':
+
+    image2 = cv2.imread(sysargv1, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)
+    image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+    sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+    sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+    sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+    mask2 = cv2.imread(sysargv3, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image
+    masked_image = cv2.multiply(image, mask)
+    cv2.imwrite(sysargv4, masked_image)
+    return sysargv1
+    menue()
 
 def divide2images():
   sysargv1  = input("Enter the first masked Image  -->")
@@ -207,33 +402,84 @@ def divide2images():
   sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
   sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
 
-  image2 = cv2.imread(sysargv1, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)
-  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+  sysargv8  = input("Enter 0 for fits or 1 for other file -->")
 
-  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
-  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
-  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+  if sysargv8 == '0':
 
-  mask2 = cv2.imread(sysargv3, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)  
-  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
 
-  # Apply the mask to the image
-  masked_image = cv2.divide(image, mask)
-  cv2.imwrite(sysargv4, masked_image)
-  return sysargv1
-  menue()
+    # Read the FITS files
+    file1 = sysargv1
+
+    # Read the image data from the FITS file
+    image_data, header = read_fits(file1)
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image 
+    masked_image = cv2.divide(image, mask)
+
+    # Save or display the result
+    image_rgb = np.transpose(img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv4,  overwrite=True)
+ 
+  if sysargv8 == '1':
+
+    image2 = cv2.imread(sysargv1, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)
+    image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+    sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+    sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+    sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+    mask2 = cv2.imread(sysargv3, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image
+    masked_image = cv2.divide(image, mask)
+    cv2.imwrite(sysargv4, masked_image)
+    return sysargv1
+    menue()
 
 def max2images():
   sysargv1  = input("Enter the first masked Image  -->")
@@ -243,33 +489,84 @@ def max2images():
   sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
   sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
 
-  image2 = cv2.imread(sysargv1, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)
-  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+  sysargv8  = input("Enter 0 for fits or 1 for other file -->")
 
-  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
-  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
-  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+  if sysargv8 == '0':
 
-  mask2 = cv2.imread(sysargv3, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)  
-  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
 
-  # Apply the mask to the image
-  masked_image = cv2.max(image, mask)
-  cv2.imwrite(sysargv4, masked_image)
-  return sysargv1
-  menue()
+    # Read the FITS files
+    file1 = sysargv1
+
+    # Read the image data from the FITS file
+    image_data, header = read_fits(file1)
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image 
+    masked_image = cv2.max(image, mask)
+
+    # Save or display the result
+    image_rgb = np.transpose(img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv4,  overwrite=True)
+ 
+  if sysargv8 == '1':
+
+    image2 = cv2.imread(sysargv1, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)
+    image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+    sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+    sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+    sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+    mask2 = cv2.imread(sysargv3, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image
+    masked_image = cv2.max(image, mask)
+    cv2.imwrite(sysargv4, masked_image)
+    return sysargv1
+    menue()
 
 def min2images():
   sysargv1  = input("Enter the first masked Image  -->")
@@ -279,33 +576,84 @@ def min2images():
   sysargv6  = input("Adjusts the contrast by scaling the pixel values 1st img(numerator example 1)   -->")
   sysargv7  = input("Adjusts the contrast by scaling the pixel values 1st img(denominator example 1)  -->")
 
-  image2 = cv2.imread(sysargv1, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)
-  image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+  sysargv8  = input("Enter 0 for fits or 1 for other file -->")
 
-  sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
-  sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
-  sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+  if sysargv8 == '0':
 
-  mask2 = cv2.imread(sysargv3, -1)
-  # Apply the mask to the image
-  # Adjust the brightness and contrast 
-  # Adjusts the brightness by adding 10 to each pixel value 
-  brightness = int(sysargv5) 
-  # Adjusts the contrast by scaling the pixel values by 2.3 
-  contrast = int(sysargv6) / int(sysargv7)  
-  mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+    # Function to read FITS file and return data
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
 
-  # Apply the mask to the image
-  masked_image = cv2.min(image, mask)
-  cv2.imwrite(sysargv4, masked_image)
-  return sysargv1
-  menue()
+    # Read the FITS files
+    file1 = sysargv1
+
+    # Read the image data from the FITS file
+    image_data, header = read_fits(file1)
+
+    #image_data = np.swapaxes(image_data, 0, 2)
+    #image_data = np.swapaxes(image_data, 0, 1)
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Normalize the image data to the range [0, 65535]
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+    image_data = image_data.astype(np.uint16)
+
+    # Convert the image to BGR format (OpenCV uses BGR by default)
+    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image 
+    masked_image = cv2.min(image, mask)
+
+    # Save or display the result
+    image_rgb = np.transpose(img, (2, 0, 1))
+
+    # Create a FITS HDU
+    hdu = fits.PrimaryHDU(image_rgb, header)
+
+    # Write to FITS file
+    hdu.writeto(sysargv4,  overwrite=True)
+ 
+  if sysargv8 == '1':
+
+    image2 = cv2.imread(sysargv1, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)
+    image = cv2.addWeighted(image2, contrast, np.zeros(image2.shape, image2.dtype), 0, brightness) 
+
+    sysargv5  = input("Adjusts the brightness by adding x to each pixel value example 0   -->")
+    sysargv6  = input("Adjusts the contrast by scaling the pixel values 2nd img(numerator example 1)   -->")
+    sysargv7  = input("Adjusts the contrast by scaling the pixel values 2nd img(denominator example 1)  -->")
+
+    mask2 = cv2.imread(sysargv3, -1)
+    # Apply the mask to the image
+    # Adjust the brightness and contrast 
+    # Adjusts the brightness by adding 10 to each pixel value 
+    brightness = int(sysargv5) 
+    # Adjusts the contrast by scaling the pixel values by 2.3 
+    contrast = int(sysargv6) / int(sysargv7)  
+    mask = cv2.addWeighted(mask2, contrast, np.zeros(mask2.shape, mask2.dtype), 0, brightness) 
+
+    # Apply the mask to the image
+    masked_image = cv2.min(image, mask)
+    cv2.imwrite(sysargv4, masked_image)
+    return sysargv1
+    menue()
 
 def splittricolor():
   sysargv2  = input("Enter the Color Image to be split  -->")
@@ -326,15 +674,17 @@ def splittricolor():
 
     # Read the image data from the FITS file
     image_data, header = read_fits(file1)
+    image_data = image_data.astype(np.float64)
 
     # Split the color image into its individual channels
     #b, g, r = cv2.split(image_data)
     b, g, r = np.split(image_data, image_data.shape[0], axis=0)
 
+
     # Save each channel as a separate file
-    fits.writeto(f'channel_0_64bit.fits', b, header, overwrite=True)
-    fits.writeto(f'channel_1_64bit.fits', g, header, overwrite=True)
-    fits.writeto(f'channel_2_64bit.fits', r, header, overwrite=True)
+    fits.writeto(f'channel_0_64bit.fits', b.astype(np.float64), header, overwrite=True)
+    fits.writeto(f'channel_1_64bit.fits', g.astype(np.float64), header, overwrite=True)
+    fits.writeto(f'channel_2_64bit.fits', r.astype(np.float64), header, overwrite=True)
 
   if sysargv7 == '1':
 
@@ -384,6 +734,10 @@ def combinetricolor():
     blue = read_fits(file1)
     green = read_fits(file2)
     red = read_fits(file3)
+
+    blue = blue.astype(np.float64)
+    green = green.astype(np.float64)
+    red = red.astype(np.float64)
 
     # Check dimensions
     print("Data1 shape:", blue.shape)
@@ -444,13 +798,44 @@ def combinetricolor():
 def createLuminance():
   sysargv1  = input("Enter the Color Image  -->")
   sysargv2  = input("Enter the Luminance image to be created  -->")
-  img = cv2.imread(sysargv1, -1)
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
 
-  # createLuminance not percieved
-  grayscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-  cv2.imwrite(sysargv2, grayscale_img)
-  return sysargv1
-  menue()
+  if sysargv7 == '0':
+
+    # Function to read FITS file and return data
+    hdul = fits.open(sysargv1)
+    
+    # Extract the image data from the first HDU (Primary HDU or Image Data HDU)
+    image_data = hdul[0].data
+    image_data = np.transpose(image_data, (1, 2, 0))
+
+    # Extract RGB channels
+    R = image_data[:, :, 0]
+    G = image_data[:, :, 1]
+    B = image_data[:, :, 2]
+    R = R.astype(np.float64)
+    G = G.astype(np.float64)
+    B = B.astype(np.float64)
+        
+    # Calculate the luminance (grayscale) using the standard formula
+    luminance = 0.2989 * R + 0.5870 * G + 0.1140 * B
+    # Create a new FITS HDU with the luminance data
+    luminance_hdu = fits.PrimaryHDU(luminance)
+        
+    # Create an HDU list (this is just the luminance HDU in this case)
+    hdulist = fits.HDUList([luminance_hdu])
+        
+    # Save the luminance image as a new FITS file
+    hdulist.writeto(sysargv2, overwrite=True)
+
+  if sysargv7 == '1':
+
+    img = cv2.imread(sysargv1, -1)
+    # createLuminance not percieved
+    grayscale_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite(sysargv2, grayscale_img)
+    return sysargv1
+    menue()
 
 def align2img():
 
@@ -660,6 +1045,7 @@ def imgcrop():
 def unsharpMask():
   sysargv1  = input("Enter the Color Image  -->")
   sysargv2  = input("Enter the unsharpMask image to be created  -->")
+
   image = cv2.imread(sysargv1, -1)
   gaussian_3 = cv2.GaussianBlur(image, (0, 0), 2.0)
   unsharp_image = cv2.addWeighted(image, 2.0, gaussian_3, -1.0, 0)
@@ -1725,7 +2111,7 @@ def mosaic():
 
 def imgqtr():
 
-  sysargv2  = input("Enter file name of image(tif) -->")
+  sysargv2  = input("Enter file name of image(.tif/.fit) -->")
   sysargv7  = input("Enter 0 for fits or 1 for other file -->")
 
   if sysargv7 == '0':
