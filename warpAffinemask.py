@@ -12,7 +12,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from astropy.io import fits
 import glob
 from skimage.exposure import match_histograms
-
+from reproject import reproject_interp
+from reproject.mosaicking import find_optimal_celestial_wcs
 
 # function to display the coordinates of 
 # of the points clicked on the image 
@@ -554,92 +555,34 @@ def createLuminance():
 def align2img():
 
   # Load the two images
-  sysargv1  = input("Enter the reference image -->")
-  sysargv2  = input("Enter the image to be aligned -->")
-  sysargv3  = input("Enter the aligned image file name -->")
+  sysargv1  = input("Enter the 1st reference image name(WCS/std) -->")
+  sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
 
   if sysargv7 == '0':
+    
+    sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
+    sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+    with fits.open(sysargv1) as hdul1, fits.open(sysargv2) as hdul2:
+      # Get the data and WCS from the primary HDUs
+      data1 = hdul1[0].data
+      wcs1 = hdul1[0].header
+      data2 = hdul2[0].data
+      wcs2 = hdul2[0].header
 
-    # Function to read FITS file and return data
-    # Read the FITS file
-    hdulist = fits.open(sysargv1)
-    header = hdulist[0].header
-    image_data = hdulist[0].data
-    hdulist.close()
+      # Find the optimal WCS for the reprojected images
+      wcs_out, shape_out = find_optimal_celestial_wcs([hdul1, hdul2])
 
-    #image_data = np.swapaxes(image_data, 0, 2)
-    #image_data = np.swapaxes(image_data, 0, 1)
-    image_data = np.transpose(image_data, (1, 2, 0))
+      # Reproject the images to the new WCS
+      array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+      array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
 
-    # Normalize the image data to the range [0, 65535]
-    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
-    image_data = image_data.astype(np.uint16)
-
-    # Convert the image to BGR format (OpenCV uses BGR by default)
-    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
-    img1 = image_bgr
-
-    # Function to read FITS file and return data
-    # Read the FITS file
-    hdulist = fits.open(sysargv1)
-    header = hdulist[0].header
-    image_data = hdulist[0].data
-    hdulist.close()
-
-    #image_data = np.swapaxes(image_data, 0, 2)
-    #image_data = np.swapaxes(image_data, 0, 1)
-    image_data = np.transpose(image_data, (1, 2, 0))
-
-    # Normalize the image data to the range [0, 65535]
-    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
-    image_data = image_data.astype(np.uint16)
-
-    # Convert the image to BGR format (OpenCV uses BGR by default)
-    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
-    img2 = image_bgr
-
-    # Convert the images to grayscale
-    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-
-    # Find the keypoints and descriptors with SIFT
-    sift = cv2.SIFT_create()
-    kp1, des1 = sift.detectAndCompute(gray1, None)
-    kp2, des2 = sift.detectAndCompute(gray2, None)
-
-    # Match the descriptors
-    bf = cv2.BFMatcher()
-    matches = bf.knnMatch(des1, des2, k=2)
-
-    # Apply ratio test
-    good = []
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
-            good.append(m)
-
-    # Get the coordinates of the matched keypoints
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-
-    # Calculate the homography matrix
-    H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-
-    # Warp the first image to align with the second image
-    aligned_img = cv2.warpPerspective(img1, H, (img2.shape[1], img2.shape[0]))
-
-    # Display the aligned image
-    cv2.imshow('Aligned Image', aligned_img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
-    # Save or display the result
-    image_rgb = np.transpose(aligned_img, (2, 0, 1))
-
-    # Create a FITS HDU
-    hdu = fits.PrimaryHDU(image_rgb, header)
-
-    # Write to FITS file
-    hdu.writeto(sysargv3,  overwrite=True)
+      # Save the reprojected images to new FITS files
+      hdu1 = fits.PrimaryHDU(array1, header=wcs_out.to_header())
+      hdu1.writeto(sysargv3, overwrite=True)
+      hdu2 = fits.PrimaryHDU(array2, header=wcs_out.to_header())
+      hdu2.writeto(sysargv4, overwrite=True)
 
   if sysargv7 == '1':
 
