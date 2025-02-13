@@ -564,25 +564,34 @@ def align2img():
     sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
     sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
     # Open the FITS files
-    with fits.open(sysargv1) as hdul1, fits.open(sysargv2) as hdul2:
-      # Get the data and WCS from the primary HDUs
-      data1 = hdul1[0].data
-      wcs1 = hdul1[0].header
-      data2 = hdul2[0].data
-      wcs2 = hdul2[0].header
 
-      # Find the optimal WCS for the reprojected images
-      wcs_out, shape_out = find_optimal_celestial_wcs([hdul1, hdul2])
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data.astype(np.float64)
+        hdul.close()
+        return data, header
 
-      # Reproject the images to the new WCS
-      array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
-      array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    # Read the FITS files
+    file1 = sysargv1    
+    data1, wcs1 = read_fits(file1)
+    file1 = sysargv3    
+    data2, wcs2 = read_fits(file1)
 
-      # Save the reprojected images to new FITS files
-      hdu1 = fits.PrimaryHDU(array1, header=wcs_out.to_header())
-      hdu1.writeto(sysargv3, overwrite=True)
-      hdu2 = fits.PrimaryHDU(array2, header=wcs_out.to_header())
-      hdu2.writeto(sysargv4, overwrite=True)
+    # Find the optimal WCS for the reprojected images
+    wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2)])
+
+    # Reproject the images to the new WCS
+    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv2, overwrite=True)
+    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4, overwrite=True)
 
   if sysargv7 == '1':
 
@@ -1888,9 +1897,36 @@ def CpyOldHdr():
   return sysargv1
   menue()
 
-def empty1():
+def binimg():
+  
+  sysargv2  = input("Enter file name of input color image fits  -->")
+  sysargv3  = input("Enter file name of binned color image  -->")
+  sysargv4  = input("Enter binning_factor(25) -->")
+  bin_size  = int(sysargv4)
+  with fits.open(sysargv2) as hdul:
+      data = hdul[0].data
+        
+      # Check if the image is color (3D array)
+      if data.ndim == 3:
+        binned_data = np.zeros((data.shape[0], data.shape[1] // bin_size, data.shape[2] // bin_size), dtype=data.dtype)
+        for i in range(data.shape[0]):  # Iterate through color channels
+          for y in range(0, data.shape[1], bin_size):
+            for x in range(0, data.shape[2], bin_size):
+              binned_data[i, y // bin_size, x // bin_size] = np.mean(data[i, y:y + bin_size, x:x + bin_size])
+      else:
+      # Handle grayscale or other formats if needed
+        raise ValueError("Only color images are supported. The image must be a 3D array.")
+
+      # Create a new HDU with the binned data
+      hdu = fits.PrimaryHDU(binned_data)
+      # Copy header from original
+      hdu.header = hdul[0].header.copy()
+      # Save the binned image to a new FITS file
+      hdu.writeto(sysargv3, overwrite=True) 
+
+  return sysargv1
   menue()
-  return
+
 
 def empty2():
   menue()
@@ -1898,7 +1934,7 @@ def empty2():
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< empty >>43<< empty \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< empty \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -2049,7 +2085,7 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
     mosaic()
 
   if sysargv1 == '42':
-    empty1()
+    binimg()
 
   if sysargv1 == '43':
     empty2()
