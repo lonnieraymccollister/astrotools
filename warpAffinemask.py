@@ -64,12 +64,41 @@ def mask():
 
 def maskinvert():
   sysargv1  = input("Enter the mask Image  -->")
-  #sysargv2  = input("Enter the Image2  -->")
   sysargv3  = input("Enter the output invert Mask -->")
-  image = cv2.imread(sysargv1, -1)
+
+  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
+
+  if sysargv7 == '0':
+
+    # Function to read FITS file and return data
+    with fits.open(sysargv1) as hdul:
+        data = hdul[0].data.astype(np.float64)
+        data_range = np.max(data) - np.min(data)
+        if data_range == 0:
+          normalized_data = np.zeros_like(data)  # or handle differently
+        else:
+          normalized_data = (data - np.min(data)) / data_range
+
+        #Invert the data
+        inverted_data = 1 - normalized_data
+
+        #Create a new HDU with the inverted data
+        hdu = fits.PrimaryHDU(inverted_data)
+
+        #Copy the header from the original HDU
+        hdu.header = hdul[0].header
+
+        #Create a new HDU list and save it to a new FITS file
+        new_hdul = fits.HDUList([hdu])
+        new_hdul.writeto(sysargv3, overwrite=True)
+
+    print("Inverted FITS file saved successfully!")
+
+  if sysargv7 == '1':
+    image = cv2.imread(sysargv1, -1)
     # Apply the inverted mask to the image
-  masked_image = cv2.bitwise_not(image)
-  cv2.imwrite(sysargv3, masked_image)
+    masked_image = cv2.bitwise_not(image)
+    cv2.imwrite(sysargv3, masked_image)
   return sysargv1
   menue()
 
@@ -1593,10 +1622,6 @@ def clahe():
     channels = cv2.split(image_bgr)
     clahe_channels = [clahe.apply(channel) for channel in channels]
     clahe_image = cv2.merge(clahe_channels)
-    
-    cv2.imshow('CLAHE Image', clahe_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
     # Save or display the result
     image_rgb = np.transpose(clahe_image, (2, 0, 1))
