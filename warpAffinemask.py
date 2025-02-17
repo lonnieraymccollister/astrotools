@@ -1953,13 +1953,46 @@ def binimg():
   menue()
 
 
-def empty2():
+def autostr():
+
+  sysargv3  = input("Enter file name of input grey image to auto_str  -->")
+  sysargv4  = input("Enter file name of output grey image -->")
+
+  # Load the FITS file
+  with fits.open(sysargv3) as hdul:
+    image = hdul[0].data.astype(np.float64)
+  # Calculate the percentiles
+  percentiles=(1, 99)  
+  vmin, vmax = np.percentile(image, percentiles)
+    
+  # Perform the stretch
+  stretched_image = np.clip((image - vmin) / (vmax - vmin), 0, 1)
+
+  # Save the stretched image to a new FITS file
+  hdu = fits.PrimaryHDU(stretched_image, header=hdul[0].header)
+  hdu.writeto(sysargv4, overwrite=True)
+
+  # Display the original and stretched images
+  plt.figure(figsize=(12, 6))
+  plt.subplot(1, 2, 1)
+  plt.imshow(image, cmap='gray')
+  plt.title('Original Image')
+  plt.axis('off')
+
+  plt.subplot(1, 2, 2)
+  plt.imshow(stretched_image, cmap='gray')
+  plt.title('Auto Stretched Image')
+  plt.axis('off')
+
+  plt.show()
+
+  return sysargv1
   menue()
-  return
+
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< empty \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -2113,7 +2146,7 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
     binimg()
 
   if sysargv1 == '43':
-    empty2()
+    autostr()
 
   if sysargv1 == '1313':
     sys.exit()
