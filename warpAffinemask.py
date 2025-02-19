@@ -1957,19 +1957,33 @@ def autostr():
 
   sysargv3  = input("Enter file name of input grey image to auto_str  -->")
   sysargv4  = input("Enter file name of output grey image -->")
+  sysargv5  = input("Enter numerator of lower clip to auto_str(1)  -->")
+  sysargv6  = input("Enter denominator lower clip to auto_str(100) -->")
+  sysargv7  = input("Enter numerator of upper clip to auto_str(1)  -->")
+  sysargv8  = input("Enter denominator upper clip to auto_str(100) -->")
+
+
 
   # Load the FITS file
   with fits.open(sysargv3) as hdul:
     image = hdul[0].data.astype(np.float64)
   # Calculate the percentiles
-  percentiles=(1, 99)  
+  percentiles=((0 + (int(sysargv5)/int(sysargv6))), (100 - (int(sysargv7)/int(sysargv8))))  
   vmin, vmax = np.percentile(image, percentiles)
     
   # Perform the stretch
   stretched_image = np.clip((image - vmin) / (vmax - vmin), 0, 1)
+  # normalize image
+  image_data = stretched_image
+  data_range = np.max(image_data) - np.min(image_data)
+  if data_range == 0:
+    normalized_data = np.zeros_like(image_data)  # or handle differently
+  else:
+    normalized_data = (image_data - np.min(image_data)) / data_range
+
 
   # Save the stretched image to a new FITS file
-  hdu = fits.PrimaryHDU(stretched_image, header=hdul[0].header)
+  hdu = fits.PrimaryHDU(normalized_data, header=hdul[0].header)
   hdu.writeto(sysargv4, overwrite=True)
 
   # Display the original and stretched images
