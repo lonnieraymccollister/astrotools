@@ -1957,10 +1957,10 @@ def autostr():
 
   sysargv3  = input("Enter file name of input grey image to auto_str  -->")
   sysargv4  = input("Enter file name of output grey image -->")
-  sysargv5  = input("Enter numerator of lower clip to auto_str(1)  -->")
-  sysargv6  = input("Enter denominator lower clip to auto_str(100) -->")
-  sysargv7  = input("Enter numerator of upper clip to auto_str(1)  -->")
-  sysargv8  = input("Enter denominator upper clip to auto_str(100) -->")
+  sysargv5  = input("Enter numerator of lower clip to auto_str(5)  -->")
+  sysargv6  = input("Enter denominator lower clip to auto_str(1000) -->")
+  sysargv7  = input("Enter numerator of upper clip to auto_str(5)  -->")
+  sysargv8  = input("Enter denominator upper clip to auto_str(1000) -->")
 
 
 
