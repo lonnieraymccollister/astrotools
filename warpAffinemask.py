@@ -1074,98 +1074,75 @@ def gaussian():
   menue()
 
 def FFT():
-  #From Python for Microscopists-Bhattiprolu, S. (2023). python_for_microscopists. GitHub. https://github.com/bnsreenu/python_for_microscopists/blob/master/330_Detectron2_Instance_3D_EM_Platelet.ipynb
-  sysargv1  = input("Enter the Greyscale Image  -->")
-  sysargv2  = input("Enter the FFT HP image to be created  -->")
-  img = cv2.imread(sysargv1, 0) # load an image
+  sysargv2  = input("Enter the Greyscale Image  -->")
+  sysargv3  = input("Enter the FFT HP image to be created  -->")
+  sysargv4  = input("Enter the cutoff(25)(NUM)  -->")
+  sysargv5  = input("Enter the weight(50)(NUM)   -->")
+  sysargv6  = input("Enter the Denominator(100)  -->")
+  sysargv7  = input("Enter the radius(1))  -->")
+  sysargv8  = input("Enter the cutoff(10))  -->")
 
-  #Output is a 2D complex array. 1st channel real and 2nd imaginary
-  #For fft in opencv input image needs to be converted to float32
-  dft = cv2.dft(np.float32(img), flags=cv2.DFT_COMPLEX_OUTPUT)
+  #copilot output
+  def high_pass_filter(image, cutoff=(int(sysargv4)/int(sysargv6)), weight=(int(sysargv5)/int(sysargv6))):
+      # Perform FFT
+      fft = np.fft.fft2(image)
+      fft_shift = np.fft.fftshift(fft)
 
-  #Rearranges a Fourier transform X by shifting the zero-frequency 
-  #component to the center of the array.
-  #Otherwise it starts at the tope left corenr of the image (array)
-  dft_shift = np.fft.fftshift(dft)
+      # Create a high-pass filter mask
+      rows, cols = image.shape
+      crow, ccol = rows // 2, cols // 2
+      mask = np.ones((rows, cols), np.float32)
+      r = int(cutoff * min(rows, cols))
+      center = (crow, ccol)
+      mask[center[0]-r:center[0]+r, center[1]-r:center[1]+r] = 0
 
-  ##Magnitude of the function is 20.log(abs(f))
-  #For values that are 0 we may end up with indeterminate values for log. 
-  #So we can add 1 to the array to avoid seeing a warning. 
-  magnitude_spectrum = 20 * np.log(cv2.magnitude(dft_shift[:, :, 0], dft_shift[:, :, 1]))
-
-
-  # Circular HPF mask, center circle is 0, remaining all ones
-  #Can be used for edge detection because low frequencies at center are blocked
-  #and only high frequencies are allowed. Edges are high frequency components.
-  #Amplifies noise.
-
-  rows, cols = img.shape
-  crow, ccol = int(rows / 2), int(cols / 2)
-
-  mask = np.ones((rows, cols, 2), np.uint8)
-  r = 80
-  center = [crow, ccol]
-  x, y = np.ogrid[:rows, :cols]
-  mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
-  mask[mask_area] = 0
-
-
-  # Circular LPF mask, center circle is 1, remaining all zeros
-  # Only allows low frequency components - smooth regions
-  #Can smooth out noise but blurs edges.
-  #
+      # Apply the mask to the FFT shift
+      fft_shift_filtered = fft_shift * mask
   
-  rows, cols = img.shape
-  crow, ccol = int(rows / 2), int(cols / 2)
+      # Perform inverse FFT
+      fft_inverse_shift = np.fft.ifftshift(fft_shift_filtered)
+      image_filtered = np.fft.ifft2(fft_inverse_shift)
+      image_filtered = np.abs(image_filtered)
 
-  mask = np.zeros((rows, cols, 2), np.uint8)
-  r = 100
-  center = [crow, ccol]
-  x, y = np.ogrid[:rows, :cols]
-  mask_area = (x - center[0]) ** 2 + (y - center[1]) ** 2 <= r*r
-  mask[mask_area] = 1
+      # Weight the filtered image
+      image_weighted = cv2.addWeighted(image, 1 - weight, image_filtered.astype(np.float32), weight, 0)
 
-  # Band Pass Filter - Concentric circle mask, only the points living in concentric circle are ones
-  rows, cols = img.shape
-  crow, ccol = int(rows / 2), int(cols / 2)
+      return image_weighted
 
-  mask = np.zeros((rows, cols, 2), np.uint8)
-  r_out = 80
-  r_in = 10
-  center = [crow, ccol]
-  x, y = np.ogrid[:rows, :cols]
-  mask_area = np.logical_and(((x - center[0]) ** 2 + (y - center[1]) ** 2 >= r_in ** 2),
-                             ((x - center[0]) ** 2 + (y - center[1]) ** 2 <= r_out ** 2))
-  mask[mask_area] = 1
-  
+  def feather_image(image, radius=int(sysargv7), distance=int(sysargv8)):
+      # Reduce radius
+      image_blurred = cv2.GaussianBlur(image, (radius, radius), 0)
+    
+      # Create a mask with feathered edges covering the entire image
+      mask = np.zeros(image.shape, dtype=np.uint8)
+      mask[:,:] = 255  # Set all mask values to 255 (white)
+    
+      # Apply distance feathering
+      mask_blurred = cv2.GaussianBlur(mask, (distance*2+1, distance*2+1), 0)
+    
+      # Apply the mask to the image
+      result_image = cv2.bitwise_and(image_blurred, image_blurred, mask=mask_blurred)
 
+      return result_image
 
-  # apply mask and inverse DFT
-  fshift = dft_shift * mask
+    # Load the FITS file
+  fits_path = sysargv2
+  hdul = fits.open(fits_path)
+  image_data = hdul[0].data
 
-  fshift_mask_mag = 2000 * np.log(cv2.magnitude(fshift[:, :, 0], fshift[:, :, 1]))
+  # Normalize the image data
+  image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
 
-  f_ishift = np.fft.ifftshift(fshift)
-  img_back = cv2.idft(f_ishift)
-  img_back = cv2.magnitude(img_back[:, :, 0], img_back[:, :, 1])
+  # Apply high-pass filter
+  filtered_image = high_pass_filter(image_data, cutoff=(int(sysargv4)/int(sysargv6)), weight=(int(sysargv5)/int(sysargv6)))
 
-  fig = plt.figure(figsize=(12, 12))
-  ax1 = fig.add_subplot(2,2,1)
-  ax1.imshow(img, cmap='gray')
-  ax1.title.set_text('Input Image')
-  ax2 = fig.add_subplot(2,2,2)
-  ax2.imshow(magnitude_spectrum, cmap='gray')
-  ax2.title.set_text('FFT of image')
-  ax3 = fig.add_subplot(2,2,3)
-  ax3.imshow(fshift_mask_mag, cmap='gray')
-  ax3.title.set_text('FFT + Mask')
-  ax4 = fig.add_subplot(2,2,4)
-  ax4.imshow(img_back, cmap='gray')
-  ax4.title.set_text('After inverse FFT')
-  plt.show()
-  img = cv2.convertScaleAbs(img_back, alpha=(255.0))
-  #cv2.imwrite( sysargv2, img_back)
-  matplotlib.pyplot.imsave(sysargv2, img_back, cmap='gray')
+  # Apply feathering
+  final_image = feather_image(filtered_image, radius=int(sysargv7), distance=int(sysargv8))
+
+  # Save the final image as a FITS file
+  hdu = fits.PrimaryHDU(final_image)
+  hdu.writeto( sysargv3, overwrite=True)
+
    
   return sysargv1
   menue()
@@ -1957,10 +1934,10 @@ def autostr():
 
   sysargv3  = input("Enter file name of input grey image to auto_str  -->")
   sysargv4  = input("Enter file name of output grey image -->")
-  sysargv5  = input("Enter numerator of lower clip to auto_str(5)  -->")
-  sysargv6  = input("Enter denominator lower clip to auto_str(1000) -->")
-  sysargv7  = input("Enter numerator of upper clip to auto_str(5)  -->")
-  sysargv8  = input("Enter denominator upper clip to auto_str(1000) -->")
+  sysargv5  = input("Enter numerator of lower clip to auto_str(1)  -->")
+  sysargv6  = input("Enter denominator lower clip to auto_str(100) -->")
+  sysargv7  = input("Enter numerator of upper clip to auto_str(1)  -->")
+  sysargv8  = input("Enter denominator upper clip to auto_str(100) -->")
 
 
 
@@ -2005,8 +1982,9 @@ def autostr():
 
 
 
+
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
