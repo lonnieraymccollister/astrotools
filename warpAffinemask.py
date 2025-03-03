@@ -1061,15 +1061,29 @@ def DynamicRescale16RGB():
   menue()
 
 def gaussian():
-  sysargv1  = input("Enter the Color Image(.png or .tif)  -->")
-  sysargv2  = input("Enter the Difference image to be created(.png or .tif)  -->")
-  sysargv4a  = input("Enter the gausian blur 3, 5, or 7  -->")
+  sysargv2  = input("Enter the Color Image(fits)  -->")
+  sysargv3  = input("Enter the fits image to be created(w/o-GauBlr.fit)  -->")
+  sysargv4a  = input("Enter the gausian blur 1.313, 2 etc.  -->")
   sysargv4 = float(sysargv4a)
-  image1 = cv2.imread(sysargv1,cv2.IMREAD_ANYDEPTH)
-  image = image1.astype(np.float32)
-  selfavg = np.array((cv2.GaussianBlur(image, (0, 0), sysargv4)), dtype='float32')
-  unsharp_image1 = selfavg.astype(np.uint16)
-  cv2.imwrite( sysargv2, unsharp_image1)
+
+  def apply_gaussian_blur(image, sigma):
+    # Apply Gaussian blur with specified sigma
+    blurred_image = cv2.GaussianBlur(image, (0, 0), sigmaX=sigma, sigmaY=sigma)
+    return blurred_image
+
+  # Load the FITS file
+  fits_path = sysargv2
+  hdul = fits.open(fits_path)
+  image_data = hdul[0].data
+
+  # Apply the Gaussian blur
+  sigma = sysargv4  # Standard deviation in X and Y directions
+  blurred_image = apply_gaussian_blur(image_data, sigma)
+
+  # Save the final image as a FITS file
+  hdu = fits.PrimaryHDU(blurred_image)
+  hdu.writeto(sysargv3 + 'GauBlr' + '.fit', overwrite=True)
+
   return sysargv1
   menue()
 
@@ -1980,11 +1994,62 @@ def autostr():
   return sysargv1
   menue()
 
+def LocAdapt():
+
+  sysargv2  = input("Enter file name of to enhance contrast  -->")
+  sysargv3  = input("Enter file name of output(w/o-LoAd.fit) -->")
+  sysargv4  = input("Enter numerator of contrast(10)  -->")
+  sysargv5  = input("Enter denominator contrast(100) -->")
+  sysargv6  = input("Enter neighborhood_size(7) -->")
+
+  def contrast_filter(image, neighborhood_size=int(sysargv6)):
+      # Define the kernel for calculating local mean and standard deviation
+      kernel = np.ones((neighborhood_size, neighborhood_size), np.float32) / (neighborhood_size * neighborhood_size)
+    
+      # Calculate local mean
+      local_mean = cv2.filter2D(image, -1, kernel)
+    
+      # Calculate local mean of squared values
+      squared_image = np.square(image)
+      local_mean_squared = cv2.filter2D(squared_image, -1, kernel)
+    
+      # Calculate local standard deviation
+      local_std = np.sqrt(local_mean_squared - np.square(local_mean))
+    
+      # Avoid division by zero
+      local_std[local_std == 0] = 1
+    
+      # Calculate contrast factor
+      #contrast_factor = (local_mean / local_std)
+      contrast_factor = (int(sysargv4) / int(sysargv5))
+    
+      # Calculate the contrast-enhanced image
+      enhanced_image = (image - local_mean) * contrast_factor + local_mean
+      enhanced_image = np.clip(enhanced_image, 0, np.max(image)).astype(image.dtype)
+    
+      return enhanced_image
+
+  # Load the FITS file
+  fits_path = sysargv2
+  hdul = fits.open(fits_path)
+  image_data = hdul[0].data
+
+  # Apply the contrast filter
+  filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
+
+  # Save the final image as a FITS file
+  hdu = fits.PrimaryHDU(filtered_image)
+  hdu.writeto( sysargv3 + 'LoAd' + '.fit', overwrite=True)
+
+  return sysargv1
+  menue()
+
+
 
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< Gaussian  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>44<< LocAdapt \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -2139,6 +2204,10 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '43':
     autostr()
+
+
+  if sysargv1 == '44':
+    LocAdapt()
 
   if sysargv1 == '1313':
     sys.exit()
