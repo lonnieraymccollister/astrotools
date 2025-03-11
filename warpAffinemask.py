@@ -586,12 +586,14 @@ def align2img():
 
   # Load the two images
   sysargv1  = input("Enter the 1st reference image name(WCS/std) -->")
-  sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")
-  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
+  sysargv7  = input("Enter 02, 03, 04, 05 for fits or 1 for other file -->")
 
-  if sysargv7 == '0':
     
+  if sysargv7 == '02':
+    sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")  
+  
     sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
+
     sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
     # Open the FITS files
 
@@ -622,6 +624,181 @@ def align2img():
     hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv4, overwrite=True)
+    
+  if sysargv7 == '03':
+    sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")  
+    sysargv3a  = input("Enter the 3rd reference image file name(WCS/std) -->")  
+    
+    sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
+
+    sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    sysargv4a  = input("Enter 3rd Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data.astype(np.float64)
+        hdul.close()
+        return data, header
+
+    # Read the FITS files
+    file1 = sysargv1    
+    data1, wcs1 = read_fits(file1)
+    file1 = sysargv3    
+    data2, wcs2 = read_fits(file1)
+    file1 = sysargv3a    
+    data3, wcs3 = read_fits(file1)
+
+    # Find the optimal WCS for the reprojected images
+    wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2), (data3, wcs3)])
+
+    # Reproject the images to the new WCS
+    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv2, overwrite=True)
+    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4, overwrite=True)
+    array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array3, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4a, overwrite=True)
+
+  if sysargv7 == '04':
+    sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")  
+    sysargv3a  = input("Enter the 3rd reference image file name(WCS/std) -->")  
+    sysargv3b  = input("Enter the 4th reference image file name(WCS/std) -->")  
+    
+    sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
+
+    sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    sysargv4a  = input("Enter 3rd Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    sysargv4b  = input("Enter 4th Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data.astype(np.float64)
+        hdul.close()
+        return data, header
+
+    # Read the FITS files
+    file1 = sysargv1    
+    data1, wcs1 = read_fits(file1)
+    file1 = sysargv3    
+    data2, wcs2 = read_fits(file1)
+    file1 = sysargv3a    
+    data3, wcs3 = read_fits(file1)
+    file1 = sysargv3b    
+    data4, wcs4 = read_fits(file1)
+
+    # Find the optimal WCS for the reprojected images
+    wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2), (data3, wcs3), (data4, wcs4)])
+
+    # Reproject the images to the new WCS
+    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv2, overwrite=True)
+    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4, overwrite=True)
+    array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array3, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4a, overwrite=True)
+    array4, footprint4 = reproject_interp((data4, wcs4), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array4, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4b, overwrite=True)
+
+    
+  if sysargv7 == '05':
+    sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")  
+    sysargv3a  = input("Enter the 3rd reference image file name(WCS/std) -->")  
+    sysargv3b  = input("Enter the 4th reference image file name(WCS/std) -->")  
+    sysargv3c  = input("Enter the 5threference image file name(WCS/std) -->") 
+        
+    sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
+
+    sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    sysargv4a  = input("Enter 3rd Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    sysargv4b  = input("Enter 4th Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    sysargv4c  = input("Enter 5th Aligned image name(WCS/std)  -->")
+    # Open the FITS files
+
+    def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data.astype(np.float64)
+        hdul.close()
+        return data, header
+
+    # Read the FITS files
+    file1 = sysargv1    
+    data1, wcs1 = read_fits(file1)
+    file1 = sysargv3    
+    data2, wcs2 = read_fits(file1)
+    file1 = sysargv3a    
+    data3, wcs3 = read_fits(file1)
+    file1 = sysargv3b    
+    data4, wcs4 = read_fits(file1)
+    file1 = sysargv3c    
+    data5, wcs5 = read_fits(file1)
+
+    # Find the optimal WCS for the reprojected images
+    wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2), (data3, wcs3), (data4, wcs4)])
+
+    # Reproject the images to the new WCS
+    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv2, overwrite=True)
+    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4, overwrite=True)
+    array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array3, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4a, overwrite=True)
+    array4, footprint4 = reproject_interp((data4, wcs4), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array4, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4b, overwrite=True)
+    array5, footprint5 = reproject_interp((data5, wcs5), wcs_out, shape_out=shape_out)
+    # Assuming array1 is the reprojected data and wcs_out is the WCS header
+    hdu = fits.PrimaryHDU(data=array5, header=wcs_out.to_header())
+    # Write to the FITS file
+    hdu.writeto(sysargv4c, overwrite=True)
 
   if sysargv7 == '1':
 
@@ -1062,7 +1239,7 @@ def DynamicRescale16RGB():
   menue()
 
 def gaussian():
-  sysargv2  = input("Enter the Color Image(fits)  -->")
+  sysargv2  = input("Enter the Color Image(fits(gry))  -->")
   sysargv3  = input("Enter the fits image to be created(w/o-GauBlr.fit)  -->")
   sysargv4a  = input("Enter the gausian blur 1.313, 2 etc.  -->")
   sysargv4 = float(sysargv4a)
@@ -1947,50 +2124,70 @@ def binimg():
 
 def autostr():
 
-  sysargv3  = input("Enter file name of input grey image to auto_str  -->")
-  sysargv4  = input("Enter file name of output grey image -->")
-  sysargv5  = input("Enter numerator of lower clip to auto_str(1)  -->")
-  sysargv6  = input("Enter denominator lower clip to auto_str(100) -->")
-  sysargv7  = input("Enter numerator of upper clip to auto_str(1)  -->")
-  sysargv8  = input("Enter denominator upper clip to auto_str(100) -->")
+  sysargv3  = input("Enter file name of image to auto_str  -->")
+  sysargv4  = input("Enter file name of output image -->")
 
+  # Function for histogram transformation--Copilot--
+  def histogram_transformation(image, shadows=0.1, midtones=1.0, highlights=0.9):
+    """
+      Perform histogram transformation with midtone, shadow, and highlight adjustments.
+      Args:
+          image (numpy.ndarray): Input grayscale or RGB image.
+          shadows (float): Shadow cutoff (0 to 1).
+          midtones (float): Gamma-like adjustment for midtones (default 1.0).
+          highlights (float): Highlight cutoff (0 to 1).
 
+      Returns:
+          numpy.ndarray: Transformed image.
+    """
+      # Process each channel for RGB or single grayscale image
+    if len(image.shape) == 3:
+      channels = [image[0], image[1], image[2]]  # Split RGB (assuming FITS stores as separate layers)
+    else:
+        channels = [image]
 
-  # Load the FITS file
-  with fits.open(sysargv3) as hdul:
-    image = hdul[0].data.astype(np.float64)
-  # Calculate the percentiles
-  percentiles=((0 + (int(sysargv5)/int(sysargv6))), (100 - (int(sysargv7)/int(sysargv8))))  
-  vmin, vmax = np.percentile(image, percentiles)
-    
-  # Perform the stretch
-  stretched_image = np.clip((image - vmin) / (vmax - vmin), 0, 1)
-  # normalize image
-  image_data = stretched_image
-  data_range = np.max(image_data) - np.min(image_data)
-  if data_range == 0:
-    normalized_data = np.zeros_like(image_data)  # or handle differently
-  else:
-    normalized_data = (image_data - np.min(image_data)) / data_range
+    result_channels = []
+    for channel in channels:
+      # Calculate percentiles
+      low_bound = np.percentile(channel, shadows * 100)
+      high_bound = np.percentile(channel, highlights * 100)
 
+      # Clip and normalize
+      clipped = np.clip(channel, low_bound, high_bound)
+      normalized = (clipped - low_bound) / (high_bound - low_bound)
+      normalized = np.clip(normalized, 0, 1)
 
-  # Save the stretched image to a new FITS file
-  hdu = fits.PrimaryHDU(normalized_data, header=hdul[0].header)
-  hdu.writeto(sysargv4, overwrite=True)
+      # Adjust midtones
+      adjusted = np.power(normalized, 1.0 / midtones)
 
-  # Display the original and stretched images
-  plt.figure(figsize=(12, 6))
-  plt.subplot(1, 2, 1)
-  plt.imshow(image, cmap='gray')
-  plt.title('Original Image')
-  plt.axis('off')
+      # Scale to 16-bit FITS data range
+      transformed = (adjusted * 65535).astype(np.uint16)
+      result_channels.append(transformed)
 
-  plt.subplot(1, 2, 2)
-  plt.imshow(stretched_image, cmap='gray')
-  plt.title('Auto Stretched Image')
-  plt.axis('off')
+    # Merge RGB back or return single grayscale channel
+    if len(result_channels) > 1:
+        return np.stack(result_channels, axis=0)  # Stack for RGB
+    return result_channels[0]
 
-  plt.show()
+  # Read FITS file (replace 'input.fits' with your FITS file path)
+  fits_file = sysargv3
+  hdul = fits.open(fits_file)
+  image_data = hdul[0].data.astype(np.float32)  # Assuming the FITS file contains an image in 16-bit or floating-point
+  hdul.close()
+
+  # Ensure input is 2D or 3D
+  if len(image_data.shape) != 2 and len(image_data.shape) != 3:
+    raise ValueError("The FITS file must contain a 2D (grayscale) or 3D (RGB) image.")
+
+  # Apply histogram transformation
+  transformed_image = histogram_transformation(image_data, shadows=0.02, midtones=1.2, highlights=0.98)
+
+  # Write to a new FITS file
+  output_fits_file = sysargv4
+  hdu = fits.PrimaryHDU(transformed_image)
+  hdu.writeto(output_fits_file, overwrite=True)
+  print(f"Transformed FITS file saved as '{output_fits_file}'")
+
 
   return sysargv1
   menue()
