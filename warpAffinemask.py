@@ -2276,17 +2276,88 @@ def WcsOvrlay():
   ax.set_ylabel('Declination')
   ax.coords.grid(True, color='white', ls='dotted')
   plt.title( sysargv3 )  # Add the title here
-
   # Display the plot
   plt.show()
 
   return sysargv1
   menue()
 
+def WcsStack():
+
+  #================================================================================
+  sysargv1  = input("Enter the  directory path(E:'//work//'w)  -->")
+  sysargv3  = input("Enter the output file(stacked_image.fits)  -->")
+  sysargv2  = input("Enter file type as (.fit)  -->")
+  #================================================================================
+  directory_path = sysargv1
+
+  # Get all file names
+  all_files = os.listdir(directory_path)
+
+  # Filter only .fit or .fits files
+  fits_files = [file for file in all_files if file.endswith('.fit') or file.endswith('.fits')]
+
+  # Print the names of all FITS files
+  print("FITS files in the directory:")
+  if not fits_files:
+      raise FileNotFoundError("No FITS files found in the specified directory!")
+  for file in fits_files:
+      print(file)
+
+  # Load the reference image (use the first image as the reference)
+  ref_hdul = fits.open(os.path.join(directory_path, fits_files[0]))
+  ref_header = ref_hdul[0].header
+  ref_data = ref_hdul[0].data.astype(np.float64)  # Ensure float64 precision
+  print(f"Successfully opened reference FITS file: {fits_files[0]}")
+  ref_wcs = WCS(ref_header)
+
+  # Reproject and align all images to the reference WCS
+  aligned_images = []
+
+  fits_files = [os.path.join(directory_path, file) for file in os.listdir(directory_path) if 
+
+  file.endswith( sysargv2 ) ]
+  if not ref_wcs.has_celestial:
+      raise ValueError(f"Reference image {fits_files[0]} does not contain valid celestial WCS information.")
+
+  for fits_file in fits_files:
+      with fits.open(fits_file) as hdul:
+          target_header = hdul[0].header
+          target_data = hdul[0].data.astype(np.float64)
+
+          try:
+              target_wcs = WCS(target_header)
+              if not target_wcs.has_celestial:
+                  raise ValueError("No celestial WCS information found.")
+          except Exception as e:
+              print(f"Skipping {fits_file} due to WCS error: {e}")
+              continue
+
+          # Reproject the target image onto the reference WCS
+          reprojected_data, _ = reproject_interp((target_data, target_wcs), ref_wcs, ref_data.shape)
+          aligned_images.append(reprojected_data)
+
+  # Close the reference image
+  ref_hdul.close()
+
+  # Stack the aligned images (e.g., average stacking)
+  stacked_image = np.mean(aligned_images, axis=0).astype(np.float64)
+
+  # Save the stacked image to a new FITS file
+  stacked_hdu = fits.PrimaryHDU(stacked_image, header=ref_header)
+  stacked_hdu.writeto(sysargv3, overwrite=True)
+
+  print("Stacked image saved as " + sysargv3 )
+
+
+  return sysargv1
+  menue()
+
+
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -2447,6 +2518,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '45':
     WcsOvrlay()
+
+  if sysargv1 == '46':
+     WcsStack()
 
   if sysargv1 == '1313':
     sys.exit()
