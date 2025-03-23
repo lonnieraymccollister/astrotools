@@ -13,6 +13,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 import glob
 from skimage.exposure import match_histograms
+from scipy.ndimage import zoom
 from reproject import reproject_interp
 from reproject.mosaicking import find_optimal_celestial_wcs
 
@@ -113,12 +114,41 @@ def filecount():
 
 def resize():
   sysargv1  = input("Enter the Image to be resized(bicubic)(16bit uses .tif/.fit)  -->")
-  sysargv2  = input("Enter the scale(num)(1,2,3, or 4)   -->")
+  sysargv2  = input("Enter the scale(num)(1,2,3, or 4)(Cubic only picels)  -->")
   sysargv2a = input("Enter the scale(denom)(1,2,3, or 4)   -->")
   sysargv3  = input("Enter the filename of the resized image to be saved(16bit uses .tif/.fit)  -->")    
-  sysargv7  = input("Enter 0 for fits or 1 for other file -->")
+  sysargv7  = input("Enter 0 for fits cubic gry float64, 1 for fits LANCZOS4(32bit) or 2 for other file -->")
 
   if sysargv7 == '0':
+    # Open the FITS file
+    fits_file = sysargv1
+    hdul = fits.open(fits_file)
+    data = hdul[0].data
+
+    # Ensure the data is in float64 format
+    data = data.astype(np.float64)
+
+    # Original dimensions of the image
+    original_height, original_width = data.shape
+
+    # Set the desired width while preserving the aspect ratio
+    target_width = int(sysargv2) / int(sysargv2a)  # Example: New width in pixels
+    scaling_factor = target_width / original_width
+
+    # Apply the same scaling factor to both dimensions
+    resized_data = zoom(data, (scaling_factor, scaling_factor), order=3)  # Cubic interpolation
+
+    # Ensure the resized data is still float64
+    resized_data = resized_data.astype(np.float64)
+
+    # Save the resized image to a new FITS file
+    hdu = fits.PrimaryHDU(resized_data)
+    hdu.writeto( sysargv3, overwrite=True)
+
+    print("Image resized using Cubic Interpolation (float64) and saved successfully!")
+
+
+  if sysargv7 == '1':
 
     # Function to read FITS file and return data
     def read_fits(file):
@@ -164,7 +194,7 @@ def resize():
     # Write to FITS file
     hdu.writeto(sysargv3,  overwrite=True)
  
-  if sysargv7 == '1':
+  if sysargv7 == '2':
 
     image = tifffile.imread(sysargv1)      
     img = cv2.resize(image,None,fx=int(sysargv2) / int(sysargv2a),fy=int(sysargv2) / int(sysargv2a),interpolation=cv2.INTER_LANCZOS4)
