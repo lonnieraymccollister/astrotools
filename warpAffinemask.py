@@ -14,7 +14,7 @@ from astropy.wcs import WCS
 import glob
 from skimage.exposure import match_histograms
 from scipy.ndimage import zoom
-from reproject import reproject_interp
+from reproject import reproject_exact
 from reproject.mosaicking import find_optimal_celestial_wcs
 
 # function to display the coordinates of 
@@ -644,12 +644,12 @@ def align2img():
     wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2)])
 
     # Reproject the images to the new WCS
-    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    array1, footprint1 = reproject_exact((data1, wcs1), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv2, overwrite=True)
-    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    array2, footprint2 = reproject_exact((data2, wcs2), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
     # Write to the FITS file
@@ -686,17 +686,17 @@ def align2img():
     wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2), (data3, wcs3)])
 
     # Reproject the images to the new WCS
-    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    array1, footprint1 = reproject_exact((data1, wcs1), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv2, overwrite=True)
-    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    array2, footprint2 = reproject_exact((data2, wcs2), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv4, overwrite=True)
-    array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
+    array3, footprint3 = reproject_exact((data3, wcs3), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array3, header=wcs_out.to_header())
     # Write to the FITS file
@@ -739,22 +739,22 @@ def align2img():
     wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2), (data3, wcs3), (data4, wcs4)])
 
     # Reproject the images to the new WCS
-    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    array1, footprint1 = reproject_exact((data1, wcs1), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv2, overwrite=True)
-    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    array2, footprint2 = reproject_exact((data2, wcs2), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv4, overwrite=True)
-    array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
+    array3, footprint3 = reproject_exact((data3, wcs3), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array3, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv4a, overwrite=True)
-    array4, footprint4 = reproject_interp((data4, wcs4), wcs_out, shape_out=shape_out)
+    array4, footprint4 = reproject_exact((data4, wcs4), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array4, header=wcs_out.to_header())
     # Write to the FITS file
@@ -804,27 +804,27 @@ def align2img():
     wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2), (data3, wcs3), (data4, wcs4)])
 
     # Reproject the images to the new WCS
-    array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+    array1, footprint1 = reproject_exact((data1, wcs1), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv2, overwrite=True)
-    array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+    array2, footprint2 = reproject_exact((data2, wcs2), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv4, overwrite=True)
-    array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
+    array3, footprint3 = reproject_exact((data3, wcs3), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array3, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv4a, overwrite=True)
-    array4, footprint4 = reproject_interp((data4, wcs4), wcs_out, shape_out=shape_out)
+    array4, footprint4 = reproject_exact((data4, wcs4), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array4, header=wcs_out.to_header())
     # Write to the FITS file
     hdu.writeto(sysargv4b, overwrite=True)
-    array5, footprint5 = reproject_interp((data5, wcs5), wcs_out, shape_out=shape_out)
+    array5, footprint5 = reproject_exact((data5, wcs5), wcs_out, shape_out=shape_out)
     # Assuming array1 is the reprojected data and wcs_out is the WCS header
     hdu = fits.PrimaryHDU(data=array5, header=wcs_out.to_header())
     # Write to the FITS file
@@ -2364,7 +2364,7 @@ def WcsStack():
               continue
 
           # Reproject the target image onto the reference WCS
-          reprojected_data, _ = reproject_interp((target_data, target_wcs), ref_wcs, ref_data.shape)
+          reprojected_data, _ = reproject_exact((target_data, target_wcs), ref_wcs, ref_data.shape)
           aligned_images.append(reprojected_data)
 
   # Close the reference image
