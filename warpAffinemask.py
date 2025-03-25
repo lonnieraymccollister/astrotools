@@ -457,9 +457,9 @@ def splittricolor():
 
 
     # Save each channel as a separate file
-    fits.writeto(f'channel_0_64bit.fits', b.astype(np.float64),  overwrite=True)
-    fits.writeto(f'channel_1_64bit.fits', g.astype(np.float64),  overwrite=True)
-    fits.writeto(f'channel_2_64bit.fits', r.astype(np.float64),  overwrite=True)
+    fits.writeto(f'channel_0_64bit.fits', b.astype(np.float64), header, overwrite=True)
+    fits.writeto(f'channel_1_64bit.fits', g.astype(np.float64), header, overwrite=True)
+    fits.writeto(f'channel_2_64bit.fits', r.astype(np.float64), header, overwrite=True)
 
   if sysargv7 == '1':
 
