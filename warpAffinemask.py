@@ -2383,11 +2383,105 @@ def WcsStack():
   return sysargv1
   menue()
 
+def combinelrgb():
+
+  sysargv0  = input("Enter the Lum image to be combined  -->")
+  sysargv1  = input("Enter the Blue image to be combined  -->")
+  sysargv2  = input("Enter the Green image to be combined  -->")
+  sysargv3  = input("Enter the Red image to be combined  -->")
+  sysargv4  = input("Enter the RGB file to be created  -->")
+ 
+  with fits.open(sysargv1) as old_hdul:
+    # Access the header of the primary HDU
+    old_header = old_hdul[0].header
+    old_data = old_hdul[0].data
+    
+  # Function to read FITS file and return data
+  def read_fits(file):
+    with fits.open(file, mode='update') as hdul:#
+      data = hdul[0].data
+      # hdul.close()
+    return data
+
+  # Read the FITS files
+  file0 = sysargv0
+  file1 = sysargv1
+  file2 = sysargv2
+  file3 = sysargv3
+
+  # Read the image data from the FITS file
+  lum = read_fits(file0)
+  blue = read_fits(file1)
+  green = read_fits(file2)
+  red = read_fits(file3)
+
+  lum = blue.astype(np.float64)
+  blue = blue.astype(np.float64)
+  green = green.astype(np.float64)
+  red = red.astype(np.float64)
+
+  # Check dimensions
+  print("Data0 shape:", lum.shape)
+  print("Data1 shape:", blue.shape)
+  print("Data2 shape:", green.shape)
+  print("Data3 shape:", red.shape)
+
+  #newRGBImage = cv2.merge((red,green,blue))
+  RGB_Image1 = np.stack((red,green,blue))
+
+  # Remove the extra dimension
+  RGB_Image = np.squeeze(RGB_Image1)
+
+  # Normalize the data for RGB scaling (0 to 1)
+  def normalize(data):
+      return (data - np.min(data)) / (np.max(data) - np.min(data))
+
+  luminance = normalize(lum)
+  red = normalize(red)
+  green = normalize(green)
+  blue = normalize(blue)
+
+  # Combine the channels into an RGB array while maintaining float64 precision
+  rgb_array = np.zeros((luminance.shape[0], luminance.shape[1], 3), dtype=np.float64)
+  rgb_array[ :, :, 2] = red * luminance  # R channel with luminance
+  rgb_array[ :, :, 1] = green * luminance  # G channel with luminance
+  rgb_array[ :, :, 0] = blue * luminance  # B channel with luminance
+
+  # Create a FITS header with NAXIS = 3
+  header = old_header
+  header['NAXIS'] = 3
+  header['NAXIS1'] = RGB_Image.shape[2]
+  header['NAXIS2'] = RGB_Image.shape[1]
+  header['NAXIS3'] = RGB_Image.shape[0]
+  header['FILTER'] = 'Luminance+Red+Green+Blue' 
+
+  # Ensure the data type is correct 
+  newRGB_Image = RGB_Image.astype(np.float64)
+
+  print("newRGB_Image shape:", newRGB_Image.shape)
+
+  fits.writeto( sysargv4, newRGB_Image, overwrite=True)
+  # Save the RGB image as a new FITS file with the correct header
+  hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
+  hdu.writeto(sysargv4, overwrite=True)
+
+  # Function to read and verify the saved FITS file
+  def verify_fits(sysargv4):
+    with fits.open(sysargv4) as hdul:
+      data = hdul[0].data
+    return data
+
+  # Verify the saved RGB image
+  verified_image = verify_fits(sysargv4)
+  print("Verified image shape:", verified_image.shape)
+
+  return sysargv1
+  menue()
 
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -2551,6 +2645,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '46':
      WcsStack()
+
+  if sysargv1 == '47':
+    combinelrgb()
 
   if sysargv1 == '1313':
     sys.exit()
