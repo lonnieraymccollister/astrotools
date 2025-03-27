@@ -528,9 +528,9 @@ def combinetricolor():
     # Create a FITS header with NAXIS = 3
     header = old_header
     header['NAXIS'] = 3
-    header['NAXIS1'] = RGB_Image.shape[2]
+    header['NAXIS1'] = RGB_Image.shape[0]
     header['NAXIS2'] = RGB_Image.shape[1]
-    header['NAXIS3'] = RGB_Image.shape[0]
+    header['NAXIS3'] = RGB_Image.shape[2]
 
     # Ensure the data type is correct 
     newRGB_Image = RGB_Image.astype(np.float64)
