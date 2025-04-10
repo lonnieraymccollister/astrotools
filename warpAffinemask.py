@@ -1296,16 +1296,40 @@ def gaussian():
   menue()
 
 def FFT():
-  sysargv2  = input("Enter the Blue Image  -->")
-  sysargv2g  = input("Enter the Green Image  -->")
-  sysargv2r  = input("Enter the Red Image  -->")
+  sysargv2  = input("Enter the Color Image for FFT  -->")
+
+  # Function to read FITS file and return data
+  def read_fits(file):
+      hdul = fits.open(file)
+      header = hdul[0].header
+      data = hdul[0].data
+      hdul.close()
+      return data, header
+
+  # Read the FITS files
+  file1 = sysargv2
+  # Read the image data from the FITS file
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
+
+  # Split the color image into its individual channels
+  #b, g, r = cv2.split(image_data)
+  b, g, r = image_data[2, :, :], image_data[1, :, :], image_data[0, :, :] 
+
+
+  # Save each channel as a separate file
+  fits.writeto(f'channel_0_64bit.fits', b.astype(np.float64), header, overwrite=True)
+  fits.writeto(f'channel_1_64bit.fits', g.astype(np.float64), header, overwrite=True)
+  fits.writeto(f'channel_2_64bit.fits', r.astype(np.float64), header, overwrite=True)
+
+  sysargv2  = "channel_0_64bit.fits"
+  sysargv2g  = "channel_1_64bit.fits"
+  sysargv2r  = "channel_2_64bit.fits"
   sysargv4  = input("Enter the cutoff(25)(NUM)  -->")
   sysargv5  = input("Enter the weight(50)(NUM)   -->")
   sysargv6  = input("Enter the Denominator(100)  -->")
   sysargv7  = input("Enter the radius(1))  -->")
   sysargv8  = input("Enter the cutoff(10))  -->")
-
-
 
   #copilot output
   def high_pass_filter(image, cutoff=(int(sysargv4)/int(sysargv6)), weight=(int(sysargv5)/int(sysargv6))):
@@ -1409,16 +1433,14 @@ def FFT():
   sysargv3  = "channel_2_64bitfft.fits"
   sysargv4  = "channel_RGB_64bitfft.fits"
 
-  with fits.open(sysargv1) as old_hdul:
-      # Access the header of the primary HDU
-    old_header = old_hdul[0].header
-    old_data = old_hdul[0].data
-    
+  old_data, old_header = read_fits(file1)
+  old_data = old_data.astype(np.float64)
+   
   # Function to read FITS file and return data
   def read_fits(file):
     with fits.open(file, mode='update') as hdul:#
       data = hdul[0].data
-      # hdul.close()
+      hdul.close()
     return data
 
   # Read the FITS files
@@ -1458,20 +1480,80 @@ def FFT():
 
   print("newRGB_Image shape:", newRGB_Image.shape)
 
+  sysargv4 = "channel_RGB_64bitfft.fits"
   fits.writeto( sysargv4, newRGB_Image, overwrite=True)
   # Save the RGB image as a new FITS file with the correct header
   hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
   hdu.writeto(sysargv4, overwrite=True)
 
-  # Function to read and verify the saved FITS file
-  def verify_fits(sysargv4):
-    with fits.open(sysargv4) as hdul:
-      data = hdul[0].data
-  return data
+  # Read and verify the saved FITS file
+  with fits.open(sysargv4) as hdul:
+    data = hdul[0].data
 
   # Verify the saved RGB image
-  verified_image = verify_fits(sysargv4)
-  print("Verified image shape:", verified_image.shape)
+  print("Verified image shape:", data.shape)
+
+  currentDirectory = os.path.abspath(os.getcwd())
+
+  # Define the file to delete
+  file_to_delete = "channel_0_64bit.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_1_64bit.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_2_64bit.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_0_64bitfft.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_1_64bitfft.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+        print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_2_64bitfft.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
 
 
   return sysargv1
