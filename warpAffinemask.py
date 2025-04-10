@@ -453,7 +453,7 @@ def splittricolor():
 
     # Split the color image into its individual channels
     #b, g, r = cv2.split(image_data)
-    b, g, r = image_data[0, :, :], image_data[1, :, :], image_data[2, :, :] 
+    b, g, r = image_data[2, :, :], image_data[1, :, :], image_data[0, :, :] 
 
 
     # Save each channel as a separate file
@@ -1296,13 +1296,16 @@ def gaussian():
   menue()
 
 def FFT():
-  sysargv2  = input("Enter the Greyscale Image  -->")
-  sysargv3  = input("Enter the FFT HP image to be created  -->")
+  sysargv2  = input("Enter the Blue Image  -->")
+  sysargv2g  = input("Enter the Green Image  -->")
+  sysargv2r  = input("Enter the Red Image  -->")
   sysargv4  = input("Enter the cutoff(25)(NUM)  -->")
   sysargv5  = input("Enter the weight(50)(NUM)   -->")
   sysargv6  = input("Enter the Denominator(100)  -->")
   sysargv7  = input("Enter the radius(1))  -->")
   sysargv8  = input("Enter the cutoff(10))  -->")
+
+
 
   #copilot output
   def high_pass_filter(image, cutoff=(int(sysargv4)/int(sysargv6)), weight=(int(sysargv5)/int(sysargv6))):
@@ -1347,10 +1350,17 @@ def FFT():
 
       return result_image
 
-    # Load the FITS file
-  fits_path = sysargv2
-  hdul = fits.open(fits_path)
-  image_data = hdul[0].data
+  def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
+
+    # Load the FITS blue file
+  file1 = sysargv2
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
 
   # Normalize the image data
   image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
@@ -1362,10 +1372,108 @@ def FFT():
   final_image = feather_image(filtered_image, radius=int(sysargv7), distance=int(sysargv8))
 
   # Save the final image as a FITS file
-  hdu = fits.PrimaryHDU(final_image)
-  hdu.writeto( sysargv3, overwrite=True)
+  fits.writeto(f'channel_0_64bitfft.fits', final_image.astype(np.float64), header, overwrite=True)
+  # Load the FITS green file
+  file1 = sysargv2g
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
 
-   
+  # Normalize the image data
+  image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
+
+  # Apply high-pass filter
+  filtered_image = high_pass_filter(image_data, cutoff=(int(sysargv4)/int(sysargv6)), weight=(int(sysargv5)/int(sysargv6)))
+
+  # Apply feathering
+  final_image = feather_image(filtered_image, radius=int(sysargv7), distance=int(sysargv8))
+
+  # Save the final image as a FITS file
+  fits.writeto(f'channel_1_64bitfft.fits', final_image.astype(np.float64), header, overwrite=True)    # Load the FITS red file
+  file1 = sysargv2r
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
+  # Normalize the image data
+  image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
+
+  # Apply high-pass filter
+  filtered_image = high_pass_filter(image_data, cutoff=(int(sysargv4)/int(sysargv6)), weight=(int(sysargv5)/int(sysargv6)))
+
+  # Apply feathering
+  final_image = feather_image(filtered_image, radius=int(sysargv7), distance=int(sysargv8))
+
+  # Save the final image as a FITS file
+  fits.writeto(f'channel_2_64bitfft.fits', final_image.astype(np.float64), header, overwrite=True)
+
+  sysargv1  = "channel_0_64bitfft.fits"
+  sysargv2  = "channel_1_64bitfft.fits"
+  sysargv3  = "channel_2_64bitfft.fits"
+  sysargv4  = "channel_RGB_64bitfft.fits"
+
+  with fits.open(sysargv1) as old_hdul:
+      # Access the header of the primary HDU
+    old_header = old_hdul[0].header
+    old_data = old_hdul[0].data
+    
+  # Function to read FITS file and return data
+  def read_fits(file):
+    with fits.open(file, mode='update') as hdul:#
+      data = hdul[0].data
+      # hdul.close()
+    return data
+
+  # Read the FITS files
+  file1 = sysargv1
+  file2 = sysargv2
+  file3 = sysargv3
+
+  # Read the image data from the FITS file
+  blue = read_fits(file1)
+  green = read_fits(file2)
+  red = read_fits(file3)
+
+  blue = blue.astype(np.float64)
+  green = green.astype(np.float64)
+  red = red.astype(np.float64)
+
+  # Check dimensions
+  print("Data1 shape:", blue.shape)
+  print("Data2 shape:", green.shape)
+  print("Data3 shape:", red.shape)
+
+  #newRGBImage = cv2.merge((red,green,blue))
+  RGB_Image1 = np.stack((red,green,blue))
+
+  # Remove the extra dimension
+  RGB_Image = np.squeeze(RGB_Image1)
+
+  # Create a FITS header with NAXIS = 3
+  header = old_header
+  header['NAXIS'] = 3
+  header['NAXIS1'] = RGB_Image.shape[0]
+  header['NAXIS2'] = RGB_Image.shape[1]
+  header['NAXIS3'] = RGB_Image.shape[2]
+
+  # Ensure the data type is correct 
+  newRGB_Image = RGB_Image.astype(np.float64)
+
+  print("newRGB_Image shape:", newRGB_Image.shape)
+
+  fits.writeto( sysargv4, newRGB_Image, overwrite=True)
+  # Save the RGB image as a new FITS file with the correct header
+  hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
+  hdu.writeto(sysargv4, overwrite=True)
+
+  # Function to read and verify the saved FITS file
+  def verify_fits(sysargv4):
+    with fits.open(sysargv4) as hdul:
+      data = hdul[0].data
+  return data
+
+  # Verify the saved RGB image
+  verified_image = verify_fits(sysargv4)
+  print("Verified image shape:", verified_image.shape)
+
+
   return sysargv1
   menue()
 
@@ -2224,8 +2332,12 @@ def autostr():
 
 def LocAdapt():
 
-  sysargv2  = input("Enter file name of to enhance contrast  -->")
-  sysargv3  = input("Enter file name of output(w/o-LoAd.fit) -->")
+  sysargv2  = input("Enter blue file name of to enhance contrast  -->")
+  sysargv2g  = input("Enter green file name of to enhance contrast  -->")
+  sysargv2r  = input("Enter red file name of to enhance contrast  -->")
+  sysargv3  = input("Enter blue file name of output(w/o-LoAd.fit) -->")
+  sysargv3g  = input("Enter green file name of output(w/o-LoAd.fit) -->")
+  sysargv3r  = input("Enter red file name of output(w/o-LoAd.fit) -->")
   sysargv4  = input("Enter numerator of contrast(10)  -->")
   sysargv5  = input("Enter denominator contrast(100) -->")
   sysargv6  = input("Enter neighborhood_size(7) -->")
@@ -2268,6 +2380,28 @@ def LocAdapt():
   # Save the final image as a FITS file
   hdu = fits.PrimaryHDU(filtered_image)
   hdu.writeto( sysargv3 + 'LoAd' + '.fit', overwrite=True)
+  # Load the FITS file
+  fits_path = sysargv2g
+  hdul = fits.open(fits_path)
+  image_data = hdul[0].data
+
+  # Apply the contrast filter
+  filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
+
+  # Save the final image as a FITS file
+  hdu = fits.PrimaryHDU(filtered_image)
+  hdu.writeto( sysargv3g + 'LoAd' + '.fit', overwrite=True)
+  # Load the FITS file
+  fits_path = sysargv2r
+  hdul = fits.open(fits_path)
+  image_data = hdul[0].data
+
+  # Apply the contrast filter
+  filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
+
+  # Save the final image as a FITS file
+  hdu = fits.PrimaryHDU(filtered_image)
+  hdu.writeto( sysargv3r + 'LoAd' + '.fit', overwrite=True)
 
   return sysargv1
   menue()
@@ -2481,7 +2615,7 @@ def combinelrgb():
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-Bandpass(2ax) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
