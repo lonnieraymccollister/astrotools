@@ -2602,17 +2602,40 @@ def autostr():
   menue()
 
 def LocAdapt():
-
-  sysargv2  = input("Enter blue file name of to enhance contrast  -->")
-  sysargv2g  = input("Enter green file name of to enhance contrast  -->")
-  sysargv2r  = input("Enter red file name of to enhance contrast  -->")
-  sysargv3  = input("Enter blue file name of output(w/o-LoAd.fit) -->")
-  sysargv3g  = input("Enter green file name of output(w/o-LoAd.fit) -->")
-  sysargv3r  = input("Enter red file name of output(w/o-LoAd.fit) -->")
-  sysargv4  = input("Enter numerator of contrast(10)  -->")
-  sysargv5  = input("Enter denominator contrast(100) -->")
+  sysargv2  = input("Enter the Color Image for LA -->")
   sysargv6  = input("Enter neighborhood_size(7) -->")
 
+  # Function to read FITS file and return data
+  def read_fits(file):
+      hdul = fits.open(file)
+      header = hdul[0].header
+      data = hdul[0].data
+      hdul.close()
+      return data, header
+
+  # Read the FITS files
+  file1 = sysargv2
+  # Read the image data from the FITS file
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
+
+  # Split the color image into its individual channels
+  #b, g, r = cv2.split(image_data)
+  b, g, r = image_data[2, :, :], image_data[1, :, :], image_data[0, :, :] 
+
+
+  # Save each channel as a separate file
+  fits.writeto(f'channel_0_64bit.fits', b.astype(np.float64), header, overwrite=True)
+  fits.writeto(f'channel_1_64bit.fits', g.astype(np.float64), header, overwrite=True)
+  fits.writeto(f'channel_2_64bit.fits', r.astype(np.float64), header, overwrite=True)
+
+  sysargv2  = "channel_0_64bit.fits"
+  sysargv2g  = "channel_1_64bit.fits"
+  sysargv2r  = "channel_2_64bit.fits"
+  sysargv4a  = input("Enter the LocAdapt 10 as int or other etc.  -->")
+  sysargv4 = float(sysargv4a)
+
+#--------------------------------------------------------------------------------------
   def contrast_filter(image, neighborhood_size=int(sysargv6)):
       # Define the kernel for calculating local mean and standard deviation
       kernel = np.ones((neighborhood_size, neighborhood_size), np.float32) / (neighborhood_size * neighborhood_size)
@@ -2632,47 +2655,192 @@ def LocAdapt():
     
       # Calculate contrast factor
       #contrast_factor = (local_mean / local_std)
-      contrast_factor = (int(sysargv4) / int(sysargv5))
+      contrast_factor = (sysargv4)
     
       # Calculate the contrast-enhanced image
       enhanced_image = (image - local_mean) * contrast_factor + local_mean
       enhanced_image = np.clip(enhanced_image, 0, np.max(image)).astype(image.dtype)
     
       return enhanced_image
+#--------------------------------------------------------------------------------------
 
-  # Load the FITS file
-  fits_path = sysargv2
-  hdul = fits.open(fits_path)
-  image_data = hdul[0].data
+  def read_fits(file):
+        hdul = fits.open(file)
+        header = hdul[0].header
+        data = hdul[0].data
+        hdul.close()
+        return data, header
 
+    # Load the FITS blue file
+  file1 = sysargv2
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
+
+  # Normalize the image data
+  image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
+
+#--------------------------------------------------------------------------------------
   # Apply the contrast filter
   filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
+#--------------------------------------------------------------------------------------
 
   # Save the final image as a FITS file
-  hdu = fits.PrimaryHDU(filtered_image)
-  hdu.writeto( sysargv3 + 'LoAd' + '.fit', overwrite=True)
-  # Load the FITS file
-  fits_path = sysargv2g
-  hdul = fits.open(fits_path)
-  image_data = hdul[0].data
+  fits.writeto(f'channel_0_64bitLA.fits', filtered_image.astype(np.float64), header, overwrite=True)
+  # Load the FITS green file
+  file1 = sysargv2g
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
 
+  # Normalize the image data
+  image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
+
+#--------------------------------------------------------------------------------------
   # Apply the contrast filter
   filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
+#--------------------------------------------------------------------------------------
 
   # Save the final image as a FITS file
-  hdu = fits.PrimaryHDU(filtered_image)
-  hdu.writeto( sysargv3g + 'LoAd' + '.fit', overwrite=True)
-  # Load the FITS file
-  fits_path = sysargv2r
-  hdul = fits.open(fits_path)
-  image_data = hdul[0].data
+  fits.writeto(f'channel_1_64bitLA.fits', filtered_image.astype(np.float64), header, overwrite=True)    # Load the FITS red file
+  file1 = sysargv2r
+  image_data, header = read_fits(file1)
+  image_data = image_data.astype(np.float64)
+  # Normalize the image data
+  image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
 
+#--------------------------------------------------------------------------------------
   # Apply the contrast filter
   filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
+#--------------------------------------------------------------------------------------
 
   # Save the final image as a FITS file
-  hdu = fits.PrimaryHDU(filtered_image)
-  hdu.writeto( sysargv3r + 'LoAd' + '.fit', overwrite=True)
+  fits.writeto(f'channel_2_64bitLA.fits', filtered_image.astype(np.float64), header, overwrite=True)
+
+  sysargv1  = "channel_0_64bitLA.fits"
+  sysargv2  = "channel_1_64bitLA.fits"
+  sysargv3  = "channel_2_64bitLA.fits"
+  sysargv4  = "channel_RGB_64bitLA.fits"
+
+  old_data, old_header = read_fits(file1)
+  old_data = old_data.astype(np.float64)
+   
+  # Function to read FITS file and return data
+  def read_fits(file):
+    with fits.open(file, mode='update') as hdul:#
+      data = hdul[0].data
+      hdul.close()
+    return data
+
+  # Read the FITS files
+  file1 = sysargv1
+  file2 = sysargv2
+  file3 = sysargv3
+
+  # Read the image data from the FITS file
+  blue = read_fits(file1)
+  green = read_fits(file2)
+  red = read_fits(file3)
+
+  blue = blue.astype(np.float64)
+  green = green.astype(np.float64)
+  red = red.astype(np.float64)
+
+  # Check dimensions
+  print("Data1 shape:", blue.shape)
+  print("Data2 shape:", green.shape)
+  print("Data3 shape:", red.shape)
+
+  #newRGBImage = cv2.merge((red,green,blue))
+  RGB_Image1 = np.stack((red,green,blue))
+
+  # Remove the extra dimension
+  RGB_Image = np.squeeze(RGB_Image1)
+
+  # Create a FITS header with NAXIS = 3
+  header = old_header
+  header['NAXIS'] = 3
+  header['NAXIS1'] = RGB_Image.shape[0]
+  header['NAXIS2'] = RGB_Image.shape[1]
+  header['NAXIS3'] = RGB_Image.shape[2]
+
+  # Ensure the data type is correct 
+  newRGB_Image = RGB_Image.astype(np.float64)
+
+  print("newRGB_Image shape:", newRGB_Image.shape)
+
+  sysargv4 = "channel_RGB_64bitGB.fits"
+  fits.writeto( sysargv4, newRGB_Image, overwrite=True)
+  # Save the RGB image as a new FITS file with the correct header
+  hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
+  hdu.writeto(sysargv4, overwrite=True)
+
+  # Read and verify the saved FITS file
+  with fits.open(sysargv4) as hdul:
+    data = hdul[0].data
+
+  # Verify the saved RGB image
+  print("Verified image shape:", data.shape)
+
+  currentDirectory = os.path.abspath(os.getcwd())
+
+  # Define the file to delete
+  file_to_delete = "channel_0_64bit.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_1_64bit.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_2_64bit.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_0_64bitLA.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_1_64bitLA.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+        print(f"File '{file_to_delete}' does not exist.")
+
+  # Define the file to delete
+  file_to_delete = "channel_2_64bitLA.fits"
+  file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+  # Check if the file exists
+  if os.path.exists(file_to_delete):
+      os.remove(file_to_delete)  # Delete the file
+      print(f"File '{file_to_delete}' has been deleted.")
+  else:
+      print(f"File '{file_to_delete}' does not exist.")
 
   return sysargv1
   menue()
