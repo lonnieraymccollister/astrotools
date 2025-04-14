@@ -2993,7 +2993,7 @@ def LocAdapt():
       sysargv2  = "channel_0_64bit.fits"
       sysargv2g  = "channel_1_64bit.fits"
       sysargv2r  = "channel_2_64bit.fits"
-      sysargv4a  = input("Enter the LocAdapt 10 as int or other etc.  -->")
+      sysargv4a  = input("Enter the LocAdapt as (10) with no decimal  -->")
       sysargv4 = float(sysargv4a)
 
     #--------------------------------------------------------------------------------------
@@ -3008,8 +3008,8 @@ def LocAdapt():
           squared_image = np.square(image)
           local_mean_squared = cv2.filter2D(squared_image, -1, kernel)
     
-          # Calculate local standard deviation
-          local_std = np.sqrt(local_mean_squared - np.square(local_mean))
+          # Calculate local standard deviation and avoid negative
+          local_std = np.sqrt(abs(local_mean_squared - np.square(local_mean)))
     
           # Avoid division by zero
           local_std[local_std == 0] = 1
@@ -3128,7 +3128,7 @@ def LocAdapt():
 
       print("newRGB_Image shape:", newRGB_Image.shape)
 
-      sysargv4 = "channel_RGB_64bitGB.fits"
+      sysargv4 = "channel_RGB_64bitLA.fits"
       fits.writeto( sysargv4, newRGB_Image, overwrite=True)
       # Save the RGB image as a new FITS file with the correct header
       hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
