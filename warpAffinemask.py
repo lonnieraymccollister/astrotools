@@ -1091,7 +1091,7 @@ def DynamicRescale16():
   try:
 
       sysargv1  = input("Enter the grayscale image(fits Siril)  -->")
-      sysargv2  = input("Enter the the width of square(5)  -->")
+      width_of_square  = input("Enter the the width of square(5)  -->")
       #sysargv4  = input("Enter the image width in pixels(1000)  -->")
       #sysargv3  = input("Enter the image height in pixels(1000)  -->")
       sysargv5  = input("Enter the final image name progrm will output a .fit file   -->") 
@@ -1178,19 +1178,101 @@ def DynamicRescale16():
   menue()
 
 def DynamicRescale16RGB():
-
   try:
 
-      sysargv1  = input("Enter the B image(fits Siril)  -->")
-      sysargv1a  = input("Enter the G image(fits Siril)  -->")
-      sysargv1b  = input("Enter the R image(fits Siril)  -->")
-      sysargv2  = input("Enter the the width of square(5)  -->")
+      sysargv1  = input("Enter the Image to be resized(LANCZOS4)  -->")
+      width_of_square  = input("Enter the the width of square(5)  -->")
+      sysargv2  = int(25)
+      sysargv2a = int(1)
+      sysargv3  = "img_enlarged_25x.fit"
+
+      #################################################################################
+      #################################################################################
+
+        # Function to read FITS file and return data
+      def read_fits(file):
+          hdul = fits.open(file)
+          header = hdul[0].header
+          data = hdul[0].data
+          hdul.close()
+          return data, header
+
+      # Read the FITS files
+      file1 = sysargv1
+
+      # Read the image data from the FITS file
+      image_data, header = read_fits(file1)
+
+      #image_data = np.swapaxes(image_data, 0, 2)
+      #image_data = np.swapaxes(image_data, 0, 1)
+      image_data = np.transpose(image_data, (1, 2, 0))
+
+      # Normalize the image data to the range [0, 65535]
+      image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+      image_data = image_data.astype(np.uint16)
+
+      # Convert the image to BGR format (OpenCV uses BGR by default)
+      image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
+
+      img = cv2.resize(image_bgr,None,fx=int(sysargv2) / int(sysargv2a),fy=int(sysargv2) / int(sysargv2a),interpolation=cv2.INTER_LANCZOS4)
+
+      # Save or display the result
+      image_rgb = np.transpose(img, (2, 0, 1))
+
+      image_data = image_rgb.astype(np.float64)
+      data_range = np.max(image_data) - np.min(image_data)
+      if data_range == 0:
+        normalized_data = np.zeros_like(image_data)  # or handle differently
+      else:
+        normalized_data = (image_data - np.min(image_data)) / data_range
+      image_rgb = normalized_data    
+
+      # Create a FITS HDU
+      hdu = fits.PrimaryHDU(image_rgb, header)
+
+      # Write to FITS file
+      hdu.writeto(sysargv3,  overwrite=True)
+
+      #################################################################################
+      #################################################################################
+
+      sysargv2  = "img_enlarged_25x.fit"
+
+      # Function to read FITS file and return data
+      def read_fits(file):
+          hdul = fits.open(file)
+          header = hdul[0].header
+          data = hdul[0].data
+          hdul.close()
+          return data, header
+
+      # Read the FITS files
+      file1 = sysargv2
+
+      # Read the image data from the FITS file
+      image_data, header = read_fits(file1)
+      image_data = image_data.astype(np.float64)
+
+      # Split the color image into its individual channels
+      #b, g, r = cv2.split(image_data)
+      b, g, r = image_data[2, :, :], image_data[1, :, :], image_data[0, :, :] 
+
+
+      # Save each channel as a separate file
+      fits.writeto(f'channel_0_64bit.fits', b.astype(np.float64), header, overwrite=True)
+      fits.writeto(f'channel_1_64bit.fits', g.astype(np.float64), header, overwrite=True)
+      fits.writeto(f'channel_2_64bit.fits', r.astype(np.float64), header, overwrite=True)
+
+      sysargv1  = "channel_0_64bit.fits"
+      sysargv1a  = "channel_1_64bit.fits"
+      sysargv1b  = "channel_2_64bit.fits"
+      #sysargv2  = input("Enter the the width of square(5)  -->")
+      sysargv2  = width_of_square
       #sysargv4  = input("Enter the image width in pixels(1000)  -->")
       #sysargv3  = input("Enter the image height in pixels(1000)  -->")
-      sysargv5  = input("Enter the final image name progrm will output a .fit file   -->") 
-      sysargv6  = input("Enter the bin value   -->") 
-      gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
-
+      sysargv5  = "channel_RGB_64bit"
+      sysargv6  = "25" #image bin value
+      gamma     = float(".3981")
 
     #################################################################################
       # Replace 'your_fits_file.fits' with the actual path to your FITS file
@@ -1405,6 +1487,80 @@ def DynamicRescale16RGB():
       hdulist.writeto(str(sysargv5)+'_binned_gamma_corrected_drs_R.fit', overwrite=True)
 
     ###########################################################################################
+
+      sysargv1  = "channel_RGB_64bit_binned_gamma_corrected_drs_B.fit"
+      sysargv2  = "channel_RGB_64bit_binned_gamma_corrected_drs_G.fit"
+      sysargv3  = "channel_RGB_64bit_binned_gamma_corrected_drs_R.fit"
+      sysargv4  = "channel_RGB_64bit_binned_gamma_corrected_drs_RGB.fit"
+
+
+      with fits.open(sysargv1) as old_hdul:
+          # Access the header of the primary HDU
+        old_header = old_hdul[0].header
+        old_data = old_hdul[0].data
+    
+      # Function to read FITS file and return data
+      def read_fits(file):
+        with fits.open(file, mode='update') as hdul:#
+          data = hdul[0].data
+          # hdul.close()
+        return data
+
+      # Read the FITS files
+      file1 = sysargv1
+      file2 = sysargv2
+      file3 = sysargv3
+
+      # Read the image data from the FITS file
+      blue = read_fits(file1)
+      green = read_fits(file2)
+      red = read_fits(file3)
+
+      blue = blue.astype(np.float64)
+      green = green.astype(np.float64)
+      red = red.astype(np.float64)
+
+      # Check dimensions
+      print("Data1 shape:", blue.shape)
+      print("Data2 shape:", green.shape)
+      print("Data3 shape:", red.shape)
+
+      #newRGBImage = cv2.merge((red,green,blue))
+      RGB_Image1 = np.stack((red,green,blue))
+
+      # Remove the extra dimension
+      RGB_Image = np.squeeze(RGB_Image1)
+
+      # Create a FITS header with NAXIS = 3
+      header = old_header
+      header['NAXIS'] = 3
+      header['NAXIS1'] = RGB_Image.shape[0]
+      header['NAXIS2'] = RGB_Image.shape[1]
+      header['NAXIS3'] = RGB_Image.shape[2]
+
+      # Ensure the data type is correct 
+      newRGB_Image = RGB_Image.astype(np.float64)
+
+      print("newRGB_Image shape:", newRGB_Image.shape)
+
+      fits.writeto( sysargv4, newRGB_Image, overwrite=True)
+      # Save the RGB image as a new FITS file with the correct header
+      hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
+      hdu.writeto(sysargv4, overwrite=True)
+
+      # Function to read and verify the saved FITS file
+      def verify_fits(sysargv4):
+        with fits.open(sysargv4) as hdul:
+          data = hdul[0].data
+      return data
+
+      # Verify the saved RGB image
+      verified_image = verify_fits(sysargv4)
+      print("Verified image shape:", verified_image.shape)
+
+      #################################################################################
+      #################################################################################
+
 
   except Exception as e:
       print(f"An error occurred: {e}")
@@ -3575,6 +3731,80 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '35':
     DynamicRescale16RGB()
+    currentDirectory = os.path.abspath(os.getcwd())
+
+    # Define the file to delete
+    file_to_delete = "img_enlarged_25x.fit"
+    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+    # Check if the file exists
+    if os.path.exists(file_to_delete):
+        os.remove(file_to_delete)  # Delete the file
+        print(f"File '{file_to_delete}' has been deleted.")
+    else:
+        print(f"File '{file_to_delete}' does not exist.")
+
+    currentDirectory = os.path.abspath(os.getcwd())
+
+    # Define the file to delete
+    file_to_delete = "channel_0_64bit.fits"
+    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+    # Check if the file exists
+    if os.path.exists(file_to_delete):
+        os.remove(file_to_delete)  # Delete the file
+        print(f"File '{file_to_delete}' has been deleted.")
+    else:
+        print(f"File '{file_to_delete}' does not exist.")
+
+    # Define the file to delete
+    file_to_delete = "channel_1_64bit.fits"
+    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+    # Check if the file exists
+    if os.path.exists(file_to_delete):
+        os.remove(file_to_delete)  # Delete the file
+        print(f"File '{file_to_delete}' has been deleted.")
+    else:
+        print(f"File '{file_to_delete}' does not exist.")
+
+    # Define the file to delete
+    file_to_delete = "channel_2_64bit.fits"
+    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+    # Check if the file exists
+    if os.path.exists(file_to_delete):
+        os.remove(file_to_delete)  # Delete the file
+        print(f"File '{file_to_delete}' has been deleted.")
+    else:
+        print(f"File '{file_to_delete}' does not exist.")
+
+    # Define the file to delete
+    file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_B.fit"
+    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+    # Check if the file exists
+    if os.path.exists(file_to_delete):
+        os.remove(file_to_delete)  # Delete the file
+        print(f"File '{file_to_delete}' has been deleted.")
+    else:
+        print(f"File '{file_to_delete}' does not exist.")
+
+    # Define the file to delete
+    file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_G.fit"
+    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+    # Check if the file exists
+    if os.path.exists(file_to_delete):
+        os.remove(file_to_delete)  # Delete the file
+        print(f"File '{file_to_delete}' has been deleted.")
+    else:
+          print(f"File '{file_to_delete}' does not exist.")
+
+    # Define the file to delete
+    file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_R.fit"
+    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+    # Check if the file exists
+    if os.path.exists(file_to_delete):
+        os.remove(file_to_delete)  # Delete the file
+        print(f"File '{file_to_delete}' has been deleted.")
+    else:
+        print(f"File '{file_to_delete}' does not exist.")
+
   
   if sysargv1 == '36':
     clahe()
