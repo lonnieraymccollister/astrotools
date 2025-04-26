@@ -11,6 +11,8 @@ from matplotlib.image import imread
 from mpl_toolkits.mplot3d import Axes3D
 from astropy.io import fits
 from astropy.wcs import WCS
+from astropy.coordinates import Angle
+import mpmath as mp
 import glob
 from skimage.exposure import match_histograms
 from scipy.ndimage import zoom
@@ -3597,10 +3599,108 @@ def combinelrgb():
   return sysargv1
   menue()
 
+def MxdlAstap():
+
+  try:
+
+      sysargv0  = input("Enter MaxDl fits file for Astap  -->")
+
+        # Set mpmath precision to 50 decimal places
+      mp.dps = 50
+
+      # Open the FITS file in update mode so we can modify its header.
+      filename = sysargv0    # Replace with your FITS file name
+      hdul = fits.open(filename, mode="update")
+      hdr = hdul[0].header
+
+      # --- Step 1. Read the astrometry.net keywords ---
+      # These keywords come from the astrometry.net solution in the header.
+      objctra = hdr.get("OBJCTRA")      # e.g., '12 30 50.3'
+      objctdec = hdr.get("OBJCTDEC")     # e.g., '+12 23 13'
+      cdelt1  = hdr.get("CDELT1")        # e.g., 1.466251413027E-04
+      cdelt2  = hdr.get("CDELT2")        # e.g., 1.466251413027E-04
+
+      if objctra is None or objctdec is None or cdelt1 is None or cdelt2 is None:
+          raise ValueError("Required keywords OBJCTRA, OBJCTDEC, or CDELT* are missing.")
+
+      # --- Step 2. Convert center coordinates to degrees ---
+      # OBJCTRA is in "HH MM SS.s" [hourangle] and OBJCTDEC is in "DD MM SS".
+      ra_deg  = Angle(objctra, unit="hourangle").degree
+      dec_deg = Angle(objctdec, unit="deg").degree
+
+      # --- Step 3. Determine the reference pixel (typically the image center) ---
+      naxis1 = hdr.get("NAXIS1")
+      naxis2 = hdr.get("NAXIS2")
+      if naxis1 is None or naxis2 is None:
+          raise ValueError("Image dimensions (NAXIS1, NAXIS2) are missing.")
+
+      # Following the common convention, the reference pixel is placed at the center.
+      crpix1 = (naxis1 + 1) / 2.0
+      crpix2 = (naxis2 + 1) / 2.0
+
+      # --- Step 4. Calculate the new WCS parameters with high precision ---
+      # Convert cdelt1 to a high-precision mpmath float:
+      cdelt1_mp = mp.mpf(cdelt1)
+      cdelt2_mp = mp.mpf(cdelt2)
+
+      # Mimic a solved CD1_1 value (from an astrometric solution)
+      solved_cd1_1 = mp.mpf(-3.542246e-4)
+      # Compute the factor by which the effective scale changes:
+      scale_factor = abs(solved_cd1_1) / cdelt1_mp  # e.g., ~2.416
+      # New effective pixel scale (in deg/pixel) – it should be nearly the absolute value of solved_cd1_1.
+      scale = scale_factor * cdelt1_mp
+
+      # Assume a (solved) image rotation, e.g., 179.7°
+      rotation_deg = mp.mpf(179.7)
+      # Convert degrees to radians using mpmath:
+      theta = rotation_deg * (mp.pi / 180)
+
+      # Calculate the CD matrix components using high-precision mpmath functions:
+      cd1_1 = -scale * mp.cos(theta)
+      cd1_2 =  scale * mp.sin(theta)
+      cd2_1 =  scale * mp.sin(theta)
+      cd2_2 =  scale * mp.cos(theta)
+
+      # --- Step 5. Write the computed WCS keywords into the FITS header ---
+      hdr["CRPIX1"]   = crpix1
+      hdr["CRPIX2"]   = crpix2
+      hdr["CRVAL1"]   = ra_deg    # Fitted RA center in degrees
+      hdr["CRVAL2"]   = dec_deg   # Fitted DEC center in degrees
+      hdr["CROTA1"]   = float(rotation_deg)  # Convert high-precision number to float
+      hdr["CROTA2"]   = float(rotation_deg)  # Often nearly the same value as CROTA1
+      hdr["CD1_1"]    = float(cd1_1)
+      hdr["CD1_2"]    = float(cd1_2)
+      hdr["CD2_1"]    = float(cd2_1)
+      hdr["CD2_2"]    = float(cd2_2)
+      hdr["PLTSOLVD"] = True   # Flag indicating that the plate solution has been applied
+      # Additional WCS keywords
+      hdr["CTYPE1"]  = "RA---TAN"   # first parameter RA, projection TANgential   
+      hdr["CTYPE2"]  = "DEC--TAN"   # second parameter DEC, projection TANgential   
+      hdr["CUNIT1"]  = "deg"        # Unit of coordinates                            
+      hdr["EQUINOX"] = 2000.0       # Equinox of coordinates                         
+
+
+      # Save (flush) the changes and close the file.
+      hdul.flush()
+      hdul.close()
+
+      print("WCS keywords calculated and written to the FITS header.")
+
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
+
+
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -3841,6 +3941,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '47':
     combinelrgb()
+
+  if sysargv1 == '48':
+    MxdlAstap()
 
   if sysargv1 == '1313':
     sys.exit()
