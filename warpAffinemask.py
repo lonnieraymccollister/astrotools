@@ -15,7 +15,8 @@ from astropy.coordinates import Angle
 import mpmath as mp
 import glob
 from skimage.exposure import match_histograms
-from scipy.ndimage import zoom
+from scipy.ndimage import zoom 
+from scipy.ndimage import convolve
 from reproject import reproject_interp, reproject_exact
 from reproject.mosaicking import find_optimal_celestial_wcs
 
@@ -1020,7 +1021,7 @@ def PNGcreateimage16(sysargv2, sysargv3, sysargv4, sysargv5):
         for y in range(diameterp1):
             my_data[x,y]=img[x,y]-min(img[x,y],img[x,diameter-y],img[diameter-x,y],img[diameter-x,diameter-y])   
       #Rescale to 0-65535 and convert to uint16
-      rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.float64)
+      rescaled = (65535.0 / my_data.max() * (my_data - my_data.min())).astype(np.uint16)
       im = Image.fromarray(rescaled)
       symfile = (sysargv2+"_"+sysargv4+"_"+sysargv5+".png")
       im.save(symfile)
@@ -3122,7 +3123,8 @@ def LocAdapt():
   try:
 
       sysargv2  = input("Enter the Color Image for LA -->")
-      sysargv6  = input("Enter neighborhood_size(7) -->")
+      sysargv6  = input("Enter neighborhood_size(15) -->")
+      sysargv6int  = int(sysargv6)
 
       # Function to read FITS file and return data
       def read_fits(file):
@@ -3136,7 +3138,7 @@ def LocAdapt():
       file1 = sysargv2
       # Read the image data from the FITS file
       image_data, header = read_fits(file1)
-      image_data = image_data.astype(np.float64)
+      image_data = image_data.astype(float)
 
       # Split the color image into its individual channels
       #b, g, r = cv2.split(image_data)
@@ -3144,95 +3146,237 @@ def LocAdapt():
 
 
       # Save each channel as a separate file
-      fits.writeto(f'channel_0_64bit.fits', b.astype(np.float64), header, overwrite=True)
-      fits.writeto(f'channel_1_64bit.fits', g.astype(np.float64), header, overwrite=True)
-      fits.writeto(f'channel_2_64bit.fits', r.astype(np.float64), header, overwrite=True)
+      fits.writeto(f'channel_0_64bit.fits', b.astype(float), header, overwrite=True)
+      fits.writeto(f'channel_1_64bit.fits', g.astype(float), header, overwrite=True)
+      fits.writeto(f'channel_2_64bit.fits', r.astype(float), header, overwrite=True)
 
       sysargv2  = "channel_0_64bit.fits"
       sysargv2g  = "channel_1_64bit.fits"
       sysargv2r  = "channel_2_64bit.fits"
-      sysargv4a  = input("Enter the LocAdapt as (10) with no decimal  -->")
-      sysargv4 = float(sysargv4a)
 
-    #--------------------------------------------------------------------------------------
-      def contrast_filter(image, neighborhood_size=int(sysargv6)):
-          # Define the kernel for calculating local mean and standard deviation
-          kernel = np.ones((neighborhood_size, neighborhood_size), np.float32) / (neighborhood_size * neighborhood_size)
+      sysargv4a  = input("Enter the Contrast as (50) with no decimal  -->")
+      sysargv4 = int(sysargv4a)
+      sysargv4b  = input("Enter the feather_distance as (5) with no decimal  -->")
+      sysargv4c = int(sysargv4b)
+
+      def compute_optimum_contrast_percentage(image, target_std):
+        """
+        Compute an optimum contrast percentage based on the image's current standard deviation.
     
-          # Calculate local mean
-          local_mean = cv2.filter2D(image, -1, kernel)
+        Parameters:
+        image (numpy.ndarray): The input image as a 2D NumPy array.
+        target_std (float): A chosen target standard deviation.
+                           The optimum contrast factor is computed as target_std / current_std.
     
-          # Calculate local mean of squared values
-          squared_image = np.square(image)
-          local_mean_squared = cv2.filter2D(squared_image, -1, kernel)
+        Returns:
+            float: The computed optimum contrast percentage.
+            For example, a return value of 150 means 150% (i.e., a factor of 1.5).
+        """
+        current_std = np.std(image)
+        if current_std == 0:
+        # For a flat image, no change is applied.
+          return 100.0
+        contrast_factor = target_std / current_std
+        contrast_percentage = contrast_factor * 100.0
+        return contrast_percentage
+
+      def compute_optimum_feather_distance(image, neighborhood_size, factor=1.0):
+        """
+        Compute an optimum feather distance based on the local standard deviation of the image.
+     
+        This function computes the local mean and local mean of the squared image within a window,
+        then derives the local standard deviation. The median of these local standard deviations
+        is taken as the baseline optimum feather distance, which can be adjusted by a scaling factor.
+            Parameters:
+            image (numpy.ndarray): The input image as a 2D NumPy array.
+            neighborhood_size (int): The window size used for calculating local statistics.
+            factor (float): A multiplicative factor to adjust the optimum feather distance (default is 1.0).
     
-          # Calculate local standard deviation and avoid negative
-          local_std = np.sqrt(abs(local_mean_squared - np.square(local_mean)))
+        Returns:
+            float: The computed optimum feather distance.
+        """
+        # Adjust the window size by reducing it by 1 (ensuring an effective kernel size of at least 1)
+        adjusted_size = max(1, neighborhood_size - 1)
+        kernel = np.ones((adjusted_size, adjusted_size), dtype=np.float32) / (adjusted_size * adjusted_size)
     
-          # Avoid division by zero
-          local_std[local_std == 0] = 1
+        # Compute the local mean using a convolution
+        local_mean = convolve(image, kernel, mode='reflect')
     
-          # Calculate contrast factor
-          #contrast_factor = (local_mean / local_std)
-          contrast_factor = (sysargv4)
+        # Compute the local mean of the squared image
+        local_mean_sq = convolve(image**2, kernel, mode='reflect')
     
-          # Calculate the contrast-enhanced image
-          enhanced_image = (image - local_mean) * contrast_factor + local_mean
-          enhanced_image = np.clip(enhanced_image, 0, np.max(image)).astype(image.dtype)
+        # Calculate local standard deviation: sqrt(local_mean_sq - local_mean**2)
+        local_std = np.sqrt(np.abs(local_mean_sq - local_mean**2))
     
-          return enhanced_image
-    #--------------------------------------------------------------------------------------
-
-      def read_fits(file):
-            hdul = fits.open(file)
-            header = hdul[0].header
-            data = hdul[0].data
-            hdul.close()
-            return data, header
-
-        # Load the FITS blue file
-      file1 = sysargv2
-      image_data, header = read_fits(file1)
-      image_data = image_data.astype(np.float64)
-
-      # Normalize the image data
-      image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
+        # Use the median of the local standard deviations as the baseline, then scale.
+        optimum_feather = factor * np.median(local_std)
+        return optimum_feather
 
     #--------------------------------------------------------------------------------------
-      # Apply the contrast filter
-      filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
+      def contrast_filter(image, neighborhood_size, contrast_factor, feather_distance):
+        """
+        Apply a local adaptive contrast filter with feathering.
+    
+        This function computes a local mean (using an adjusted neighborhood size) and then
+        enhances the contrast by scaling the deviation from the local mean. Feathering is implemented 
+        by blending the enhanced image with the original image in areas where the local standard deviation 
+        is below a specified feather_distance threshold.
+          
+        Parameters:
+            image (ndarray): 2D array of the input image.
+            neighborhood_size (int): Size of the window for computing local statistics.
+            contrast_factor (float): Factor to scale the local contrast.
+            feather_distance (float): Threshold (in intensity units) that defines the feathering effect.
+                                  Regions with local standard deviation lower than this value are blended
+                                  with the original image.
+    
+        Returns:
+              final_image (ndarray): The contrast-enhanced image.
+        """
+        # Adjust the kernel size (reducing the provided neighborhood size by 1, but never below 1)
+        adjusted_size = max(1, neighborhood_size - 1)
+        kernel = np.ones((adjusted_size, adjusted_size), dtype=float)
+        kernel /= kernel.size
+
+        # Compute the local mean using convolution
+        local_mean = convolve(image, kernel, mode='reflect')
+    
+        # Compute the enhanced image using the standard contrast adjustment formula:
+        #   enhanced = (image - local_mean) * contrast_factor + local_mean
+        enhanced_image = (image - local_mean) * contrast_factor + local_mean
+
+        # For feathering, compute the local standard deviation:
+        # First, get the local mean of the squared image.
+        squared_image = np.square(image)
+        local_mean_squared = convolve(squared_image, kernel, mode='reflect')
+        # Then compute the standard deviation (making sure to safeguard against small negative values)
+        local_std = np.sqrt(np.abs(local_mean_squared - np.square(local_mean)))
+    
+        # Create a feathering weight: when local_std is below feather_distance the weight is <1.
+        # This weight is 1 if local_std >= feather_distance.
+        weight = np.clip(local_std / feather_distance, 0, 1)
+    
+        # Blend the original and enhanced images using the weight map:
+        #   In low-contrast regions (low local_std) the enhanced effect is partially reduced.
+        final_image = weight * enhanced_image + (1 - weight) * image
+    
+        return final_image
+
+      # -------------------------
+      # Hard-coded Parameters
+      # -------------------------
+      input_fits  = 'channel_0_64bit.fits'   # Name/path for the input FITS file.
+      output_fits = 'channel_0_64bitLA.fits'  # Name/path for the output FITS file.
+      neighborhood_size = sysargv6int      # Size of the region used to compute local statistics.
+      target_std = int(sysargv4) 
+      # Factor by which to scale the local deviations.
+      feather_distance = int(sysargv4c)       # Feather threshold: lower values produce more feathering in smooth areas.
+      feather_factor = feather_distance
+
+      # -------------------------
+      # Read the FITS File
+      # -------------------------
+      hdulist = fits.open(input_fits)
+      # Convert image data to float32 for accurate arithmetic and convolution
+      image_data = hdulist[0].data.astype(float)
+      header = hdulist[0].header
+
+      optimum_contrast_percentage = compute_optimum_contrast_percentage(image_data, target_std)
+      contrast_factor = optimum_contrast_percentage * 100
+      optimum_feather_distance = compute_optimum_feather_distance(image_data, neighborhood_size, feather_factor)
+      feather_distance = optimum_feather_distance / 100
+
+      # -------------------------
+      # Apply the Contrast Filter with Feathering
+      # -------------------------
+      enhanced_data = contrast_filter(image_data, neighborhood_size, contrast_factor, feather_distance)
+
+      # -------------------------
+      # Write the Enhanced Image to a New FITS File
+      # -------------------------
+      hdu = fits.PrimaryHDU(data=enhanced_data, header=header)
+      hdu.writeto(output_fits, overwrite=True)
+      hdulist.close()
+
+      print(f"Enhanced FITS file with feathering saved as {output_fits}")
+
+      # -------------------------
+      # Hard-coded Parameters
+      # -------------------------
+      input_fits  = 'channel_1_64bit.fits'   # Name/path for the input FITS file.
+      output_fits = 'channel_1_64bitLA.fits'  # Name/path for the output FITS file.
+      neighborhood_size = sysargv6int       # Size of the region used to compute local statistics.
+      target_std = int(sysargv4) 
+      # Factor by which to scale the local deviations.
+      feather_distance = int(sysargv4c)       # Feather threshold: lower values produce more feathering in smooth 
+      feather_factor = feather_distance
+
+      # -------------------------
+      # Read the FITS File
+      # -------------------------
+      hdulist = fits.open(input_fits)
+      # Convert image data to float64 for accurate arithmetic and convolution
+      image_data = hdulist[0].data.astype(float)
+      header = hdulist[0].header
+
+      optimum_contrast_percentage = compute_optimum_contrast_percentage(image_data, target_std)
+      contrast_factor = optimum_contrast_percentage * 100
+      optimum_feather_distance = compute_optimum_feather_distance(image_data, neighborhood_size, feather_factor)
+      feather_distance = optimum_feather_distance / 100
+
+      # -------------------------
+      # Apply the Contrast Filter with Feathering
+      # -------------------------
+      enhanced_data = contrast_filter(image_data, neighborhood_size, contrast_factor, feather_distance)
+
+      # -------------------------
+      # Write the Enhanced Image to a New FITS File
+      # -------------------------
+      hdu = fits.PrimaryHDU(data=enhanced_data, header=header)
+      hdu.writeto(output_fits, overwrite=True)
+      hdulist.close()
+
+      print(f"Enhanced FITS file with feathering saved as {output_fits}")
+
+      # -------------------------
+      # Hard-coded Parameters
+      # -------------------------
+      input_fits  = 'channel_2_64bit.fits'   # Name/path for the input FITS file.
+      output_fits = 'channel_2_64bitLA.fits'  # Name/path for the output FITS file.
+      neighborhood_size = sysargv6int       # Size of the region used to compute local statistics.
+      target_std = int(sysargv4) 
+      # Factor by which to scale the local deviations.
+      feather_distance = int(sysargv4c)       # Feather threshold: lower values produce more feathering in smooth 
+      feather_factor = feather_distance
+
+      # -------------------------
+      # Read the FITS File
+      # -------------------------
+      hdulist = fits.open(input_fits)
+      # Convert image data to float64 for accurate arithmetic and convolution
+      image_data = hdulist[0].data.astype(float)
+      header = hdulist[0].header
+
+      optimum_contrast_percentage = compute_optimum_contrast_percentage(image_data, target_std)
+      contrast_factor = optimum_contrast_percentage * 100
+      optimum_feather_distance = compute_optimum_feather_distance(image_data, neighborhood_size, feather_factor)
+      feather_distance = optimum_feather_distance / 100
+
+      # -------------------------
+      # Apply the Contrast Filter with Feathering
+      # -------------------------
+      enhanced_data = contrast_filter(image_data, neighborhood_size, contrast_factor, feather_distance)
+
+      # -------------------------
+      # Write the Enhanced Image to a New FITS File
+      # -------------------------
+      hdu = fits.PrimaryHDU(data=enhanced_data, header=header)
+      hdu.writeto(output_fits, overwrite=True)
+      hdulist.close()
+
+      print(f"Enhanced FITS file with feathering saved as {output_fits}")
+
     #--------------------------------------------------------------------------------------
-
-      # Save the final image as a FITS file
-      fits.writeto(f'channel_0_64bitLA.fits', filtered_image.astype(np.float64), header, overwrite=True)
-      # Load the FITS green file
-      file1 = sysargv2g
-      image_data, header = read_fits(file1)
-      image_data = image_data.astype(np.float64)
-
-      # Normalize the image data
-      image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
-
-    #--------------------------------------------------------------------------------------
-      # Apply the contrast filter
-      filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
-    #--------------------------------------------------------------------------------------
-
-      # Save the final image as a FITS file
-      fits.writeto(f'channel_1_64bitLA.fits', filtered_image.astype(np.float64), header, overwrite=True)    # Load the FITS red file
-      file1 = sysargv2r
-      image_data, header = read_fits(file1)
-      image_data = image_data.astype(np.float64)
-      # Normalize the image data
-      image_data = np.interp(image_data, (image_data.min(), image_data.max()), (0, 1)).astype(np.float32)
-
-    #--------------------------------------------------------------------------------------
-          # Apply the contrast filter
-      filtered_image = contrast_filter(image_data, neighborhood_size=int(sysargv6))
-    #--------------------------------------------------------------------------------------
-
-      # Save the final image as a FITS file
-      fits.writeto(f'channel_2_64bitLA.fits', filtered_image.astype(np.float64), header, overwrite=True)
 
       sysargv1  = "channel_0_64bitLA.fits"
       sysargv2  = "channel_1_64bitLA.fits"
@@ -3240,7 +3384,7 @@ def LocAdapt():
       sysargv4  = "channel_RGB_64bitLA.fits"
 
       old_data, old_header = read_fits(file1)
-      old_data = old_data.astype(np.float64)
+      old_data = old_data.astype(float)
    
       # Function to read FITS file and return data
       def read_fits(file):
@@ -3259,9 +3403,9 @@ def LocAdapt():
       green = read_fits(file2)
       red = read_fits(file3)
 
-      blue = blue.astype(np.float64)
-      green = green.astype(np.float64)
-      red = red.astype(np.float64)
+      blue = blue.astype(float)
+      green = green.astype(float)
+      red = red.astype(float)
 
       # Check dimensions
       print("Data1 shape:", blue.shape)
@@ -3282,7 +3426,7 @@ def LocAdapt():
       header['NAXIS3'] = RGB_Image.shape[2]
 
       # Ensure the data type is correct 
-      newRGB_Image = RGB_Image.astype(np.float64)
+      newRGB_Image = RGB_Image.astype(float)
 
       print("newRGB_Image shape:", newRGB_Image.shape)
 
@@ -3445,7 +3589,7 @@ def WcsStack():
       # Load the reference image (use the first image as the reference)
       ref_hdul = fits.open(os.path.join(directory_path, fits_files[0]))
       ref_header = ref_hdul[0].header
-      ref_data = ref_hdul[0].data.astype(np.float64)  # Ensure float64 precision
+      ref_data = ref_hdul[0].data.astype(float)  # Ensure float64 precision
       print(f"Successfully opened reference FITS file: {fits_files[0]}")
       ref_wcs = WCS(ref_header)
 
@@ -3461,7 +3605,7 @@ def WcsStack():
       for fits_file in fits_files:
           with fits.open(fits_file) as hdul:
               target_header = hdul[0].header
-              target_data = hdul[0].data.astype(np.float64)
+              target_data = hdul[0].data.astype(float)
 
               try:
                   target_wcs = WCS(target_header)
@@ -3479,7 +3623,7 @@ def WcsStack():
       ref_hdul.close()
 
       # Stack the aligned images (e.g., average stacking)
-      stacked_image = np.mean(aligned_images, axis=0).astype(np.float64)
+      stacked_image = np.mean(aligned_images, axis=0).astype(float)
 
       # Save the stacked image to a new FITS file
       stacked_hdu = fits.PrimaryHDU(stacked_image, header=ref_header)
