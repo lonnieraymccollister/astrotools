@@ -504,8 +504,9 @@ def min2images():
   menue()
 
 def splittricolor():
-  sysargv2  = input("Enter the Color Image to be split  -->")
+  sysargv2a  = input("Enter the Color Image to be split  -->")
   sysargv7  = input("Enter 0 for fits or 1 for other file -->")
+  sysargv2 = sysargv2a.split('.')[0]
 
   if sysargv7 == '0':
 
@@ -518,7 +519,7 @@ def splittricolor():
         return data, header
 
     # Read the FITS files
-    file1 = sysargv2
+    file1 = sysargv2a
 
     # Read the image data from the FITS file
     image_data, header = read_fits(file1)
@@ -530,9 +531,9 @@ def splittricolor():
 
 
     # Save each channel as a separate file
-    fits.writeto(f'channel_0_64bit.fits', b.astype(np.float32), header, overwrite=True)
-    fits.writeto(f'channel_1_64bit.fits', g.astype(np.float32), header, overwrite=True)
-    fits.writeto(f'channel_2_64bit.fits', r.astype(np.float32), header, overwrite=True)
+    fits.writeto(f'{sysargv2}channel_0_64bit.fits', b.astype(np.float32), header, overwrite=True)
+    fits.writeto(f'{sysargv2}channel_1_64bit.fits', g.astype(np.float32), header, overwrite=True)
+    fits.writeto(f'{sysargv2}channel_2_64bit.fits', r.astype(np.float32), header, overwrite=True)
 
   if sysargv7 == '1':
 
