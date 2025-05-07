@@ -4,6 +4,7 @@ from PIL import Image
 import cv2, sys, os, shutil, ffmpeg, tifffile
 import numpy as np
 import matplotlib
+import math
 from numpy import genfromtxt
 import matplotlib.pyplot as plt
 from matplotlib import pyplot
@@ -3908,10 +3909,65 @@ def MxdlAstap():
   menue()
 
 
+def CentRatio():
+
+  try:
+
+      sysargv0  = input("Enter star1_image1 x  -->")
+      sysargv1  = input("Enter star1_image1 y  -->")
+      sysargv2  = input("Enter star2_image1 x  -->")
+      sysargv3  = input("Enter star2_image1 y  -->")
+      sysargv4  = input("Enter star1_image2 x  -->")
+      sysargv5  = input("Enter star1_image2 y  -->")
+      sysargv6  = input("Enter star2_image2 x  -->")
+      sysargv7  = input("Enter star2_image2 y  -->")
+
+
+      def euclidean_distance(x1, y1, x2, y2):
+        """
+        Calculate the Euclidean distance between two points.
+        """
+        return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+      # Image One coordinates (in pixels)
+      star1_image1 = (float(sysargv0), float(sysargv1))
+      star2_image1 = (float(sysargv2), float(sysargv3))
+
+      # Calculate distance1 for image one
+      distance1 = euclidean_distance(star1_image1[0], star1_image1[1], star2_image1[0], star2_image1[1])
+
+      # Image Two coordinates (in pixels)
+      star1_image2 = (float(sysargv4), float(sysargv5))
+      star2_image2 = (float(sysargv6), float(sysargv7))
+
+      # Calculate distance2 for image two
+      distance2 = euclidean_distance(star1_image2[0], star1_image2[1], star2_image2[0], star2_image2[1])
+
+      # Calculate the ratio of distances
+      ratio = distance1 / distance2
+
+      # Print out the results
+      print(f"Distance in Image One: {distance1:.5f} pixels")
+      print(f"Distance in Image Two: {distance2:.5f} pixels")
+      print(f"Ratio (distance1 / distance2): {ratio:.5f}")
+
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
+
+
+
+
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -4155,6 +4211,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '48':
     MxdlAstap()
+
+  if sysargv1 == '49':
+    CentRatio()
 
   if sysargv1 == '1313':
     sys.exit()
