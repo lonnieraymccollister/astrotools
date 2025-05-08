@@ -721,11 +721,6 @@ def align2img():
         sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
         # Open the FITS files
 
-        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
-
-        fliplr  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
 
         def read_fits(file):
             hdul = fits.open(file)
@@ -746,6 +741,10 @@ def align2img():
         # Reproject the images to the new WCS
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -800,6 +799,10 @@ def align2img():
         # Reproject the images to the new WCS
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -868,6 +871,10 @@ def align2img():
         # Reproject the images to the new WCS
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -951,6 +958,10 @@ def align2img():
         # Reproject the images to the new WCS
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
