@@ -18,6 +18,7 @@ import glob
 from skimage.exposure import match_histograms
 from scipy.ndimage import zoom 
 from scipy.ndimage import convolve
+from scipy.signal import convolve2d
 from reproject import reproject_interp, reproject_exact
 from reproject.mosaicking import find_optimal_celestial_wcs
 
@@ -3972,13 +3973,91 @@ def CentRatio():
   return sysargv1
   menue()
 
+def HpMore():
 
+  try:
+
+      sysargv0  = input("Enter fits image  -->")
+      sysargv1  = input("Enter Hp output fits file  -->")
+
+      # Step 1: Read the color FITS file.
+      with fits.open(sysargv0) as hdul:
+          data = hdul[0].data
+
+      print("Original data shape:", data.shape)
+
+      # Ensure the data is in a 3D array representing three color channels.
+      # If the data shape is (ny, nx, 3), transpose it so that channels come first: (3, ny, nx).
+      if data.ndim == 3:
+          if data.shape[-1] == 3:  # shape is likely (ny, nx, 3)
+              data = np.transpose(data, (2, 0, 1))
+              print("Transposed data shape:", data.shape)
+          elif data.shape[0] == 3:
+              # Already in (3, ny, nx) order.
+              print("Data already in (channels, ny, nx) format.")
+          else:
+              raise ValueError("Unexpected color image shape. Expected channel count of 3.")
+      else:
+          raise ValueError("Input FITS does not appear to be a color (3 channel) image.")
+
+      # Step 2: Define the 5x5 high-pass (Laplacian-style) kernel.
+      # This kernel is designed to sum to zero: the negative weights in the outer parts subtract the local average,
+      # while the positive weights at and near the center emphasize high-frequency details.
+      hp_kernel_5x5 = np.array([
+          [-1, -1, -1, -1, -1],
+          [-1,  1,  2,  1, -1],
+          [-1,  2,  4,  2, -1],
+          [-1,  1,  2,  1, -1],
+          [-1, -1, -1, -1, -1]
+      ], dtype=float)
+
+      print("5x5 High-Pass Kernel:\n", hp_kernel_5x5)
+
+      # Step 3: Initialize an output array for the filtered data.
+      # We'll process each channel separately.
+      filtered_channels = np.empty_like(data)
+
+      # Loop over each channel and apply the range-restricted high-pass filter.
+      # For each channel, we compute the 5x5 convolution and then add its values back only where pixel values exceed a threshold.
+      for i in range(data.shape[0]):
+          channel = data[i]
+    
+          # Apply the high-pass filter using 2D convolution.
+          # 'same' ensures the output matches the input dimensions,
+          # and 'symm' uses symmetric boundary handling.
+          highpass = convolve2d(channel, hp_kernel_5x5, mode='same', boundary='symm')
+    
+          # Create a range restriction mask by choosing pixels above the 70th percentile.
+          threshold = np.percentile(channel, 70)
+          mask = channel > threshold
+
+          # Combine: add the high-pass detail to the original image only in pixels where the mask is True.
+          filtered_channel = channel.copy()
+          filtered_channel[mask] = channel[mask] + highpass[mask]
+    
+          filtered_channels[i] = filtered_channel
+
+      # Step 4: Convert the filtered result back for visualization.
+      # Many plotting functions expect color images in (ny, nx, 3) order.
+      filtered_rgb = np.transpose(filtered_channels, (1, 2, 0))
+      original_rgb = np.transpose(data, (1, 2, 0))
+
+
+      # Step 6: Write the filtered image to a new FITS file.
+      # Here we save in the original channel-first ordering (3, ny, nx).
+      fits.writeto( sysargv1, filtered_channels, overwrite=True)
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
 
 
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -4225,6 +4304,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '49':
     CentRatio()
+
+  if sysargv1 == '50':
+    HpMore()
 
   if sysargv1 == '1313':
     sys.exit()
