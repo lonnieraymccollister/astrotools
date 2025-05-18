@@ -712,7 +712,7 @@ def align2img():
 
       # Load the two images
       sysargv1  = input("Enter the 1st reference image name(WCS/std) -->")
-      sysargv7  = input("Enter 02, 03, 04, 05 for fits or 1 for other file -->")
+      sysargv7  = input("Enter 02, 03, 04, 05, 06 for fits or 1 for other file -->")
     
       if sysargv7 == '02':
         sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")  
@@ -743,9 +743,7 @@ def align2img():
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
         flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -754,6 +752,8 @@ def align2img():
         hdu.writeto(sysargv2, overwrite=True)
         array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1': array2 = np.flipud(array2)
         if fliplr == '1': array2 = np.fliplr(array2)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -771,12 +771,6 @@ def align2img():
         # Open the FITS files
 
         sysargv4a  = input("Enter 3rd Aligned image name(WCS/std)  -->")
-        # Open the FITS files
-
-        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
-
-        fliplr  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
         # Open the FITS files
 
         def read_fits(file):
@@ -801,9 +795,7 @@ def align2img():
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
         flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -812,6 +804,8 @@ def align2img():
         hdu.writeto(sysargv2, overwrite=True)
         array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array2 = np.flipud(array2)
         if fliplr == '1':  array2 = np.fliplr(array2)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -820,6 +814,8 @@ def align2img():
         hdu.writeto(sysargv4, overwrite=True)
         array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array3 = np.flipud(array3)
         if fliplr == '1':  array3 = np.fliplr(array3)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -841,12 +837,6 @@ def align2img():
         # Open the FITS files
     
         sysargv4b  = input("Enter 4th Aligned image name(WCS/std)  -->")
-        # Open the FITS files
-
-        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
-
-        fliplr  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
         # Open the FITS files
 
         def read_fits(file):
@@ -873,9 +863,7 @@ def align2img():
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
         flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -884,6 +872,8 @@ def align2img():
         hdu.writeto(sysargv2, overwrite=True)
         array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array2 = np.flipud(array2)
         if fliplr == '1':  array2 = np.fliplr(array2)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -892,6 +882,8 @@ def align2img():
         hdu.writeto(sysargv4, overwrite=True)
         array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array3 = np.flipud(array3)
         if fliplr == '1':  array3 = np.fliplr(array3)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -900,6 +892,8 @@ def align2img():
         hdu.writeto(sysargv4a, overwrite=True)
         array4, footprint4 = reproject_interp((data4, wcs4), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array4 = np.flipud(array4)
         if fliplr == '1':  array4 = np.fliplr(array4)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -912,7 +906,7 @@ def align2img():
         sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")  
         sysargv3a  = input("Enter the 3rd reference image file name(WCS/std) -->")  
         sysargv3b  = input("Enter the 4th reference image file name(WCS/std) -->")  
-        sysargv3c  = input("Enter the 5threference image file name(WCS/std) -->") 
+        sysargv3c  = input("Enter the 5th reference image file name(WCS/std) -->") 
         
         sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
 
@@ -926,12 +920,6 @@ def align2img():
         # Open the FITS files
 
         sysargv4c  = input("Enter 5th Aligned image name(WCS/std)  -->")
-        # Open the FITS files
-
-        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
-
-        fliplr  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
         # Open the FITS files
 
         def read_fits(file):
@@ -960,9 +948,7 @@ def align2img():
         array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
         # flip and mirror image
         flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
-        # Open the FITS files
         if flipud == '1':  array1 = np.flipud(array1)
         if fliplr == '1':  array1 = np.fliplr(array1)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -971,6 +957,8 @@ def align2img():
         hdu.writeto(sysargv2, overwrite=True)
         array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array2 = np.flipud(array2)
         if fliplr == '1':  array2 = np.fliplr(array2)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -979,6 +967,8 @@ def align2img():
         hdu.writeto(sysargv4, overwrite=True)
         array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array3 = np.flipud(array3)
         if fliplr == '1':  array3 = np.fliplr(array3)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -987,6 +977,8 @@ def align2img():
         hdu.writeto(sysargv4a, overwrite=True)
         array4, footprint4 = reproject_interp((data4, wcs4), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array4 = np.flipud(array4)
         if fliplr == '1':  array4 = np.fliplr(array4)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
@@ -995,12 +987,126 @@ def align2img():
         hdu.writeto(sysargv4b, overwrite=True)
         array5, footprint5 = reproject_interp((data5, wcs5), wcs_out, shape_out=shape_out)
         # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
         if flipud == '1':  array5 = np.flipud(array5)
         if fliplr == '1':  array5 = np.fliplr(array5)
         # Assuming array1 is the reprojected data and wcs_out is the WCS header
         hdu = fits.PrimaryHDU(data=array5, header=wcs_out.to_header())
         # Write to the FITS file
         hdu.writeto(sysargv4c, overwrite=True)
+
+      if sysargv7 == '06':
+        sysargv3  = input("Enter the 2nd reference image file name(WCS/std) -->")  
+        sysargv3a  = input("Enter the 3rd reference image file name(WCS/std) -->")  
+        sysargv3b  = input("Enter the 4th reference image file name(WCS/std) -->")  
+        sysargv3c  = input("Enter the 5th reference image file name(WCS/std) -->") 
+        sysargv3d  = input("Enter the 6th reference image file name(WCS/std) -->")
+        
+        sysargv2  = input("Enter 1st Aligned image name(WCS/std)  -->")
+
+        sysargv4  = input("Enter 2nd Aligned image name(WCS/std)  -->")
+        # Open the FITS files
+
+        sysargv4a  = input("Enter 3rd Aligned image name(WCS/std)  -->")
+        # Open the FITS files
+
+        sysargv4b  = input("Enter 4th Aligned image name(WCS/std)  -->")
+        # Open the FITS files
+
+        sysargv4c  = input("Enter 5th Aligned image name(WCS/std)  -->")
+        # Open the FITS files
+
+        sysargv4d  = input("Enter 6th Aligned image name(WCS/std)  -->")
+        # Open the FITS files
+
+
+        def read_fits(file):
+            hdul = fits.open(file)
+            header = hdul[0].header
+            data = hdul[0].data.astype(np.float64)
+            hdul.close()
+            return data, header
+
+        # Read the FITS files
+        file1 = sysargv1    
+        data1, wcs1 = read_fits(file1)
+        file1 = sysargv3    
+        data2, wcs2 = read_fits(file1)
+        file1 = sysargv3a    
+        data3, wcs3 = read_fits(file1)
+        file1 = sysargv3b    
+        data4, wcs4 = read_fits(file1)
+        file1 = sysargv3c    
+        data5, wcs5 = read_fits(file1)
+        file1 = sysargv3d    
+        data6, wcs6 = read_fits(file1)
+
+
+        # Find the optimal WCS for the reprojected images
+        wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2), (data3, wcs3), (data4, wcs4)])
+
+        # Reproject the images to the new WCS
+        array1, footprint1 = reproject_interp((data1, wcs1), wcs_out, shape_out=shape_out)
+        # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        if flipud == '1':  array1 = np.flipud(array1)
+        if fliplr == '1':  array1 = np.fliplr(array1)
+        # Assuming array1 is the reprojected data and wcs_out is the WCS header
+        hdu = fits.PrimaryHDU(data=array1, header=wcs_out.to_header())
+        # Write to the FITS file
+        hdu.writeto(sysargv2, overwrite=True)
+        array2, footprint2 = reproject_interp((data2, wcs2), wcs_out, shape_out=shape_out)
+        # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        if flipud == '1':  array2 = np.flipud(array2)
+        if fliplr == '1':  array2 = np.fliplr(array2)
+        # Assuming array1 is the reprojected data and wcs_out is the WCS header
+        hdu = fits.PrimaryHDU(data=array2, header=wcs_out.to_header())
+        # Write to the FITS file
+        hdu.writeto(sysargv4, overwrite=True)
+        array3, footprint3 = reproject_interp((data3, wcs3), wcs_out, shape_out=shape_out)
+        # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        if flipud == '1':  array3 = np.flipud(array3)
+        if fliplr == '1':  array3 = np.fliplr(array3)
+        # Assuming array1 is the reprojected data and wcs_out is the WCS header
+        hdu = fits.PrimaryHDU(data=array3, header=wcs_out.to_header())
+        # Write to the FITS file
+        hdu.writeto(sysargv4a, overwrite=True)
+        array4, footprint4 = reproject_interp((data4, wcs4), wcs_out, shape_out=shape_out)
+        # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        if flipud == '1':  array4 = np.flipud(array4)
+        if fliplr == '1':  array4 = np.fliplr(array4)
+        # Assuming array1 is the reprojected data and wcs_out is the WCS header
+        hdu = fits.PrimaryHDU(data=array4, header=wcs_out.to_header())
+        # Write to the FITS file
+        hdu.writeto(sysargv4b, overwrite=True)
+        array5, footprint5 = reproject_interp((data5, wcs5), wcs_out, shape_out=shape_out)
+        # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        if flipud == '1':  array5 = np.flipud(array5)
+        if fliplr == '1':  array5 = np.fliplr(array5)
+        # Assuming array1 is the reprojected data and wcs_out is the WCS header
+        hdu = fits.PrimaryHDU(data=array5, header=wcs_out.to_header())
+        # Write to the FITS file
+        hdu.writeto(sysargv4c, overwrite=True)
+        array6, footprint6 = reproject_interp((data6, wcs6), wcs_out, shape_out=shape_out)
+        # flip and mirror image
+        flipud  = input("Enter 1 to flipud image-(WCS/std) else 0 to remain same  -->")
+        fliplr  = input("Enter 1 to fliplr image-(WCS/std) else 0 to remain same  -->")
+        if flipud == '1':  array6 = np.flipud(array6)
+        if fliplr == '1':  array6 = np.fliplr(array6)
+        # Assuming array1 is the reprojected data and wcs_out is the WCS header
+        hdu = fits.PrimaryHDU(data=array6, header=wcs_out.to_header())
+        # Write to the FITS file
+        hdu.writeto(sysargv4d, overwrite=True)
 
       if sysargv7 == '1':
 
