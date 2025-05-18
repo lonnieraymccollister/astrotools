@@ -1,3 +1,4 @@
+# some code from copilot
 # import required libraries
 import fnmatch
 from PIL import Image
@@ -4159,11 +4160,77 @@ def HpMore():
       return sysargv1
       menue()
 
+def CombBgrAlIm():
+  try:
+
+      sysargv0  = input("Enter wildcard fits image*.fit  -->")
+
+      # List the filenames of your six reprojected FITS images.
+      # It is assumed that each image is on the same canvas and black (0) indicates no data.
+
+
+      # Collect all files with names starting with 'reproj' and ending with '.fits'
+      filenames = sorted(glob.glob("m16_*_pspcchannel_BGR_64bitAL.fits"))
+
+      print("Files found:", filenames)
+
+
+      # Open the first image to get the shape of the common canvas.
+      with fits.open(filenames[0]) as hdul:
+          shape = hdul[0].data.shape
+
+      # Initialize two arrays with the same shape:
+      #   composite: to accumulate the pixel values
+      #   weights: to count how many images contributed at each pixel
+      composite = np.zeros(shape, dtype=np.float32)
+      weights = np.zeros(shape, dtype=np.float32)
+
+      # Loop over each reprojected image
+      for fname in filenames:
+          with fits.open(fname) as hdul:
+              # Convert the image data to float32 for precision.
+              data = hdul[0].data.astype(np.float32)
+    
+          # Define a mask for valid data; here we assume that a pixel value > 0 is a valid contribution.
+          # (If your images might have valid zero values, you might need to use a quality mask instead.)
+          mask = data > 0
+    
+          # Only add the data where the image actually contributes.
+          composite[mask] += data[mask]
+          weights[mask] += 1
+
+      # Determine the maximum weight on the canvas—we assume this is the maximum number of overlapping images.
+      max_weight = np.max(weights)
+      print(f"Maximum contributions across the canvas: {max_weight}")
+
+      # Now compute the final composite image.
+      # For each pixel, first get the average (composite value divided by the weight) and then
+      # boost it to the level of maximum overlap.
+      # That is, for every pixel: final_pixel = (composite / weight) * sqrt(max_weight)
+      #
+      # This means that if a pixel is observed only once (weight==1) it will get multiplied by sqrt(max_weight),
+      # whereas a pixel observed max_weight times would be scaled by √(max_weight)/√(max_weight) = 1.
+      final = np.zeros_like(composite)
+      valid = weights > 0  # to avoid any division by zero issues
+      final[valid] = (composite[valid] / weights[valid]) * np.sqrt(max_weight)
+
+      # Save out the final image to a new FITS file.
+      hdu = fits.PrimaryHDU(final)
+      hdu.writeto('final_wgted_Al_Img.fits', overwrite=True)
+
+      print("Finished writing final_wgted_Al_Img.fits")
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
 
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -4413,6 +4480,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '50':
     HpMore()
+
+  if sysargv1 == '51':
+    CombBgrAlIm()
 
   if sysargv1 == '1313':
     sys.exit()
