@@ -3232,69 +3232,98 @@ def autostr():
 
   try:
 
+      def smh_stretch(data, lower_percent=0.5, upper_percent=99.5):
+        """
+        Perform a shadows/midtones/highlights (SMH) style histogram stretch.
+    
+        This function computes:
+          - low: the shadow threshold (at the lower_percent percentile),
+          - high: the highlight threshold (at the upper_percent percentile),
+          - med: the midtone (50th percentile),
+        and computes gamma such that the normalized midtone maps to 0.5, i.e.,
+             ( (med - low)/(high - low) )^gamma = 0.5.
+    
+        Then, the data is normalized and the gamma correction applied.
+    
+        Parameters:
+          data          : NumPy array containing the image pixel values.
+          lower_percent : Lower percentile for shadows (default is 0.5).
+          upper_percent : Upper percentile for highlights (default is 99.5).
+    
+        Returns:
+          stretched : The processed image (values in [0, 1]).
+          low       : The computed shadow threshold.
+          med       : The computed midtone value.
+          high      : The computed highlight threshold.
+          gamma     : The gamma value applied.
+        """
+        # Compute shadow and highlight thresholds from percentiles.
+        low = np.percentile(data, lower_percent)
+        high = np.percentile(data, upper_percent)
+    
+        # Compute the median (midtone) of the image.
+        med = np.percentile(data, 50)
+        # Ensure the midtone lies within [low, high]
+        med = np.clip(med, low, high)
+    
+        # Avoid division by zero in case high equals low.
+        if high == low:
+          return np.zeros_like(data), low, med, high, 1.0
+    
+        # Normalize the midtone between 0 and 1.
+        m = (med - low) / (high - low)
+        # Avoid a zero or extremely small value for m.
+        if m <= 0:
+            m = 0.001
+    
+        # Determine gamma such that m^gamma = 0.5.
+        gamma = np.log(0.5) / np.log(m)
+    
+        # Normalize data to the range [0, 1] based on computed thresholds.
+        normalized = (data - low) / (high - low)
+        normalized = np.clip(normalized, 0, 1)
+    
+        # Apply the gamma correction.
+        stretched = normalized ** gamma
+    
+        return stretched, low, med, high, gamma
+
+
       sysargv3  = input("Enter file name of image to auto_str  -->")
       sysargv4  = input("Enter file name of output image -->")
+      lower_percent  = 0.5
+      upper_percent  = 99.5
 
-      # Function for histogram transformation--Copilot--
-      def histogram_transformation(image, shadows=0.1, midtones=1.0, highlights=0.9):
-        """
-          Perform histogram transformation with midtone, shadow, and highlight adjustments.
-          Args:
-              image (numpy.ndarray): Input grayscale or RGB image.
-              shadows (float): Shadow cutoff (0 to 1).
-              midtones (float): Gamma-like adjustment for midtones (default 1.0).
-              highlights (float): Highlight cutoff (0 to 1).
+      with fits.open(sysargv3) as hdul:
+          hdu = hdul[0]
+          data = hdu.data.astype(np.float64)
+          header = hdu.header
 
-          Returns:
-              numpy.ndarray: Transformed image.
-        """
-          # Process each channel for RGB or single grayscale image
-        if len(image.shape) == 3:
-          channels = [image[0], image[1], image[2]]  # Split RGB (assuming FITS stores as separate layers)
-        else:
-            channels = [image]
+      # Apply the SMH stretch.
+      stretched, low, med, high, gamma = smh_stretch(data, lower_percent, upper_percent)
+    
+      # Print out the computed parameters.
+      print(f"Shadow threshold (lower {lower_percent}th percentile): {low}")
+      print(f"Midtone (50th percentile): {med}")
+      print(f"Highlight threshold (upper {upper_percent}th percentile): {high}")
+      print(f"Applied gamma: {gamma}\n")
+    
+      # Update the header to record stretch information.
+      header['STRETCH'] = ('SMH', 'Shadows/Midtones/Highlights histogram stretch')
+      header['LOWPCT'] = (lower_percent, 'Lower percentile for shadow threshold')
+      header['HIGPCT'] = (upper_percent, 'Upper percentile for highlight threshold')
+      header['SHADOW'] = (low, 'Shadow threshold value')
+      header['MIDTONE'] = (med, 'Midtone (median) value')
+      header['HIGHLT'] = (high, 'Highlight threshold value')
+      header['GAMMA'] = (gamma, 'Gamma value used')
+    
+      # Save the stretched image as a new FITS file.
+      hdu_new = fits.PrimaryHDU(data=stretched, header=header)
+      hdu_new.writeto(sysargv4, overwrite=True)
+    
+      print(f"Stretched FITS image has been saved to: {sysargv4}")
 
-        result_channels = []
-        for channel in channels:
-          # Calculate percentiles
-          low_bound = np.percentile(channel, shadows * 100)
-          high_bound = np.percentile(channel, highlights * 100)
 
-          # Clip and normalize
-          clipped = np.clip(channel, low_bound, high_bound)
-          normalized = (clipped - low_bound) / (high_bound - low_bound)
-          normalized = np.clip(normalized, 0, 1)
-
-          # Adjust midtones
-          adjusted = np.power(normalized, 1.0 / midtones)
-
-          # Scale to 16-bit FITS data range
-          transformed = (adjusted * 65535).astype(np.uint16)
-          result_channels.append(transformed)
-
-        # Merge RGB back or return single grayscale channel
-        if len(result_channels) > 1:
-            return np.stack(result_channels, axis=0)  # Stack for RGB
-        return result_channels[0]
-
-      # Read FITS file (replace 'input.fits' with your FITS file path)
-      fits_file = sysargv3
-      hdul = fits.open(fits_file)
-      image_data = hdul[0].data.astype(np.float32)  # Assuming the FITS file contains an image in 16-bit or floating-point
-      hdul.close()
-
-      # Ensure input is 2D or 3D
-      if len(image_data.shape) != 2 and len(image_data.shape) != 3:
-        raise ValueError("The FITS file must contain a 2D (grayscale) or 3D (RGB) image.")
-
-      # Apply histogram transformation
-      transformed_image = histogram_transformation(image_data, shadows=0.02, midtones=1.2, highlights=0.98)
-
-      # Write to a new FITS file
-      output_fits_file = sysargv4
-      hdu = fits.PrimaryHDU(transformed_image)
-      hdu.writeto(output_fits_file, overwrite=True)
-      print(f"Transformed FITS file saved as '{output_fits_file}'")
 
   except Exception as e:
       print(f"An error occurred: {e}")
