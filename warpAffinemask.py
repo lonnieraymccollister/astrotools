@@ -1280,83 +1280,192 @@ def DynamicRescale16():
 
   try:
 
-      sysargv1  = input("Enter the grayscale image(fits Siril)  -->")
-      width_of_square  = input("Enter the the width of square(5)  -->")
-      #sysargv4  = input("Enter the image width in pixels(1000)  -->")
-      #sysargv3  = input("Enter the image height in pixels(1000)  -->")
-      sysargv5  = input("Enter the final image name progrm will output a .fit file   -->") 
-      sysargv6  = input("Enter the bin value   -->") 
-      gamma     = float(input("Enter gamma(.3981) for 1 magnitude  -->"))
+# -------------------------------------------------
+# UTILITY FUNCTIONS FOR FITS HANDLING
+# -------------------------------------------------
+      def load_fits(file_path):
+          with fits.open(file_path) as hdul:
+              return hdul[0].data, hdul[0].header
 
-      # Replace 'your_fits_file.fits' with the actual path to your FITS file
-      fits_image_filename = sysargv1
-      # Open the FITS file
-      with fits.open(fits_image_filename) as hdul:
-          # Access the primary HDU (extension 0)
-          header = hdul[0].header
-          image_data = hdul[0].data
-      # Now 'image_data' contains the data from the FITS file as a 2D numpy array
-      hdul.close()
+      def split_image(image, tile_size=(600, 600), output_dir="tiles"):
+          os.makedirs(output_dir, exist_ok=True)
+          h, w = image.shape
+          print("Image shape:", image.shape)
+          tile_h, tile_w = tile_size
+          tiles = []
 
-      print(image_data.shape)
-      print(image_data.dtype.name)
-      height, width = image_data.shape
-      sysargv4 = str(width)
-      sysargv3 = str(height)
+          for i in range(0, h, tile_h):
+              for j in range(0, w, tile_w):
+                  # Get the subimage; may be smaller near the right/bottom edges.
+                  sub_image = image[i:i+tile_h, j:j+tile_w]
+                  sub_h, sub_w = sub_image.shape
 
+                  # Create a full-size tile and place the subimage in the top-left corner.
+                  padded_tile = np.zeros(tile_size)
+                  padded_tile[:sub_h, :sub_w] = sub_image
 
-      my_data = (image_data * 65535)
-      img = (image_data * 65535)
-      #make the Dynamic square loops
-      for xw in range(0, int(sysargv3), int(sysargv2)):
-        for yh in range(0, int(sysargv4), int(sysargv2)): 
-          my_data1 = np.zeros((int(sysargv2), int(sysargv2)))
-          for (x) in range(int(sysargv2)):
-            for (y) in range(int(sysargv2)):
-              my_data1[x,y]=img[(x+xw),(y+yh)]
-          #Rescale to 0-65535 and convert to uint16
-          rescaled1 = ((my_data1.max()+1) * ((my_data1+1) - my_data1.min()) / 65535.0).astype(np.float64)
-          rescaled = (np.round(rescaled1))
-          my_data[xw:(xw+int(sysargv2)), yh:(yh+int(sysargv2))] = rescaled
-  
-      for gamma in [float(gamma)]: 
-        # Apply gamma correction. 
-        gamma_corrected1 = np.array(65535.0 *(my_data / 65535) ** gamma, dtype = 'float64') 
-        gamma_corrected = (np.round(gamma_corrected1))
-      #cv2.imwrite(str(sysargv5)+'.tif', gamma_corrected)  
+                  # Save the tile with metadata in the filename.
+                  tile_file = f"{output_dir}/tile_{i}_{j}_{sub_h}_{sub_w}.fits"
+                  fits.writeto(tile_file, padded_tile, overwrite=True)
+                  tiles.append(tile_file)
+    
+          return tiles
 
-      ##hdu = fits.PrimaryHDU(gamma_corrected)
-      # Create an HDU list and add the primary HDU
-      ##hdulist = fits.HDUList([hdu])
-      # Specify the output FITS file path
-      ##output_fits_filename = sysargv5
-      # Write the HDU list to the FITS file
-      ##hdulist.writeto(str(sysargv5)+'gamma_corrected_drs.fit', overwrite=True)
-  
-  
-      img_array = np.asarray(gamma_corrected / 6553500, dtype = 'float64')
-      bin_factor = int(sysargv6) 
-      # Get image dimensions
-      height, width = img_array.shape
+      import re
 
-      # Calculate new dimensions
-      new_height = height // bin_factor
-      new_width = width // bin_factor
+      def reassemble_image(tiles, original_shape):
+          """
+          Reassemble the full image from a list of processed tile files.
+          The tile filename is expected to include the pattern:
+             tile_i_j_subH_subW
+          (even though additional suffix text is appended).
+          """
+          final_image = np.zeros(original_shape)
+    
+          # Regular expression pattern to extract the metadata numbers.
+          pattern = r"tile_(\d+)_(\d+)_(\d+)_(\d+)"
+    
+          for tile_file in tiles:
+              base = os.path.basename(tile_file)
+              match = re.search(pattern, base)
+              if not match:
+                  print(f"Filename {base} does not match expected pattern.")
+                  continue
+              i_str, j_str, sub_h_str, sub_w_str = match.groups()
+              i, j, sub_h, sub_w = map(int, [i_str, j_str, sub_h_str, sub_w_str])
+    
+              with fits.open(tile_file) as hdul:
+                  data = hdul[0].data
+                  # Only take the valid (unpadded) portion from the tile.
+                  final_image[i:i+sub_h, j:j+sub_w] = data[:sub_h, :sub_w]
 
-      # Bin the image using summation
-      binned_image = np.zeros((new_height, new_width), dtype=img_array.dtype)
-      for y in range(new_height):
-        for x in range(new_width):
-          # Sum pixel values within the bin
-          binned_image[y, x] = np.sum(img_array[y*bin_factor:(y+1)*bin_factor, x*bin_factor:(x+1)*bin_factor])
+          return final_image
 
-      hdu = fits.PrimaryHDU(binned_image, header)
-      # Create an HDU list and add the primary HDU
-      hdulist = fits.HDUList([hdu])
-      # Specify the output FITS file path
-      output_fits_filename = sysargv5
-      # Write the HDU list to the FITS file
-      hdulist.writeto(str(sysargv5)+'_binned_gamma_corrected_drs.fit', overwrite=True)
+      # -------------------------------------------------
+      # UPDATED TILE PROCESSING FUNCTION
+      # -------------------------------------------------
+      def process_tile(tile_file, width_of_square, bin_value, gamma_value, resize_factor, resize_div):
+          """
+          Processes a given tile file applying dynamic block rescaling,
+          gamma correction, and binning. The parameters are passed in from main.
+          """
+          print(f"\nProcessing tile: {tile_file}")
+    
+          # Open the tile file.
+          with fits.open(tile_file) as hdul:
+              header = hdul[0].header
+              image_data = hdul[0].data
+
+          print("Original tile shape:", image_data.shape)
+          print("Data type:", image_data.dtype.name)
+    
+          # Normalize the image data to the range [0, 65535] and cast to uint16.
+          norm_image = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
+          norm_image = norm_image.astype(np.uint16)
+    
+          # Resize the image using cv2.resize.
+          resized_image = cv2.resize(norm_image, None, fx=(resize_factor / resize_div), 
+                                     fy=(resize_factor / resize_div), interpolation=cv2.INTER_LANCZOS4)
+    
+          # Multiply the resized image to scale it up.
+          my_data = resized_image * 65535
+          img = resized_image * 65535
+
+          # Use the provided square block width for dynamic square processing.
+          block_size = int(width_of_square)
+          new_h, new_w = resized_image.shape
+
+          # Process image in blocks.
+          for xw in range(0, new_h, block_size):
+              for yh in range(0, new_w, block_size):
+                  block_h = min(block_size, new_h - xw)
+                  block_w = min(block_size, new_w - yh)
+                  my_data1 = np.zeros((block_h, block_w))
+                  for x in range(block_h):
+                      for y in range(block_w):
+                          my_data1[x, y] = img[x + xw, y + yh]
+                  # Rescale block to the 0–65535 range.
+                  rescaled1 = ((my_data1.max() + 1) * ((my_data1 + 1) - my_data1.min()) / 65535.0).astype(np.float64)
+                  rescaled = np.round(rescaled1)
+                  my_data[xw:xw+block_h, yh:yh+block_w] = rescaled[:block_h, :block_w]
+
+          # Apply gamma correction.
+          gamma_corrected1 = np.array(65535.0 * (my_data / 65535) ** gamma_value, dtype='float64')
+          gamma_corrected = np.round(gamma_corrected1)
+    
+          # Normalize before binning (division factor from original code is 6553500).
+          img_array = np.asarray(gamma_corrected / 6553500, dtype='float64')
+    
+          # Calculate new dimensions based on the bin factor.
+          bin_factor = int(bin_value)
+          h_img, w_img = img_array.shape
+          new_height = h_img // bin_factor
+          new_width = w_img // bin_factor
+
+          # Bin the image using summation in non-overlapping blocks.
+          binned_image = np.zeros((new_height, new_width), dtype=img_array.dtype)
+          for y in range(new_height):
+              for x in range(new_width):
+                  binned_image[y, x] = np.sum(
+                      img_array[y * bin_factor:(y + 1) * bin_factor,
+                                x * bin_factor:(x + 1) * bin_factor]
+                  )
+
+          # Write the processed tile to a new FITS file. The new file name gets the extra suffix.
+          hdu = fits.PrimaryHDU(binned_image, header=header)
+          hdulist = fits.HDUList([hdu])
+          out_filename = tile_file + '_binned_gamma_corrected_drs.fits'
+          hdulist.writeto(out_filename, overwrite=True)
+          print(f"Tile processed and saved to {out_filename}\n")
+
+      # -------------------------------------------------
+      # MAIN EXECUTION
+      # -------------------------------------------------
+      if __name__ == "__main__":
+          sysargv7 = input("Enter 01 to split tile, 02 to process tile files, or 03 to combine tiles --> ")
+    
+          if sysargv7 == '01':
+              # Splitting mode.
+              input_file_name = input("Enter the input FITS file name--> ")
+              fits_file = input_file_name
+              image, header = load_fits(fits_file)
+              tiles = split_image(image)
+              print("Image split into tiles:")
+              for t in tiles:
+                  print("  ", t)
+    
+          elif sysargv7 == '02':
+              # Processing mode: Collect processing parameters once.
+              width_of_square = input("Enter the width of square (e.g., 5): ")
+              bin_value = input("Enter the bin value (e.g., 25): ")
+              gamma_value = float(input("Enter gamma (e.g., 0.3981) for 1 magnitude: "))
+              # Fixed values used for resizing.
+              resize_factor = int(25)   # corresponds to sysargv2 = 25 in the original code.
+              resize_div = int(1)       # corresponds to sysargv2a = 1 in the original code.
+        
+              # Get list of tiles from the "tiles" directory.
+              tiles = sorted([os.path.join("tiles", f) for f in os.listdir("tiles") if f.endswith(".fits")])
+              for tile_file in tiles:
+                  process_tile(tile_file, width_of_square, bin_value,
+                               gamma_value, resize_factor, resize_div)
+    
+          elif sysargv7 == '03':
+              # Reassemble mode.
+              input_file_name = input("Enter the input FITS file name--> ")
+              fits_file = input_file_name
+              image, header = load_fits(fits_file)
+              # Select only those processed tile files.
+              tiles = sorted([os.path.join("tiles", f) for f in os.listdir("tiles") if f.endswith("_binned_gamma_corrected_drs.fits")])
+              final_image = reassemble_image(tiles, image.shape)
+              fits.writeto("output.fits", final_image, header, overwrite=True)
+              # Optional: Cleanup processed tile files.
+              for tile_file in tiles:
+                  os.remove(tile_file)
+              print("Processing complete. Final image saved as 'output.fits'.")
+    
+          else:
+              print("Invalid option entered.")
+
 
   except Exception as e:
       print(f"An error occurred: {e}")
