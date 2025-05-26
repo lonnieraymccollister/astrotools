@@ -17,6 +17,7 @@ from astropy.coordinates import Angle
 import mpmath as mp
 import glob
 from skimage.exposure import match_histograms
+from scipy.special import erfinv
 from scipy.ndimage import zoom 
 from scipy.ndimage import convolve
 from scipy.signal import convolve2d
@@ -2537,41 +2538,171 @@ def imghiststretch():
 
   try:
 
-      sysargv2  = input("Enter the greyscale Image for hist  -->")
-      sysargv3  = input("Enter the Image depth(256/16536)  -->")
-      image = cv2.imread(sysargv2)
-      image1 = cv2.imread(sysargv2)
-      image_Height = image.shape[0]
-      image_Width = image.shape[1]	
-      histogram = np.zeros([int(sysargv3)], np.int32)
-      for x in range(1, image_Height):
-        for y in range(1, image_Width):
-          histogram[image[x,y]] +=1
+      # ------------------------------
+      # Histogram Specification Functions
+      # ------------------------------
 
-      plt.figure()
-      plt.title("GrayScale Histogram")
-      plt.xlabel("Intensity Level")
-      plt.ylabel("Intensity Frequency")
-      plt.xlim([0, int(sysargv3)])
-      plt.plot(histogram)
-      plt.show()
+      def rayleigh_specification(image, sigma):
+          """
+          Transform the image so its histogram matches a Rayleigh distribution.
+    
+          Inverse Rayleigh CDF: F⁻¹(p; σ) = σ * sqrt(-2 * ln(1-p))
+          """
+          vals, inv_idx, counts = np.unique(image, return_inverse=True, return_counts=True)
+          cdf = np.cumsum(counts).astype(np.float64) / counts.sum()
+          epsilon = 1e-10
+          safe_vals = np.clip(1 - cdf, epsilon, None)
+          new_vals = sigma * np.sqrt(-2 * np.log(safe_vals))
+          spec_img = new_vals[inv_idx].reshape(image.shape)
+          return spec_img
 
-      sysargv4  = input("Enter min int value of stretch  -->")
-      sysargv5  = input("Enter max int value of stretch  -->")
-      sysargv6  = input("Enter the greyscale image save  -->")
-  
-      sysargv4a=int(sysargv4)
-      sysargv5a=int(sysargv5)
-      for x in range(1, image_Height):
-        for y in range(1, image_Width):
-          image1[x,y] = np.where(image[x,y] < sysargv4a, 0, image[x,y])
-          image1[x,y] = np.where(image[x,y] > sysargv5a, 0, image[x,y])
-          image1[x,y] = ((int(sysargv3)-1) / ((int(sysargv5)-1) - (int(sysargv4)-1)))*(image1[x,y]-(int(sysargv4)-1))
+      def gaussian_specification(image, mu, sigma):
+          """
+          Transform the image so its histogram matches a Gaussian distribution.
+    
+          Inverse Gaussian CDF: F⁻¹(p; μ,σ) = μ + σ * sqrt(2) * erfinv(2p - 1)
+          """
+          vals, inv_idx, counts = np.unique(image, return_inverse=True, return_counts=True)
+          cdf = np.cumsum(counts).astype(np.float64) / counts.sum()
+          epsilon = 1e-10
+          safe_cdf = np.clip(cdf, epsilon, 1 - epsilon)
+          new_vals = mu + sigma * np.sqrt(2) * erfinv(2 * safe_cdf - 1)
+          spec_img = new_vals[inv_idx].reshape(image.shape)
+          return spec_img
 
-      img_normalized = cv2.normalize(image1, None, 0, (int(sysargv3)-1), cv2.NORM_MINMAX)
-      cv2.imshow('Image', img_normalized)
-      cv2.waitKey(0)  
-      cv2.imwrite(sysargv6, img_normalized)
+      def uniform_specification(image, lower, upper):
+          """
+          Transform the image so its histogram is uniformly distributed.
+    
+          Inverse Uniform CDF: F⁻¹(p) = lower + p * (upper - lower)
+          """
+          vals, inv_idx, counts = np.unique(image, return_inverse=True, return_counts=True)
+          cdf = np.cumsum(counts).astype(np.float64) / counts.sum()
+          new_vals = lower + cdf * (upper - lower)
+          spec_img = new_vals[inv_idx].reshape(image.shape)
+          return spec_img
+
+      def exponential_specification(image, lamb):
+          """
+          Transform the image so its histogram matches an exponential distribution.
+    
+          Inverse Exponential CDF: F⁻¹(p; λ) = - (1/λ) * ln(1 - p)
+          """
+          vals, inv_idx, counts = np.unique(image, return_inverse=True, return_counts=True)
+          cdf = np.cumsum(counts).astype(np.float64) / counts.sum()
+          epsilon = 1e-10
+          safe_vals = np.clip(1 - cdf, epsilon, None)
+          new_vals = - (1 / lamb) * np.log(safe_vals)
+          spec_img = new_vals[inv_idx].reshape(image.shape)
+          return spec_img
+
+      def lognormal_specification(image, mu, sigma_ln):
+          """
+          Transform the image so its histogram matches a lognormal distribution.
+    
+          Inverse Lognormal CDF: 
+             F⁻¹(p; μ,σ) = exp( μ + σ * sqrt(2) * erfinv(2p - 1) )
+          """
+          vals, inv_idx, counts = np.unique(image, return_inverse=True, return_counts=True)
+          cdf = np.cumsum(counts).astype(np.float64) / counts.sum()
+          epsilon = 1e-10
+          safe_cdf = np.clip(cdf, epsilon, 1 - epsilon)
+          new_vals = np.exp(mu + sigma_ln * np.sqrt(2) * erfinv(2 * safe_cdf - 1))
+          spec_img = new_vals[inv_idx].reshape(image.shape)
+          return spec_img
+
+      # ------------------------------
+      # Main Routine
+      # ------------------------------
+
+      def main():
+          # Load the input FITS image (update the path as needed)
+          sysargv2  = input("Enter the image(fits Siril)  -->")
+          input_fits_file = sysargv2
+          with fits.open(input_fits_file) as hdul:
+              image = hdul[0].data.astype(np.float64)
+    
+          # Choose the transformation type.
+          prompt = (
+              "Choose histogram specification type:\n"
+              "  (r) Rayleigh\n"
+              "  (g) Gaussian\n"
+              "  (u) Uniform\n"
+              "  (e) Exponential\n"
+              "  (l) Lognormal\n"
+              "Enter one of r, g, u, e, l: "
+          )
+          transform_type = input(prompt).strip().lower()
+    
+          # Compute parameters from the image or ask the user.
+          if transform_type == 'r':
+              sigma_val = np.std(image)
+              print(f"Applying Rayleigh specification with sigma = {sigma_val:.3f}")
+              specified_image = rayleigh_specification(image, sigma_val)
+              output_fits_file = 'image_rayleigh_specified.fits'
+    
+          elif transform_type == 'g':
+              mu_val = np.mean(image)
+              sigma_val = np.std(image)
+              print(f"Applying Gaussian specification with mu = {mu_val:.3f} and sigma = {sigma_val:.3f}")
+              specified_image = gaussian_specification(image, mu_val, sigma_val)
+              output_fits_file = 'image_gaussian_specified.fits'
+    
+          elif transform_type == 'u':
+              # For uniform, specify lower and upper limits.
+              # For example, map to the range of the original image.
+              lower = float(input("Enter lower bound (e.g., 0): "))
+              upper = float(input("Enter upper bound (e.g., 1): "))
+              print(f"Applying Uniform specification with lower = {lower} and upper = {upper}")
+              specified_image = uniform_specification(image, lower, upper)
+              output_fits_file = 'image_uniform_specified.fits'
+    
+          elif transform_type == 'e':
+              lamb = float(input("Enter lambda (e.g., 0.1): "))
+              print(f"Applying Exponential specification with lambda = {lamb}")
+              specified_image = exponential_specification(image, lamb)
+              output_fits_file = 'image_exponential_specified.fits'
+    
+          elif transform_type == 'l':
+              mu_val = float(input("Enter mu for lognormal (e.g., 0): "))
+              sigma_ln = float(input("Enter sigma for lognormal (e.g., 0.5): "))
+              print(f"Applying Lognormal specification with mu = {mu_val} and sigma = {sigma_ln}")
+              specified_image = lognormal_specification(image, mu_val, sigma_ln)
+              output_fits_file = 'image_lognormal_specified.fits'
+    
+          else:
+              print("Invalid choice. Exiting.")
+              return
+    
+          # Save the specified image to a new FITS file.
+          fits.writeto(output_fits_file, specified_image, overwrite=True)
+          print(f"Specified image saved as {output_fits_file}")
+    
+          # Plot histograms for comparison
+          fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+          axes[0].hist(image.ravel(), bins=256, color='blue', histtype='step')
+          axes[0].set_title("Original Image Histogram")
+          axes[0].set_xlabel("Intensity")
+          axes[0].set_ylabel("Frequency")
+    
+          axes[1].hist(specified_image.ravel(), bins=256, color='red', histtype='step')
+    
+          title_dict = {
+              'r': "Rayleigh Specified Histogram",
+              'g': "Gaussian Specified Histogram",
+              'u': "Uniform Specified Histogram",
+              'e': "Exponential Specified Histogram",
+              'l': "Lognormal Specified Histogram"
+          }
+          axes[1].set_title(title_dict.get(transform_type, "Specified Histogram"))
+          axes[1].set_xlabel("Intensity")
+          axes[1].set_ylabel("Frequency")
+    
+          plt.tight_layout()
+          plt.show()
+
+      if __name__ == "__main__":
+          main()
 
   except Exception as e:
       print(f"An error occurred: {e}")
