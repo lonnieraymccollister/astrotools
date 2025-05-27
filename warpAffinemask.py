@@ -12,6 +12,10 @@ from matplotlib import pyplot
 from matplotlib.image import imread
 from mpl_toolkits.mplot3d import Axes3D
 from astropy.io import fits
+from astropy.convolution import convolve_fft
+from astropy.nddata import Cutout2D
+from astropy.visualization import simple_norm
+from astropy.convolution import Gaussian2DKernel
 from astropy.wcs import WCS
 from astropy.coordinates import Angle
 import mpmath as mp
@@ -2368,35 +2372,180 @@ def FFT():
   return sysargv1
   menue()
 
-from scipy.signal import convolve2d as conv2
-import skimage as skimage
-from skimage import color, data, restoration
-from skimage import io, img_as_ubyte
-
 def  LrDeconv():
 
   try:
+   
+      def richardson_lucy(image, psf, iterations=30):
+          """
+          Perform Richardson–Lucy deconvolution.
+    
+          Parameters:
+            image : 2D ndarray
+                The observed (blurred) image.
+            psf : 2D ndarray
+                The point-spread function; should be normalized.
+            iterations : int
+                Number of iterations to perform.
+    
+          Returns:
+            deconv : 2D ndarray
+                The deconvolved image.
+          """
+          image = image.astype(np.float64)
+          im_est = image.copy()  # initial estimate
+          psf_mirror = psf[::-1, ::-1]  # mirror PSF
 
-      sysargv1  = input("Enter the Image name  -->")
-      sysargv2  = input("Enter the psf image name  -->")
-      sysargv3  = input("Enter the name of deconvoluted image name  -->")
-      sysargv4  = input("Enter the number of iterations for deconvolions image name  -->")
-      astro = color.rgb2gray(io.imread(sysargv1))
-      psf = color.rgb2gray(io.imread(sysargv2))
-  
-      astro = conv2(astro, psf, 'same')
-      # Restore Image using Richardson-Lucy algorithm
-      deconvolved_RL = restoration.richardson_lucy(astro, psf, num_iter=(int(sysargv4)))
-      deconvolved_RL1 = skimage.img_as_uint(deconvolved_RL)
-      io.imsave(sysargv3, deconvolved_RL1)
-      plt.imshow(deconvolved_RL, cmap='gray', vmin=deconvolved_RL.min(), vmax=deconvolved_RL.max())
-      plt.show()
+          for i in range(iterations):
+              conv_est = convolve_fft(im_est, psf, normalize_kernel=True)
+              conv_est[conv_est == 0] = 1e-7  # Avoid divide-by-zero
+              relative_blur = image / conv_est
+              correction = convolve_fft(relative_blur, psf_mirror, normalize_kernel=True)
+              im_est *= correction
+          return im_est
+
+      def extract_psf(image, position, size):
+          """
+          Extract a PSF from the image by making a cutout around a bright source.
+    
+          Parameters:
+            image : 2D ndarray
+                Input image.
+            position : tuple
+                (x, y) coordinates (in pixels) of the center of the bright star.
+            size : int or tuple
+                Size of the cutout; can be an integer or a (width, height) tuple.
+    
+          Returns:
+            psf : 2D ndarray
+                The normalized PSF extracted from the image.
+          """
+          cutout = Cutout2D(image, position, size)
+          psf = cutout.data.copy()
+          psf -= np.median(psf)
+          psf[psf < 0] = 0
+          psf /= psf.sum()
+          return psf
+
+      def main():
+          sysargv1  = input("Enter the Image name  -->")
+          sysargv2  = input("Enter the name of deconvoluted image name  -->")
+
+          # Load the observed image from a FITS file.
+          input_file = sysargv1  # Replace with your actual FITS file.
+          with fits.open(input_file) as hdul:
+              image = hdul[0].data
+
+          # Check if the image is color.
+          # Since we assume a color image has shape (3, height, width)
+          if image.ndim == 3 and image.shape[0] == 3:
+              is_color = True
+          else:
+              is_color = False
+
+          # Visualization of the image to help pick the PSF region.
+          if not is_color:
+              norm = simple_norm(image, 'sqrt', percent=99)
+              plt.figure(figsize=(6, 5))
+              plt.imshow(image, norm=norm, origin='lower', cmap='gray')
+              plt.title("Input Grayscale Image")
+              plt.colorbar()
+              plt.show()
+          else:
+              plt.figure(figsize=(6, 5))
+              # Rearrange image from (3, height, width) to (height, width, 3) for display.
+              plt.imshow(np.moveaxis(image, 0, -1), origin='lower')
+              plt.title("Input Color Image")
+              plt.show()
+
+          # Choose PSF extraction method:
+          #   Option A: Use an analytical PSF (Gaussian 2D kernel)
+          #   Option B: Extract the PSF from the image.
+          use_analytical_psf = input("Use analytical PSF [g] or extract from image [e]? ").strip().lower()
+    
+          if use_analytical_psf == 'g':
+              sigma = 2.0           # Adjust sigma as needed
+              kernel_size = 25      # Size of the PSF kernel
+              gauss_kernel = Gaussian2DKernel(sigma, x_size=kernel_size, y_size=kernel_size)
+              psf = gauss_kernel.array
+              psf /= psf.sum()      # Normalize the PSF
+              print("Using an analytical Gaussian PSF.")
+    
+          elif use_analytical_psf == 'e':
+              x = float(input("Enter x coordinate of the PSF center: "))
+              y = float(input("Enter y coordinate of the PSF center: "))
+              size = float(input("Enter the size of the PSF cutout (in pixels): "))
+              # For color images in shape (3, height, width), extract from the first channel.
+              if is_color:
+                  psf = extract_psf(image[0, :, :], (x, y), size)
+              else:
+                  psf = extract_psf(image, (x, y), size)
+              print("Using the PSF extracted from the image.")
+        
+              plt.figure(figsize=(4, 4))
+              plt.imshow(psf, origin='lower', cmap='viridis')
+              plt.title("Extracted PSF")
+              plt.colorbar()
+              plt.show()
+          else:
+              print("Invalid option selected. Exiting.")
+              return
+
+          # Perform Richardson–Lucy deconvolution with the chosen PSF.
+          iterations = int(input("Enter the number of iterations (e.g., 30): "))
+    
+          if not is_color:
+              deconv_image = richardson_lucy(image, psf, iterations=iterations)
+              output_file = 'deconvolved_image.fits'
+              fits.writeto(output_file, deconv_image, overwrite=True)
+              print("Deconvolved image saved to", output_file)
+    
+              plt.figure(figsize=(12, 5))
+              plt.subplot(1, 2, 1)
+              plt.imshow(image, origin='lower', cmap='gray', norm=simple_norm(image, 'sqrt', percent=99))
+              plt.title("Original Grayscale Image")
+              plt.colorbar()
+    
+              plt.subplot(1, 2, 2)
+              plt.imshow(deconv_image, origin='lower', cmap='gray', norm=simple_norm(deconv_image, 'sqrt', percent=99))
+              plt.title("Deconvolved Image")
+              plt.colorbar()
+              plt.tight_layout()
+              plt.show()
+    
+          else:
+              # For color images assuming shape (3, height, width)
+              deconv_image = np.empty_like(image)
+              print("Processing each channel (assuming image shape is (3, height, width)):")
+              # Iterate over axis 0 (channels)
+              for c in range(image.shape[0]):
+                  print(f"Deconvolving channel {c}...")
+                  deconv_image[c, :, :] = richardson_lucy(image[c, :, :], psf, iterations=iterations)
+              output_file = sysargv2
+              fits.writeto(output_file, deconv_image, overwrite=True)
+              print("Deconvolved color image saved to", output_file)
+    
+              plt.figure(figsize=(12, 5))
+              plt.subplot(1, 2, 1)
+              # Display original color image by moving axis 0 to the end.
+              plt.imshow(np.moveaxis(image, 0, -1), origin='lower')
+              plt.title("Original Color Image")
+    
+              plt.subplot(1, 2, 2)
+              plt.imshow(np.moveaxis(deconv_image, 0, -1), origin='lower')
+              plt.title("Deconvolved Color Image")
+              plt.tight_layout()
+              plt.show()
+
+      if __name__ == '__main__':
+          main()
   
   except Exception as e:
       print(f"An error occurred: {e}")
       print("Returning to the Main Menue...")
       return sysargv1
       menue()
+
 
   return sysargv1
   menue()
