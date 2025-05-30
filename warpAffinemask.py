@@ -18,6 +18,8 @@ from astropy.visualization import simple_norm
 from astropy.convolution import Gaussian2DKernel
 from astropy.wcs import WCS
 from astropy.coordinates import Angle
+from astropy.stats import sigma_clipped_stats
+from photutils.detection import DAOStarFinder
 import mpmath as mp
 import glob
 from skimage.exposure import match_histograms
@@ -27,39 +29,442 @@ from scipy.ndimage import convolve
 from scipy.signal import convolve2d
 from reproject import reproject_interp, reproject_exact
 from reproject.mosaicking import find_optimal_celestial_wcs
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QPushButton,
+    QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
+    QLineEdit, QMessageBox, QGroupBox, QScrollArea
+)
 
-# function to display the coordinates of 
-# of the points clicked on the image 
-def click_event(event, x, y, flags, params): 
+def AffineTransform():
 
-  # checking for left mouse clicks 
-  if event == cv2.EVENT_LBUTTONDOWN: 
-    # displaying the coordinates 
-    # on the Shell 
-    print(' x ', ' ', ' y ')
-    print(x, ' ', y) 
+  try:
+           
+      # Optional: for handling FITS images in manual mode.
+      try:
+          from astropy.io import fits
+      except ImportError:
+          fits = None
+      
+      ###############################################################################
+      # Custom ImageLabel for manual mode that records click positions.
+      ###############################################################################
+      class ImageLabel(QtWidgets.QLabel):
+          clicked = QtCore.pyqtSignal(QtCore.QPoint)
+          
+          def __init__(self, parent=None):
+              super(ImageLabel, self).__init__(parent)
+              self.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+              self.setMouseTracking(True)
+              self.points = []  # List to store clicked points
+              self.display_image = None  # QPixmap for display
+      
+          def setImage(self, cv_img):
+              """Set the image from an OpenCV BGR array."""
+              self.cv_img = cv_img.copy()
+              # Convert from BGR to RGB.
+              rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+              h, w, ch = rgb_image.shape
+              bytes_per_line = ch * w
+              qt_image = QtGui.QImage(rgb_image.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+              self.display_image = QtGui.QPixmap.fromImage(qt_image)
+              self.setPixmap(self.display_image)
+              self.points = []  # Reset recorded points
+      
+          def mousePressEvent(self, event):
+              if self.pixmap() is None:
+                  return
+              point = event.pos()
+              self.points.append(point)
+              # Redraw the pixmap to mark the clicked point.
+              pix = self.pixmap().copy()
+              painter = QtGui.QPainter(pix)
+              painter.setPen(QtGui.QPen(QtCore.Qt.red, 5))
+              painter.drawEllipse(point, 5, 5)
+              painter.end()
+              self.setPixmap(pix)
+              self.clicked.emit(point)
+      
+      ###############################################################################
+      # Automatic Mode Widget: Uses ORB feature detection and homography estimation.
+      ###############################################################################
+      class AutoWidget(QtWidgets.QWidget):
+          def __init__(self, parent=None):
+              super(AutoWidget, self).__init__(parent)
+              layout = QtWidgets.QVBoxLayout(self)
+              
+              # Upper layout: two image display labels.
+              images_layout = QtWidgets.QHBoxLayout()
+              layout.addLayout(images_layout)
+              
+              self.refLabel = QtWidgets.QLabel("Reference Image", self)
+              self.refLabel.setFixedSize(400, 400)
+              self.refLabel.setFrameShape(QtWidgets.QFrame.Box)
+              images_layout.addWidget(self.refLabel)
+              
+              self.alignLabel = QtWidgets.QLabel("Alignment Image", self)
+              self.alignLabel.setFixedSize(400, 400)
+              self.alignLabel.setFrameShape(QtWidgets.QFrame.Box)
+              images_layout.addWidget(self.alignLabel)
+              
+              # Lower layout: result display.
+              self.resultLabel = QtWidgets.QLabel("Result", self)
+              self.resultLabel.setFixedSize(400, 400)
+              self.resultLabel.setFrameShape(QtWidgets.QFrame.Box)
+              layout.addWidget(self.resultLabel)
+              
+              # Button layout.
+              btn_layout = QtWidgets.QHBoxLayout()
+              layout.addLayout(btn_layout)
+              self.btnLoadRef = QtWidgets.QPushButton("Load Reference Image")
+              self.btnLoadAlign = QtWidgets.QPushButton("Load Alignment Image")
+              self.btnCompute  = QtWidgets.QPushButton("Compute Homography")
+              self.btnSave     = QtWidgets.QPushButton("Save Result")
+              btn_layout.addWidget(self.btnLoadRef)
+              btn_layout.addWidget(self.btnLoadAlign)
+              btn_layout.addWidget(self.btnCompute)
+              btn_layout.addWidget(self.btnSave)
+              
+              # Connect button signals.
+              self.btnLoadRef.clicked.connect(self.loadReferenceImage)
+              self.btnLoadAlign.clicked.connect(self.loadAlignmentImage)
+              self.btnCompute.clicked.connect(self.computeHomography)
+              self.btnSave.clicked.connect(self.saveResult)
+              
+              # Variables to store images.
+              self.referenceImage = None   # Image to be warped.
+              self.alignmentImage = None   # Reference image for transformation.
+              self.resultImage = None      # Warped result image.
+          
+          def loadReferenceImage(self):
+              options = QtWidgets.QFileDialog.Options()
+              fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+                  self, "Select Reference Image", "",
+                  "Images (*.png *.jpg *.bmp);;All Files (*)", options=options
+              )
+              if fileName:
+                  self.referenceImage = cv2.imread(fileName)
+                  if self.referenceImage is None:
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load the reference image!")
+                      return
+                  self.displayImage(self.refLabel, self.referenceImage)
+          
+          def loadAlignmentImage(self):
+              options = QtWidgets.QFileDialog.Options()
+              fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+                  self, "Select Alignment Image", "",
+                  "Images (*.png *.jpg *.bmp);;All Files (*)", options=options
+              )
+              if fileName:
+                  self.alignmentImage = cv2.imread(fileName)
+                  if self.alignmentImage is None:
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load the alignment image!")
+                      return
+                  self.displayImage(self.alignLabel, self.alignmentImage)
+          
+          def computeHomography(self):
+              if self.referenceImage is None or self.alignmentImage is None:
+                  QtWidgets.QMessageBox.warning(self, "Warning", "Please load both images first!")
+                  return
+              # Convert to grayscale.
+              ref_gray = cv2.cvtColor(self.referenceImage, cv2.COLOR_BGR2GRAY)
+              align_gray = cv2.cvtColor(self.alignmentImage, cv2.COLOR_BGR2GRAY)
+              # Create ORB detector.
+              orb = cv2.ORB_create(5000)
+              kp1, des1 = orb.detectAndCompute(ref_gray, None)
+              kp2, des2 = orb.detectAndCompute(align_gray, None)
+              if des1 is None or des2 is None:
+                  QtWidgets.QMessageBox.warning(self, "Error", "Unable to detect ORB features in one of the images!")
+                  return
+              # Match descriptors.
+              bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+              matches = bf.match(des1, des2)
+              matches = sorted(matches, key=lambda x: x.distance)
+              num_good_matches = int(len(matches) * 0.9)
+              good_matches = matches[:num_good_matches]
+              if len(good_matches) < 4:
+                  QtWidgets.QMessageBox.warning(self, "Error", "Not enough matches were found to compute homography!")
+                  return
+              src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+              dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+              homography, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+              if homography is None:
+                  QtWidgets.QMessageBox.warning(self, "Error", "Homography could not be computed!")
+                  return
+              height, width, _ = self.alignmentImage.shape
+              warped = cv2.warpPerspective(self.referenceImage, homography, (width, height))
+              self.resultImage = warped
+              self.displayImage(self.resultLabel, warped)
+          
+          def saveResult(self):
+              if self.resultImage is None:
+                  QtWidgets.QMessageBox.warning(self, "Error", "No result image to save. Please compute the homography first!")
+                  return
+              options = QtWidgets.QFileDialog.Options()
+              fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+                  self, "Save Result Image", "",
+                  "PNG Files (*.png);;JPEG Files (*.jpg);;Bitmap Files (*.bmp);;All Files (*)", options=options
+              )
+              if fileName:
+                  if cv2.imwrite(fileName, self.resultImage):
+                      QtWidgets.QMessageBox.information(self, "Success", f"Image saved to {fileName}")
+                  else:
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to save the image!")
+          
+          def displayImage(self, label, img):
+              # Convert from BGR to RGB.
+              rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+              height, width, channels = rgb.shape
+              bytes_per_line = channels * width
+              qImg = QtGui.QImage(rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
+              pixmap = QtGui.QPixmap.fromImage(qImg)
+              # Scale to fit the label while keeping the aspect ratio.
+              pixmap = pixmap.scaled(label.size(), QtCore.Qt.KeepAspectRatio)
+              label.setPixmap(pixmap)
+      
+      ###############################################################################
+      # Manual Mode Widget: Allows manual point selection and computes an affine transform.
+      ###############################################################################
+      class ManualWidget(QtWidgets.QWidget):
+          def __init__(self, parent=None):
+              super(ManualWidget, self).__init__(parent)
+              # Storage for images and selected points.
+              self.source_image = None      # Original mask image.
+              self.target_image = None      # Comparison image.
+              self.src_points = []          # Three clicked points on source.
+              self.dst_points = []          # Three clicked points on target.
+              self.transformed = None       # Resulting affine-transformed image.
+              
+              # Create custom image labels that emit click signals.
+              self.srcLabel = ImageLabel()
+              self.dstLabel = ImageLabel()
+              self.resultLabel = QtWidgets.QLabel("Result image will appear here")
+              self.resultLabel.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+              
+              # Wrap each label in a scroll area.
+              self.srcScrollArea = QtWidgets.QScrollArea()
+              self.srcScrollArea.setWidget(self.srcLabel)
+              self.srcScrollArea.setWidgetResizable(True)
+              self.srcScrollArea.setFixedSize(400,400)
+              
+              self.dstScrollArea = QtWidgets.QScrollArea()
+              self.dstScrollArea.setWidget(self.dstLabel)
+              self.dstScrollArea.setWidgetResizable(True)
+              self.dstScrollArea.setFixedSize(400,400)
+              
+              self.resultScrollArea = QtWidgets.QScrollArea()
+              self.resultScrollArea.setWidget(self.resultLabel)
+              self.resultScrollArea.setWidgetResizable(True)
+              self.resultScrollArea.setFixedSize(400,400)
+              
+              # Create buttons for actions.
+              self.loadSrcButton = QtWidgets.QPushButton("Load Original Mask")
+              self.loadDstButton = QtWidgets.QPushButton("Load Comparison Image")
+              self.transformButton = QtWidgets.QPushButton("Compute Affine Transform")
+              self.clearPointsButton = QtWidgets.QPushButton("Clear Points")
+              self.saveButton = QtWidgets.QPushButton("Save Result")
+              
+              # Input fields for output dimensions and file name.
+              self.outXEdit = QtWidgets.QLineEdit()
+              self.outXEdit.setPlaceholderText("Output width (e.g., 800)")
+              self.outYEdit = QtWidgets.QLineEdit()
+              self.outYEdit.setPlaceholderText("Output height (e.g., 600)")
+              self.outFileEdit = QtWidgets.QLineEdit()
+              self.outFileEdit.setPlaceholderText("Output file name (e.g., new_mask.jpg)")
+              
+              # Group the UI components.
+              srcGroup = QtWidgets.QGroupBox("Original Mask Image (Click 3 Points)")
+              srcLayout = QtWidgets.QVBoxLayout()
+              srcLayout.addWidget(self.srcScrollArea)
+              srcLayout.addWidget(self.loadSrcButton)
+              srcGroup.setLayout(srcLayout)
+              
+              dstGroup = QtWidgets.QGroupBox("Comparison Image (Click 3 Points)")
+              dstLayout = QtWidgets.QVBoxLayout()
+              dstLayout.addWidget(self.dstScrollArea)
+              dstLayout.addWidget(self.loadDstButton)
+              dstGroup.setLayout(dstLayout)
+              
+              resultGroup = QtWidgets.QGroupBox("Transformed Result")
+              resultLayout = QtWidgets.QVBoxLayout()
+              resultLayout.addWidget(self.resultScrollArea)
+              resultGroup.setLayout(resultLayout)
+              
+              topLayout = QtWidgets.QHBoxLayout()
+              topLayout.addWidget(srcGroup)
+              topLayout.addWidget(dstGroup)
+              topLayout.addWidget(resultGroup)
+              
+              controlLayout = QtWidgets.QHBoxLayout()
+              controlLayout.addWidget(self.transformButton)
+              controlLayout.addWidget(self.clearPointsButton)
+              controlLayout.addWidget(self.outXEdit)
+              controlLayout.addWidget(self.outYEdit)
+              controlLayout.addWidget(self.outFileEdit)
+              controlLayout.addWidget(self.saveButton)
+              
+              mainLayout = QtWidgets.QVBoxLayout()
+              mainLayout.addLayout(topLayout)
+              mainLayout.addLayout(controlLayout)
+              self.setLayout(mainLayout)
+              
+              # Connect click signals and buttons.
+              self.srcLabel.clicked.connect(self.recordSrcPoint)
+              self.dstLabel.clicked.connect(self.recordDstPoint)
+              self.loadSrcButton.clicked.connect(self.loadSourceImage)
+              self.loadDstButton.clicked.connect(self.loadTargetImage)
+              self.transformButton.clicked.connect(self.computeAffine)
+              self.clearPointsButton.clicked.connect(self.clearPoints)
+              self.saveButton.clicked.connect(self.saveResult)
+          
+          def loadSourceImage(self):
+              filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+                  self, "Select Original Mask Image", "",
+                  "Image Files (*.png *.jpg *.bmp *.tif *.fits)"
+              )
+              if filename:
+                  if filename.lower().endswith('.fits') and fits is not None:
+                      hdu = fits.open(filename)[0]
+                      img = hdu.data
+                      img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
+                      img_norm = np.uint8(img_norm)
+                      img_bgr = cv2.cvtColor(img_norm, cv2.COLOR_GRAY2BGR)
+                      self.source_image = img_bgr
+                  else:
+                      self.source_image = cv2.imread(filename, cv2.IMREAD_COLOR)
+                  if self.source_image is None:
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
+                      return
+                  self.srcLabel.setImage(self.source_image)
+                  self.src_points = []
+          
+          def loadTargetImage(self):
+              filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+                  self, "Select Comparison Image", "",
+                  "Image Files (*.png *.jpg *.bmp *.tif *.fits)"
+              )
+              if filename:
+                  if filename.lower().endswith('.fits') and fits is not None:
+                      hdu = fits.open(filename)[0]
+                      img = hdu.data
+                      img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
+                      img_norm = np.uint8(img_norm)
+                      img_bgr = cv2.cvtColor(img_norm, cv2.COLOR_GRAY2BGR)
+                      self.target_image = img_bgr
+                  else:
+                      self.target_image = cv2.imread(filename, cv2.IMREAD_COLOR)
+                  if self.target_image is None:
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
+                      return
+                  self.dstLabel.setImage(self.target_image)
+                  self.dst_points = []
+          
+          def recordSrcPoint(self, point):
+              x, y = point.x(), point.y()
+              self.src_points.append((x, y))
+              print("Source point:", x, y)
+              if len(self.src_points) > 3:
+                  self.src_points = self.src_points[:3]
+          
+          def recordDstPoint(self, point):
+              x, y = point.x(), point.y()
+              self.dst_points.append((x, y))
+              print("Destination point:", x, y)
+              if len(self.dst_points) > 3:
+                  self.dst_points = self.dst_points[:3]
+          
+          def clearPoints(self):
+              self.src_points = []
+              self.dst_points = []
+              if self.source_image is not None:
+                  self.srcLabel.setImage(self.source_image)
+              if self.target_image is not None:
+                  self.dstLabel.setImage(self.target_image)
+          
+          def computeAffine(self):
+              if self.source_image is None or self.target_image is None:
+                  QtWidgets.QMessageBox.warning(self, "Error", "Please load both images.")
+                  return
+              if len(self.src_points) < 3 or len(self.dst_points) < 3:
+                  QtWidgets.QMessageBox.warning(self, "Error", "Please click 3 points on each image.")
+                  return
+              pts1 = np.float32(self.src_points[:3])
+              pts2 = np.float32(self.dst_points[:3])
+              M = cv2.getAffineTransform(pts1, pts2)
+              try:
+                  out_w = int(self.outXEdit.text())
+                  out_h = int(self.outYEdit.text())
+              except ValueError:
+                  QtWidgets.QMessageBox.warning(self, "Error", "Invalid output dimensions.")
+                  return
+              transformed = cv2.warpAffine(self.source_image, M, (out_w, out_h))
+              self.transformed = transformed
+              rgb = cv2.cvtColor(transformed, cv2.COLOR_BGR2RGB)
+              h, w, ch = rgb.shape
+              bytes_per_line = ch * w
+              qImg = QtGui.QImage(rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+              pixmap = QtGui.QPixmap.fromImage(qImg)
+              pixmap = pixmap.scaled(self.resultLabel.size(), QtCore.Qt.KeepAspectRatio)
+              self.resultLabel.setPixmap(pixmap)
+          
+          def saveResult(self):
+              if self.transformed is None:
+                  QtWidgets.QMessageBox.warning(self, "Error", "No result available. Compute the transformation first.")
+                  return
+              filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                  self, "Save Result Image", "", "Image Files (*.png *.jpg *.bmp)"
+              )
+              if filename:
+                  cv2.imwrite(filename, self.transformed)
+                  QtWidgets.QMessageBox.information(self, "Saved", f"Result image saved to {filename}")
+      
+      ###############################################################################
+      # Main Window: Contains a drop-down to select mode and a stacked widget.
+      ###############################################################################
+      class MainWindow(QtWidgets.QMainWindow):
+          def __init__(self):
+              super(MainWindow, self).__init__()
+              self.setWindowTitle("Image Transformation: Auto and Manual Modes")
+              self.resize(800, 800)
+              
+              central_widget = QtWidgets.QWidget(self)
+              self.setCentralWidget(central_widget)
+              main_layout = QtWidgets.QVBoxLayout(central_widget)
+              
+              # Drop-down selection for mode.
+              self.modeComboBox = QtWidgets.QComboBox()
+              self.modeComboBox.addItem("Automatic")
+              self.modeComboBox.addItem("Manual")
+              main_layout.addWidget(self.modeComboBox)
+              
+              # Use QStackedWidget to hold the two different mode widgets.
+              self.stackedWidget = QtWidgets.QStackedWidget()
+              self.autoWidget = AutoWidget()
+              self.manualWidget = ManualWidget()
+              self.stackedWidget.addWidget(self.autoWidget)
+              self.stackedWidget.addWidget(self.manualWidget)
+              main_layout.addWidget(self.stackedWidget)
+              
+              self.modeComboBox.currentIndexChanged.connect(self.switchMode)
+          
+          def switchMode(self, index):
+              self.stackedWidget.setCurrentIndex(index)
+      
+      ###############################################################################
+      # Run the Application.
+      ###############################################################################
+      if __name__ == '__main__':
+          app = QtWidgets.QApplication(sys.argv)
+          window = MainWindow()
+          window.show()
+          sys.exit(app.exec_())
 
-    # displaying the coordinates 
-    # on the image window 
-    font = cv2.FONT_HERSHEY_SIMPLEX 
-    cv2.putText(img, str(x) + ',' + str(y), (x,y), font, 1, (255, 0, 0), 2) 
-    cv2.imshow('image', img) 
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()    
 
-  # checking for right mouse clicks	 
-  if event==cv2.EVENT_RBUTTONDOWN: 
-    # displaying the coordinates 
-    # on the Shell
-    print(' x ', ' ', ' y ')
-    print(x, ' ', y) 
-
-    # displaying the coordinates 
-    # on the image window 
-    font = cv2.FONT_HERSHEY_SIMPLEX 
-    b = img[y, x, 0] 
-    g = img[y, x, 1] 
-    r = img[y, x, 2] 
-    cv2.putText(img, str(b) + ',' + str(g) + ',' + str(r), (x,y), font, 1, (255, 255, 0), 2) 
-    cv2.imshow('image', img) 
 
 def mask():
   try:
@@ -4380,79 +4785,195 @@ def WcsOvrlay():
   return sysargv1
   menue()
 
-def WcsStack():
+def Stacking():
 
   try:
+              
+      # For astrometric stacking, we import reproject here when needed.
+      # The import is placed inside the astrometric block.
+      
+      def compute_roundness_ratio(data, x0, y0, size=11):
+          """
+          Compute the roundness ratio (minor/major axis ratio) of a star.
+      
+          Parameters:
+            data : 2D numpy array representing the image.
+            x0, y0 : centroid coordinates (floats) of the star.
+            size : size (in pixels) of the square cutout around the star.
+            
+          Returns:
+            roundness_ratio : float computed as sqrt(lambda2/lambda1), where lambda1 >= lambda2.
+                              A value of 1 indicates a perfectly round star.
+          """
+          x0, y0 = int(round(x0)), int(round(y0))
+          half = size // 2
+          ny, nx = data.shape
+          y_min = max(0, y0 - half)
+          y_max = min(ny, y0 + half + 1)
+          x_min = max(0, x0 - half)
+          x_max = min(nx, x0 + half + 1)
+          
+          cutout = data[y_min:y_max, x_min:x_max]
+          y_grid, x_grid = np.indices(cutout.shape)
+          x_centered = x_grid - (cutout.shape[1] - 1) / 2.0
+          y_centered = y_grid - (cutout.shape[0] - 1) / 2.0
+      
+          I = cutout
+          total_intensity = np.sum(I)
+          if total_intensity == 0:
+              return 0  # Degenerate: will be rejected.
+          
+          mxx = np.sum(I * x_centered**2) / total_intensity
+          myy = np.sum(I * y_centered**2) / total_intensity
+          mxy = np.sum(I * x_centered * y_centered) / total_intensity
+          
+          T = mxx + myy
+          D = np.sqrt((mxx - myy)**2 + 4 * mxy**2)
+          lambda1 = (T + D) / 2.0
+          lambda2 = (T - D) / 2.0
+          if lambda1 == 0:
+              return 0
+          roundness_ratio = np.sqrt(lambda2 / lambda1)
+          return roundness_ratio
       
       def main():
-
-                 #================================================================================
-                 sysargv1  = input("Enter the  directory path(E:'//work//'w)  -->")
-                 sysargv3  = input("Enter the output file(stacked_image.fits)  -->")
-                 sysargv2  = input("Enter file type as (.fit)  -->")
-                 #================================================================================
-                 directory_path = sysargv1
-           
-                 # Get all file names
-                 all_files = os.listdir(directory_path)
-           
-                 # Filter only .fit or .fits files
-                 fits_files = [file for file in all_files if file.endswith('.fit') or file.endswith('.fits')]
-           
-                 # Print the names of all FITS files
-                 print("FITS files in the directory:")
-                 if not fits_files:
-                     raise FileNotFoundError("No FITS files found in the specified directory!")
-                 for file in fits_files:
-                     print(file)
-           
-                 # Load the reference image (use the first image as the reference)
-                 ref_hdul = fits.open(os.path.join(directory_path, fits_files[0]))
-                 ref_header = ref_hdul[0].header
-                 ref_data = ref_hdul[0].data.astype(float)  # Ensure float64 precision
-                 print(f"Successfully opened reference FITS file: {fits_files[0]}")
-                 ref_wcs = WCS(ref_header)
-           
-                 # Reproject and align all images to the reference WCS
-                 aligned_images = []
-           
-                 fits_files = [os.path.join(directory_path, file) for file in os.listdir(directory_path) if 
-           
-                 file.endswith( sysargv2 ) ]
-                 if not ref_wcs.has_celestial:
-                     raise ValueError(f"Reference image {fits_files[0]} does not contain valid celestial WCS information.")
-           
-                 for fits_file in fits_files:
-                     with fits.open(fits_file) as hdul:
-                         target_header = hdul[0].header
-                         target_data = hdul[0].data.astype(float)
-           
-                         try:
-                             target_wcs = WCS(target_header)
-                             if not target_wcs.has_celestial:
-                                 raise ValueError("No celestial WCS information found.")
-                         except Exception as e:
-                             print(f"Skipping {fits_file} due to WCS error: {e}")
-                             continue
-           
-                         # Reproject the target image onto the reference WCS
-                         reprojected_data, _ = reproject_exact((target_data, target_wcs), ref_wcs, ref_data.shape)
-                         aligned_images.append(reprojected_data)
-           
-                 # Close the reference image
-                 ref_hdul.close()
-           
-                 # Stack the aligned images (e.g., average stacking)
-                 stacked_image = np.mean(aligned_images, axis=0).astype(float)
-           
-                 # Save the stacked image to a new FITS file
-                 stacked_hdu = fits.PrimaryHDU(stacked_image, header=ref_header)
-                 stacked_hdu.writeto(sysargv3, overwrite=True)
-           
-                 print("Stacked image saved as " + sysargv3 )
-
+          # Get interactive inputs.
+          directory = input("Enter the directory containing the FITS files (enter for current directory): ").strip()
+          if directory == "":
+              directory = "."
+          pattern = input("Enter FITS file glob pattern (default: *.fits): ").strip()
+          if pattern == "":
+              pattern = "*.fits"
+          method = input("Enter stacking method [average, weighted, astrometric]: ").strip().lower()
+          if method not in ["average", "weighted", "astrometric"]:
+              print("Invalid method entered. Defaulting to 'average' stacking.")
+              method = "average"
+          weighted_astrometric = False
+          if method == "astrometric":
+              wa = input("Use weighted astrometric stacking? (Y/N): ").strip().lower()
+              if wa and wa[0] == "y":
+                  weighted_astrometric = True
+          try:
+              roundness_threshold = float(
+                  input("Enter roundness threshold (default 0.5): ").strip() or "0.5"
+              )
+          except ValueError:
+              print("Invalid input, defaulting roundness threshold to 0.5.")
+              roundness_threshold = 0.5
+      
+          # Find FITS files.
+          search_pattern = os.path.join(directory, pattern)
+          fits_files = glob.glob(search_pattern)
+          if len(fits_files) == 0:
+              raise ValueError("No FITS files found. Check your directory/path and pattern.")
+          print(f"\nFound {len(fits_files)} file(s) in {directory}\n")
+      
+          valid_data_list = []   # Accepted image data.
+          weight_list = []       # Inverse variance weights.
+          headers_list = []      # Corresponding headers.
+          rejected_files = []    # List of tuples: (filename, reason)
+      
+          # Process each file.
+          for file in fits_files:
+              try:
+                  with fits.open(file) as hdul:
+                      data = hdul[0].data.astype(np.float64)
+                      header = hdul[0].header
+              except Exception as e:
+                  reason = f"Error reading file: {e}"
+                  print(f"{file}: {reason}")
+                  rejected_files.append((file, reason))
+                  continue
+      
+              # Calculate background statistics.
+              mean, median, std = sigma_clipped_stats(data, sigma=3.0)
+              daofind = DAOStarFinder(fwhm=3.0, threshold=5.0 * std)
+              sources = daofind(data - median)
+              if sources is None or len(sources) == 0:
+                  reason = "No stars detected"
+                  print(f"{file}: {reason}; rejecting image.")
+                  rejected_files.append((file, reason))
+                  continue
+      
+              # Choose the star with the highest 'peak'.
+              star = sources[np.argmax(sources['peak'])]
+              x0, y0 = star['xcentroid'], star['ycentroid']
+              r_ratio = compute_roundness_ratio(data, x0, y0, size=11)
+              print(f"{file}: roundness ratio = {r_ratio:.3f}")
+              if r_ratio < roundness_threshold:
+                  reason = f"Roundness ratio ({r_ratio:.3f}) below threshold ({roundness_threshold})"
+                  print(f"{file}: {reason}; rejecting image.")
+                  rejected_files.append((file, reason))
+                  continue
+      
+              # Image accepted.
+              valid_data_list.append(data)
+              # Weight is set as inverse variance.
+              weight_list.append(1.0 / (std ** 2))
+              headers_list.append(header)
+      
+          # Print rejected files.
+          if rejected_files:
+              print("\nRejected files:")
+              for filename, reason in rejected_files:
+                  print(f"  {os.path.basename(filename)}: {reason}")
+          else:
+              print("No files were rejected.")
+          
+          if len(valid_data_list) == 0:
+              raise ValueError("No valid images found after roundness filtering.")
+      
+          # Stacking block.
+          if method in ["average", "weighted"]:
+              data_stack = np.array(valid_data_list)
+              if method == "average":
+                  stacked_image = np.mean(data_stack, axis=0)
+                  stacking_info = "Unweighted average stacking."
+              else:
+                  weights = np.array(weight_list)
+                  weighted_sum = np.tensordot(weights, data_stack, axes=([0],[0]))
+                  total_weight = np.sum(weights)
+                  stacked_image = weighted_sum / total_weight
+                  stacking_info = "Weighted stacking (inverse variance weighting)."
+              output_header = headers_list[0]
+          elif method == "astrometric":
+              try:
+                  from reproject import reproject_interp
+              except ImportError:
+                  raise ImportError("The 'reproject' package is required for astrometric stacking. Install it via 'pip install reproject'")
+              
+              # Use the header of the first accepted image as the reference.
+              ref_header = headers_list[0]
+              ref_shape = valid_data_list[0].shape
+              reprojected_images = []
+              reprojected_weights = []
+              for data, header, weight in zip(valid_data_list, headers_list, weight_list):
+                  reproj_data, footprint = reproject_interp((data, header), ref_header, shape_out=ref_shape)
+                  reprojected_images.append(reproj_data)
+                  reprojected_weights.append(weight)
+              reprojected_images = np.array(reprojected_images)
+              if weighted_astrometric:
+                  weights = np.array(reprojected_weights)
+                  weighted_sum = np.tensordot(weights, reprojected_images, axes=([0],[0]))
+                  total_weight = np.sum(weights)
+                  stacked_image = weighted_sum / total_weight
+                  stacking_info = "Weighted astrometric stacking."
+              else:
+                  stacked_image = np.mean(reprojected_images, axis=0)
+                  stacking_info = "Astrometric stacking (unweighted average)."
+              output_header = ref_header
+      
+          # Update header history.
+          output_header.add_history(f"Stacked image computed from {len(valid_data_list)} exposures.")
+          output_header.add_history(stacking_info)
+      
+          output_filename = "stacked.fits"
+          fits.writeto(output_filename, stacked_image, output_header, overwrite=True)
+          print(f"\nStacked image written to {output_filename} using method '{method}'.")
+      
       if __name__ == "__main__":
           main()
+      
 
   except Exception as e:
       print(f"An error occurred: {e}")
@@ -4890,13 +5411,16 @@ def CombBgrAlIm():
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< WcsStack >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
 while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
   sysargv1 = ''
   sysargv1 = menue(sysargv1)
+
+  if sysargv1 == '1':
+    AffineTransform()
 
   if sysargv1 == '2':
     mask()
@@ -5127,7 +5651,7 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
     WcsOvrlay()
 
   if sysargv1 == '46':
-     WcsStack()
+     Stacking()
 
   if sysargv1 == '47':
     combinelrgb()
@@ -5147,82 +5671,6 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
   if sysargv1 == '1313':
     sys.exit()
 
-  if sysargv1 == '1':
-    sysargv1  = input("Enter the original mask file name -->")
-    sysargv2  = input("Enter the comparison      file name -->")
-    sysargv2a  = input("Enter the new mask      file name -->")
-    sysargv3  = int(input("Enter the x-coordinate size new file -->"))
-    sysargv4  = int(input("Enter the y-coordinate size new file -->"))
 
-    # reading the image
-    win_name = "visualization"  #  1. use var to specify window name everywhere
-    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)  #  2. use 'normal' flag
-    img = cv2.imread(sysargv1, 1) 
 
-    # displaying the image 
-    cv2.imshow('image', img) 
-
-    # setting mouse handler for the image 
-    # and calling the click_event() function 
-    cv2.setMouseCallback('image', click_event) 
-
-    # wait for a key to be pressed to exit 
-    cv2.waitKey(0) 
-
-    # close the window 
-    cv2.destroyAllWindows() 
-
-    sysargv5  = input("Enter the x-coordinate of p1 origin file name-->")
-    sysargv6  = input("Enter the y-coordinate of p1 origin file name-->")
-    sysargv7  = input("Enter the x-coordinate of p2 origin file name-->")
-    sysargv8  = input("Enter the y-coordinate of p2 origin file name-->")
-    sysargv9  = input("Enter the x-coordinate of p3 origin file name-->")
-    sysargv10 = input("Enter the y-coordinate of p3 origin file name-->")
-
-    # reading the image 
-    img = cv2.imread(sysargv2, 1) 
-
-    # displaying the image 
-    cv2.imshow('image', img) 
-
-    # setting mouse handler for the image 
-    # and calling the click_event() function 
-    cv2.setMouseCallback('image', click_event) 
-
-    # wait for a key to be pressed to exit 
-    cv2.waitKey(0) 
-
-    # close the window 
-    cv2.destroyAllWindows() 
-
-    sysargv11 = input("Enter the X-coordinate of p1 new    file name-->")
-    sysargv12 = input("Enter the y-coordinate of p1 new    file name-->")
-    sysargv13 = input("Enter the x-coordinate of p2 new    file name-->")
-    sysargv14 = input("Enter the y-coordinate of p2 new    file name-->")
-    sysargv15 = input("Enter the x-coordinate of p3 new    file name-->")
-    sysargv16 = input("Enter the y-coordinate of p3 new    file name-->")
-
-    # read the input image
-    win_name = "visualization"  #  1. use var to specify window name everywhere
-    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)  #  2. use 'normal' flag
-    img = cv2.imread(sysargv1)
-    # access the image height and width
-    rows,cols,_ = img.shape 
-    # define at three point on input image
-    pts1 = np.float32([[sysargv5,sysargv6],[sysargv7,sysargv8],[sysargv9,sysargv10]])
-
-    # define three points corresponding location to output image
-    pts2 = np.float32([[sysargv11,sysargv12],[sysargv13,sysargv14],[sysargv15,sysargv16]])
-
-    # get the affine transformation Matrix
-    M = cv2.getAffineTransform(pts1,pts2)
-
-    # apply affine transformation on the input image
-    #dst = cv2.warpAffine(img,M,(cols,rows))
-    dst = cv2.warpAffine(img,M,(sysargv3,sysargv4))
-    cv2.imshow("Affine Transform", dst)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    im = Image.fromarray(dst, "RGB")
-    im.save(sysargv2a)
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
