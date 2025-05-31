@@ -40,15 +40,50 @@ def AffineTransform():
 
   try:
            
-      # Optional: for handling FITS images in manual mode.
-      try:
-          from astropy.io import fits
-      except ImportError:
-          fits = None
+      #############################################
+      # Function to Convert a 16-bit PNG to 32-bit FITS
+      #############################################
+      def png16_to_fits32(png_filename, fits_filename):
+          """
+          Reads a 16-bit PNG image using OpenCV and saves it as a 32-bit FITS file.
       
-      ###############################################################################
+          The function uses cv2.imread with the IMREAD_UNCHANGED flag to preserve the
+          16-bit depth. If the image is a color image (3 channels), it converts the 
+          BGR image (the default in OpenCV) to RGB, then transposes the array so that 
+          its shape becomes (channels, height, width). Finally, it converts the data 
+          to a 32-bit floating point array and writes it to a FITS file.
+      
+          Parameters:
+            png_filename (str): Path to the input 16-bit PNG file.
+            fits_filename (str): Path to the output FITS file.
+          """
+          # Read the image as-is, preserving the 16-bit depth.
+          data = cv2.imread(png_filename, cv2.IMREAD_UNCHANGED)
+          if data is None:
+              raise IOError(f"Could not read image file: {png_filename}")
+          
+          # Verify that the image data is 16-bit
+          if data.dtype != np.uint16:
+              raise TypeError(f"Expected a 16-bit image (dtype=np.uint16), but got {data.dtype}")
+      
+          # If the image has multiple channels, assume it is color.
+          # OpenCV reads color images in BGR order. We convert them to RGB.
+          if len(data.shape) == 3 and data.shape[2] == 3:
+              data = cv2.cvtColor(data, cv2.COLOR_BGR2RGB)
+              # Transpose the data so that the color channels come first:
+              # (height, width, channels) -> (channels, height, width)
+              data = np.transpose(data, (2, 0, 1))
+      
+          # Convert the 16-bit unsigned integer data into 32-bit float.
+          data_32 = data.astype(np.float32)
+          
+          # Write the 32-bit float array to a FITS file.
+          fits.writeto(fits_filename, data_32, overwrite=True)
+          print(f"Saved 32-bit FITS file: {fits_filename}")
+      
+      #############################################
       # Custom ImageLabel for manual mode that records click positions.
-      ###############################################################################
+      #############################################
       class ImageLabel(QtWidgets.QLabel):
           clicked = QtCore.pyqtSignal(QtCore.QPoint)
           
@@ -56,27 +91,29 @@ def AffineTransform():
               super(ImageLabel, self).__init__(parent)
               self.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
               self.setMouseTracking(True)
-              self.points = []  # List to store clicked points
-              self.display_image = None  # QPixmap for display
+              self.points = []  # Stores clicked points
+              self.display_image = None
       
           def setImage(self, cv_img):
-              """Set the image from an OpenCV BGR array."""
-              self.cv_img = cv_img.copy()
-              # Convert from BGR to RGB.
-              rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+              """
+              Set the image from an OpenCV-like BGR NumPy array.
+              (This function is used by the Automatic and Manual widgets
+               which rely on OpenCV for processing.)
+              """
+              # Since these images come from OpenCV, convert BGR to RGB.
+              rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) if 'cv2' in globals() else cv_img
               h, w, ch = rgb_image.shape
               bytes_per_line = ch * w
-              qt_image = QtGui.QImage(rgb_image.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
-              self.display_image = QtGui.QPixmap.fromImage(qt_image)
+              qImg = QtGui.QImage(rgb_image.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+              self.display_image = QtGui.QPixmap.fromImage(qImg)
               self.setPixmap(self.display_image)
-              self.points = []  # Reset recorded points
+              self.points = []
       
           def mousePressEvent(self, event):
               if self.pixmap() is None:
                   return
               point = event.pos()
               self.points.append(point)
-              # Redraw the pixmap to mark the clicked point.
               pix = self.pixmap().copy()
               painter = QtGui.QPainter(pix)
               painter.setPen(QtGui.QPen(QtCore.Qt.red, 5))
@@ -85,15 +122,17 @@ def AffineTransform():
               self.setPixmap(pix)
               self.clicked.emit(point)
       
-      ###############################################################################
-      # Automatic Mode Widget: Uses ORB feature detection and homography estimation.
-      ###############################################################################
+      #############################################
+      # Automatic Mode Widget (uses OpenCV for ORB/homography)
+      #############################################
+      # (This code remains unchanged from the previous examples.)
+      import cv2  # OpenCV is required for the automatic and manual modes below
+      
       class AutoWidget(QtWidgets.QWidget):
           def __init__(self, parent=None):
               super(AutoWidget, self).__init__(parent)
               layout = QtWidgets.QVBoxLayout(self)
               
-              # Upper layout: two image display labels.
               images_layout = QtWidgets.QHBoxLayout()
               layout.addLayout(images_layout)
               
@@ -107,13 +146,11 @@ def AffineTransform():
               self.alignLabel.setFrameShape(QtWidgets.QFrame.Box)
               images_layout.addWidget(self.alignLabel)
               
-              # Lower layout: result display.
               self.resultLabel = QtWidgets.QLabel("Result", self)
               self.resultLabel.setFixedSize(400, 400)
               self.resultLabel.setFrameShape(QtWidgets.QFrame.Box)
               layout.addWidget(self.resultLabel)
               
-              # Button layout.
               btn_layout = QtWidgets.QHBoxLayout()
               layout.addLayout(btn_layout)
               self.btnLoadRef = QtWidgets.QPushButton("Load Reference Image")
@@ -125,27 +162,24 @@ def AffineTransform():
               btn_layout.addWidget(self.btnCompute)
               btn_layout.addWidget(self.btnSave)
               
-              # Connect button signals.
               self.btnLoadRef.clicked.connect(self.loadReferenceImage)
               self.btnLoadAlign.clicked.connect(self.loadAlignmentImage)
               self.btnCompute.clicked.connect(self.computeHomography)
               self.btnSave.clicked.connect(self.saveResult)
               
-              # Variables to store images.
-              self.referenceImage = None   # Image to be warped.
-              self.alignmentImage = None   # Reference image for transformation.
-              self.resultImage = None      # Warped result image.
+              self.referenceImage = None
+              self.alignmentImage = None
+              self.resultImage = None
           
           def loadReferenceImage(self):
               options = QtWidgets.QFileDialog.Options()
               fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
                   self, "Select Reference Image", "",
-                  "Images (*.png *.jpg *.bmp);;All Files (*)", options=options
-              )
+                  "Images (*.png *.jpg *.bmp);;All Files (*)", options=options)
               if fileName:
                   self.referenceImage = cv2.imread(fileName)
                   if self.referenceImage is None:
-                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load the reference image!")
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load reference image!")
                       return
                   self.displayImage(self.refLabel, self.referenceImage)
           
@@ -153,43 +187,39 @@ def AffineTransform():
               options = QtWidgets.QFileDialog.Options()
               fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
                   self, "Select Alignment Image", "",
-                  "Images (*.png *.jpg *.bmp);;All Files (*)", options=options
-              )
+                  "Images (*.png *.jpg *.bmp);;All Files (*)", options=options)
               if fileName:
                   self.alignmentImage = cv2.imread(fileName)
                   if self.alignmentImage is None:
-                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load the alignment image!")
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to load alignment image!")
                       return
                   self.displayImage(self.alignLabel, self.alignmentImage)
           
           def computeHomography(self):
               if self.referenceImage is None or self.alignmentImage is None:
-                  QtWidgets.QMessageBox.warning(self, "Warning", "Please load both images first!")
+                  QtWidgets.QMessageBox.warning(self, "Warning", "Load both images first!")
                   return
-              # Convert to grayscale.
               ref_gray = cv2.cvtColor(self.referenceImage, cv2.COLOR_BGR2GRAY)
               align_gray = cv2.cvtColor(self.alignmentImage, cv2.COLOR_BGR2GRAY)
-              # Create ORB detector.
               orb = cv2.ORB_create(5000)
               kp1, des1 = orb.detectAndCompute(ref_gray, None)
               kp2, des2 = orb.detectAndCompute(align_gray, None)
               if des1 is None or des2 is None:
-                  QtWidgets.QMessageBox.warning(self, "Error", "Unable to detect ORB features in one of the images!")
+                  QtWidgets.QMessageBox.warning(self, "Error", "ORB features not detected!")
                   return
-              # Match descriptors.
               bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
               matches = bf.match(des1, des2)
               matches = sorted(matches, key=lambda x: x.distance)
               num_good_matches = int(len(matches) * 0.9)
               good_matches = matches[:num_good_matches]
               if len(good_matches) < 4:
-                  QtWidgets.QMessageBox.warning(self, "Error", "Not enough matches were found to compute homography!")
+                  QtWidgets.QMessageBox.warning(self, "Error", "Not enough matches to compute homography!")
                   return
               src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
               dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-              homography, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+              homography, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
               if homography is None:
-                  QtWidgets.QMessageBox.warning(self, "Error", "Homography could not be computed!")
+                  QtWidgets.QMessageBox.warning(self, "Error", "Homography computation failed!")
                   return
               height, width, _ = self.alignmentImage.shape
               warped = cv2.warpPerspective(self.referenceImage, homography, (width, height))
@@ -198,50 +228,53 @@ def AffineTransform():
           
           def saveResult(self):
               if self.resultImage is None:
-                  QtWidgets.QMessageBox.warning(self, "Error", "No result image to save. Please compute the homography first!")
+                  QtWidgets.QMessageBox.warning(self, "Error", "Compute the homography first!")
                   return
               options = QtWidgets.QFileDialog.Options()
               fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
                   self, "Save Result Image", "",
-                  "PNG Files (*.png);;JPEG Files (*.jpg);;Bitmap Files (*.bmp);;All Files (*)", options=options
-              )
+                  "16-bit PNG Files (*.png);;All Files (*)", options=options)
               if fileName:
-                  if cv2.imwrite(fileName, self.resultImage):
-                      QtWidgets.QMessageBox.information(self, "Success", f"Image saved to {fileName}")
+                  if self.resultImage.dtype == np.uint8:
+                      result16 = (self.resultImage.astype(np.uint16)) * 257
                   else:
-                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to save the image!")
+                      result16 = self.resultImage
+                  if cv2.imwrite(fileName, result16):
+                      fits_filename = fileName.rsplit('.', 1)[0] + ".fits"
+                      # Convert from BGR to RGB before saving to FITS.
+                      rgb_result = cv2.cvtColor(result16, cv2.COLOR_BGR2RGB)
+                      fits_data = rgb_result.astype(np.float32)
+                      fits.writeto(fits_filename, fits_data, overwrite=True)
+                      QtWidgets.QMessageBox.information(self, "Success", f"Saved:\n{fileName}\n{fits_filename}")
+                  else:
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to save image!")
           
           def displayImage(self, label, img):
-              # Convert from BGR to RGB.
               rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
               height, width, channels = rgb.shape
               bytes_per_line = channels * width
               qImg = QtGui.QImage(rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
               pixmap = QtGui.QPixmap.fromImage(qImg)
-              # Scale to fit the label while keeping the aspect ratio.
               pixmap = pixmap.scaled(label.size(), QtCore.Qt.KeepAspectRatio)
               label.setPixmap(pixmap)
       
-      ###############################################################################
-      # Manual Mode Widget: Allows manual point selection and computes an affine transform.
-      ###############################################################################
+      #############################################
+      # Manual Mode Widget (point-click affine transform)
+      #############################################
       class ManualWidget(QtWidgets.QWidget):
           def __init__(self, parent=None):
               super(ManualWidget, self).__init__(parent)
-              # Storage for images and selected points.
-              self.source_image = None      # Original mask image.
-              self.target_image = None      # Comparison image.
-              self.src_points = []          # Three clicked points on source.
-              self.dst_points = []          # Three clicked points on target.
-              self.transformed = None       # Resulting affine-transformed image.
+              self.source_image = None
+              self.target_image = None
+              self.src_points = []  # Three clicked points on source
+              self.dst_points = []  # Three clicked points on target
+              self.transformed = None
               
-              # Create custom image labels that emit click signals.
               self.srcLabel = ImageLabel()
               self.dstLabel = ImageLabel()
               self.resultLabel = QtWidgets.QLabel("Result image will appear here")
               self.resultLabel.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
               
-              # Wrap each label in a scroll area.
               self.srcScrollArea = QtWidgets.QScrollArea()
               self.srcScrollArea.setWidget(self.srcLabel)
               self.srcScrollArea.setWidgetResizable(True)
@@ -257,14 +290,12 @@ def AffineTransform():
               self.resultScrollArea.setWidgetResizable(True)
               self.resultScrollArea.setFixedSize(400,400)
               
-              # Create buttons for actions.
               self.loadSrcButton = QtWidgets.QPushButton("Load Original Mask")
               self.loadDstButton = QtWidgets.QPushButton("Load Comparison Image")
               self.transformButton = QtWidgets.QPushButton("Compute Affine Transform")
               self.clearPointsButton = QtWidgets.QPushButton("Clear Points")
               self.saveButton = QtWidgets.QPushButton("Save Result")
               
-              # Input fields for output dimensions and file name.
               self.outXEdit = QtWidgets.QLineEdit()
               self.outXEdit.setPlaceholderText("Output width (e.g., 800)")
               self.outYEdit = QtWidgets.QLineEdit()
@@ -272,7 +303,6 @@ def AffineTransform():
               self.outFileEdit = QtWidgets.QLineEdit()
               self.outFileEdit.setPlaceholderText("Output file name (e.g., new_mask.jpg)")
               
-              # Group the UI components.
               srcGroup = QtWidgets.QGroupBox("Original Mask Image (Click 3 Points)")
               srcLayout = QtWidgets.QVBoxLayout()
               srcLayout.addWidget(self.srcScrollArea)
@@ -308,7 +338,6 @@ def AffineTransform():
               mainLayout.addLayout(controlLayout)
               self.setLayout(mainLayout)
               
-              # Connect click signals and buttons.
               self.srcLabel.clicked.connect(self.recordSrcPoint)
               self.dstLabel.clicked.connect(self.recordDstPoint)
               self.loadSrcButton.clicked.connect(self.loadSourceImage)
@@ -320,18 +349,9 @@ def AffineTransform():
           def loadSourceImage(self):
               filename, _ = QtWidgets.QFileDialog.getOpenFileName(
                   self, "Select Original Mask Image", "",
-                  "Image Files (*.png *.jpg *.bmp *.tif *.fits)"
-              )
+                  "Image Files (*.png *.jpg *.bmp)")
               if filename:
-                  if filename.lower().endswith('.fits') and fits is not None:
-                      hdu = fits.open(filename)[0]
-                      img = hdu.data
-                      img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
-                      img_norm = np.uint8(img_norm)
-                      img_bgr = cv2.cvtColor(img_norm, cv2.COLOR_GRAY2BGR)
-                      self.source_image = img_bgr
-                  else:
-                      self.source_image = cv2.imread(filename, cv2.IMREAD_COLOR)
+                  self.source_image = cv2.imread(filename, cv2.IMREAD_COLOR)
                   if self.source_image is None:
                       QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
                       return
@@ -341,18 +361,9 @@ def AffineTransform():
           def loadTargetImage(self):
               filename, _ = QtWidgets.QFileDialog.getOpenFileName(
                   self, "Select Comparison Image", "",
-                  "Image Files (*.png *.jpg *.bmp *.tif *.fits)"
-              )
+                  "Image Files (*.png *.jpg *.bmp)")
               if filename:
-                  if filename.lower().endswith('.fits') and fits is not None:
-                      hdu = fits.open(filename)[0]
-                      img = hdu.data
-                      img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
-                      img_norm = np.uint8(img_norm)
-                      img_bgr = cv2.cvtColor(img_norm, cv2.COLOR_GRAY2BGR)
-                      self.target_image = img_bgr
-                  else:
-                      self.target_image = cv2.imread(filename, cv2.IMREAD_COLOR)
+                  self.target_image = cv2.imread(filename, cv2.IMREAD_COLOR)
                   if self.target_image is None:
                       QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
                       return
@@ -383,10 +394,10 @@ def AffineTransform():
           
           def computeAffine(self):
               if self.source_image is None or self.target_image is None:
-                  QtWidgets.QMessageBox.warning(self, "Error", "Please load both images.")
+                  QtWidgets.QMessageBox.warning(self, "Error", "Load both images before computing transformation.")
                   return
               if len(self.src_points) < 3 or len(self.dst_points) < 3:
-                  QtWidgets.QMessageBox.warning(self, "Error", "Please click 3 points on each image.")
+                  QtWidgets.QMessageBox.warning(self, "Error", "Click 3 points on each image.")
                   return
               pts1 = np.float32(self.src_points[:3])
               pts2 = np.float32(self.dst_points[:3])
@@ -409,23 +420,75 @@ def AffineTransform():
           
           def saveResult(self):
               if self.transformed is None:
-                  QtWidgets.QMessageBox.warning(self, "Error", "No result available. Compute the transformation first.")
+                  QtWidgets.QMessageBox.warning(self, "Error", "Compute the transformation first.")
                   return
               filename, _ = QtWidgets.QFileDialog.getSaveFileName(
-                  self, "Save Result Image", "", "Image Files (*.png *.jpg *.bmp)"
-              )
+                  self, "Save Result Image", "", "16-bit PNG Files (*.png);;All Files (*)")
               if filename:
-                  cv2.imwrite(filename, self.transformed)
-                  QtWidgets.QMessageBox.information(self, "Saved", f"Result image saved to {filename}")
+                  if self.transformed.dtype == np.uint8:
+                      transformed16 = (self.transformed.astype(np.uint16)) * 257
+                  else:
+                      transformed16 = self.transformed
+                  if cv2.imwrite(filename, transformed16):
+                      fits_filename = filename.rsplit('.', 1)[0] + ".fits"
+                      rgb_result = cv2.cvtColor(transformed16, cv2.COLOR_BGR2RGB)
+                      fits_data = rgb_result.astype(np.float32)
+                      fits.writeto(fits_filename, fits_data, overwrite=True)
+                      QtWidgets.QMessageBox.information(self, "Saved",
+                                                        f"Saved:\n{filename}\n{fits_filename}")
+                  else:
+                      QtWidgets.QMessageBox.warning(self, "Error", "Failed to save the image!")
       
-      ###############################################################################
+      #############################################
+      # FITS Mode Widget: Uses Pillow (PIL) to read a 16-bit PNG
+      # and then save it as a 32-bit FITS file.
+      #############################################
+      class FitsWidget(QtWidgets.QWidget):
+          def __init__(self, parent=None):
+              super(FitsWidget, self).__init__(parent)
+              layout = QtWidgets.QVBoxLayout(self)
+              
+              self.btnLoadPNG = QtWidgets.QPushButton("Load 16-bit PNG")
+              self.fileLineEdit = QtWidgets.QLineEdit()
+              self.fileLineEdit.setReadOnly(True)
+              self.btnConvertFITS = QtWidgets.QPushButton("Convert & Save as 32-bit FITS")
+              
+              layout.addWidget(self.btnLoadPNG)
+              layout.addWidget(self.fileLineEdit)
+              layout.addWidget(self.btnConvertFITS)
+              
+              self.btnLoadPNG.clicked.connect(self.load_png)
+              self.btnConvertFITS.clicked.connect(self.convert_fits)
+              self.input_png = None
+          
+          def load_png(self):
+              fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+                  self, "Select 16-bit PNG", "", "PNG Files (*.png);;All Files (*)")
+              if fileName:
+                  self.input_png = fileName
+                  self.fileLineEdit.setText(fileName)
+          
+          def convert_fits(self):
+              if not self.input_png:
+                  QtWidgets.QMessageBox.warning(self, "Error", "No file loaded!")
+                  return
+              fits_filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                  self, "Save 32-bit FITS", "", "FITS Files (*.fits);;All Files (*)")
+              if fits_filename:
+                  try:
+                      png16_to_fits32(self.input_png, fits_filename)
+                      QtWidgets.QMessageBox.information(self, "Success", f"Saved 32-bit FITS file:\n{fits_filename}")
+                  except Exception as e:
+                      QtWidgets.QMessageBox.critical(self, "Error", str(e))
+      
+      #############################################
       # Main Window: Contains a drop-down to select mode and a stacked widget.
-      ###############################################################################
+      #############################################
       class MainWindow(QtWidgets.QMainWindow):
           def __init__(self):
               super(MainWindow, self).__init__()
-              self.setWindowTitle("Image Transformation: Auto and Manual Modes")
-              self.resize(800, 800)
+              self.setWindowTitle("Image Transformation: Automatic, Manual, and FITS Modes")
+              self.resize(1000, 800)
               
               central_widget = QtWidgets.QWidget(self)
               self.setCentralWidget(central_widget)
@@ -435,14 +498,17 @@ def AffineTransform():
               self.modeComboBox = QtWidgets.QComboBox()
               self.modeComboBox.addItem("Automatic")
               self.modeComboBox.addItem("Manual")
+              self.modeComboBox.addItem("FITS")
               main_layout.addWidget(self.modeComboBox)
               
-              # Use QStackedWidget to hold the two different mode widgets.
+              # Stacked widget to hold the three different mode widgets.
               self.stackedWidget = QtWidgets.QStackedWidget()
               self.autoWidget = AutoWidget()
               self.manualWidget = ManualWidget()
+              self.fitsWidget = FitsWidget()
               self.stackedWidget.addWidget(self.autoWidget)
               self.stackedWidget.addWidget(self.manualWidget)
+              self.stackedWidget.addWidget(self.fitsWidget)
               main_layout.addWidget(self.stackedWidget)
               
               self.modeComboBox.currentIndexChanged.connect(self.switchMode)
@@ -450,14 +516,15 @@ def AffineTransform():
           def switchMode(self, index):
               self.stackedWidget.setCurrentIndex(index)
       
-      ###############################################################################
+      #############################################
       # Run the Application.
-      ###############################################################################
+      #############################################
       if __name__ == '__main__':
           app = QtWidgets.QApplication(sys.argv)
           window = MainWindow()
           window.show()
           sys.exit(app.exec_())
+      
 
   except Exception as e:
       print(f"An error occurred: {e}")
