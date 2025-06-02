@@ -29,12 +29,16 @@ from scipy.ndimage import convolve
 from scipy.signal import convolve2d
 from reproject import reproject_interp, reproject_exact
 from reproject.mosaicking import find_optimal_celestial_wcs
+from PyQt5.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+print("Qt: v", QT_VERSION_STR, "\tPyQt: v", PYQT_VERSION_STR)
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QPushButton,
     QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
-    QLineEdit, QMessageBox, QGroupBox, QScrollArea
+    QLineEdit, QMessageBox, QGroupBox, QScrollArea,
+    QComboBox, QGridLayout, QStackedWidget
 )
+from PyQt5.QtGui import QDoubleValidator
 
 def AffineTransform():
 
@@ -523,7 +527,7 @@ def AffineTransform():
           app = QtWidgets.QApplication(sys.argv)
           window = MainWindow()
           window.show()
-          sys.exit(app.exec_())
+          app.exec_()
       
 
   except Exception as e:
@@ -2045,6 +2049,83 @@ def DynamicRescale16():
 
 def DynamicRescale16RGB():
   try:
+        
+      def deletefiles():
+                                
+          currentDirectory = os.path.abspath(os.getcwd())
+          # Define the file to delete
+          file_to_delete = "img_enlarged_25x.fit"
+          file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+          # Check if the file exists
+          if os.path.exists(file_to_delete):
+              os.remove(file_to_delete)  # Delete the file
+              print(f"File '{file_to_delete}' has been deleted.")
+          else:
+              print(f"File '{file_to_delete}' does not exist.")
+      
+          currentDirectory = os.path.abspath(os.getcwd())
+      
+          # Define the file to delete
+          file_to_delete = "channel_0_64bit.fits"
+          file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+          # Check if the file exists
+          if os.path.exists(file_to_delete):
+              os.remove(file_to_delete)  # Delete the file
+              print(f"File '{file_to_delete}' has been deleted.")
+          else:
+              print(f"File '{file_to_delete}' does not exist.")
+      
+          # Define the file to delete
+          file_to_delete = "channel_1_64bit.fits"
+          file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+          # Check if the file exists
+          if os.path.exists(file_to_delete):
+              os.remove(file_to_delete)  # Delete the file
+              print(f"File '{file_to_delete}' has been deleted.")
+          else:
+              print(f"File '{file_to_delete}' does not exist.")
+      
+          # Define the file to delete
+          file_to_delete = "channel_2_64bit.fits"
+          file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+          # Check if the file exists
+          if os.path.exists(file_to_delete):
+              os.remove(file_to_delete)  # Delete the file
+              print(f"File '{file_to_delete}' has been deleted.")
+          else:
+              print(f"File '{file_to_delete}' does not exist.")
+      
+          # Define the file to delete
+          file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_B.fit"
+          file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+          # Check if the file exists
+          if os.path.exists(file_to_delete):
+              os.remove(file_to_delete)  # Delete the file
+              print(f"File '{file_to_delete}' has been deleted.")
+          else:
+              print(f"File '{file_to_delete}' does not exist.")
+      
+          # Define the file to delete
+          file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_G.fit"
+          file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+          # Check if the file exists
+          if os.path.exists(file_to_delete):
+              os.remove(file_to_delete)  # Delete the file
+              print(f"File '{file_to_delete}' has been deleted.")
+          else:
+                print(f"File '{file_to_delete}' does not exist.")
+      
+          # Define the file to delete
+          file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_R.fit"
+          file_to_delete = (os.path.join(currentDirectory, file_to_delete))
+          # Check if the file exists
+          if os.path.exists(file_to_delete):
+              os.remove(file_to_delete)  # Delete the file
+              print(f"File '{file_to_delete}' has been deleted.")
+          else:
+              print(f"File '{file_to_delete}' does not exist.")
+
+
       
       def main():      
 
@@ -2437,6 +2518,7 @@ def DynamicRescale16RGB():
       print("Returning to the Main Menue...")
       return sysargv1
       menue()
+      deletefiles()
 
   return sysargv1
   menue()
@@ -5403,6 +5485,9 @@ def HpMore():
       return sysargv1
       menue()
 
+  return sysargv1
+  menue()
+
 def CombBgrAlIm():
   try:
 
@@ -5474,11 +5559,515 @@ def CombBgrAlIm():
       return sysargv1
       menue()
 
+def pixelmath():
 
+  try:
+               
+      class PixelMathWindow(QMainWindow):
+          def __init__(self):
+              super(PixelMathWindow, self).__init__()
+              self.setWindowTitle("Pixel Math")
+              self.initUI()
+      
+          def initUI(self):
+              # Create a central widget and set a grid layout.
+              centralWidget = QWidget()
+              self.setCentralWidget(centralWidget)
+              layout = QGridLayout(centralWidget)
+      
+              # Row 0: Drop-down for selecting the operation
+              layout.addWidget(QLabel("Operation:"), 0, 0)
+              self.operationComboBox = QComboBox()
+              self.operationComboBox.addItems(["Add", "Subtract", "Multiply", "Divide", "Max", "Min"])
+              layout.addWidget(self.operationComboBox, 0, 1, 1, 2)
+      
+              # Row 1: Input for the first image file, with Browse button.
+              layout.addWidget(QLabel("First Image File:"), 1, 0)
+              self.firstImageLineEdit = QLineEdit()
+              layout.addWidget(self.firstImageLineEdit, 1, 1)
+              self.firstBrowseButton = QPushButton("Browse")
+              self.firstBrowseButton.clicked.connect(self.browseFirstImage)
+              layout.addWidget(self.firstBrowseButton, 1, 2)
+      
+              # Row 2: Input for the second image file, with Browse button.
+              layout.addWidget(QLabel("Second Image File:"), 2, 0)
+              self.secondImageLineEdit = QLineEdit()
+              layout.addWidget(self.secondImageLineEdit, 2, 1)
+              self.secondBrowseButton = QPushButton("Browse")
+              self.secondBrowseButton.clicked.connect(self.browseSecondImage)
+              layout.addWidget(self.secondBrowseButton, 2, 2)
+      
+              # Row 3: Output file name input, with Browse button.
+              layout.addWidget(QLabel("Output File:"), 3, 0)
+              self.outputLineEdit = QLineEdit()
+              layout.addWidget(self.outputLineEdit, 3, 1)
+              self.outputBrowseButton = QPushButton("Browse")
+              self.outputBrowseButton.clicked.connect(self.browseOutputFile)
+              layout.addWidget(self.outputBrowseButton, 3, 2)
+      
+              # Row 4: Image1 brightness adjustment entry.
+              layout.addWidget(QLabel("Image1 Brightness Adjustment:"), 4, 0)
+              self.brightnessLineEdit = QLineEdit("0")
+              layout.addWidget(self.brightnessLineEdit, 4, 1, 1, 2)
+      
+              # Row 5: Image1 contrast parameters.
+              layout.addWidget(QLabel("Image1 Contrast Numerator:"), 5, 0)
+              self.img1ContrastNumLineEdit = QLineEdit("1")
+              layout.addWidget(self.img1ContrastNumLineEdit, 5, 1)
+              layout.addWidget(QLabel("Denom:"), 5, 2)
+              self.img1ContrastDenomLineEdit = QLineEdit("1")
+              layout.addWidget(self.img1ContrastDenomLineEdit, 5, 3)
+      
+              # Row 6: Image2 contrast parameters.
+              layout.addWidget(QLabel("Image2 Contrast Numerator:"), 6, 0)
+              self.img2ContrastNumLineEdit = QLineEdit("1")
+              layout.addWidget(self.img2ContrastNumLineEdit, 6, 1)
+              layout.addWidget(QLabel("Denom:"), 6, 2)
+              self.img2ContrastDenomLineEdit = QLineEdit("1")
+              layout.addWidget(self.img2ContrastDenomLineEdit, 6, 3)
+      
+              # Row 7: Compute button.
+              self.computeButton = QPushButton("Compute")
+              self.computeButton.clicked.connect(self.computeOperation)
+              layout.addWidget(self.computeButton, 7, 1, 1, 2)
+      
+              # Row 8: Status message label.
+              self.statusLabel = QLabel("")
+              layout.addWidget(self.statusLabel, 8, 0, 1, 4)
+      
+          def browseFirstImage(self):
+              # Allow selection of .fits or .fit files.
+              filename, _ = QFileDialog.getOpenFileName(self, "Open First Image", "", "FITS Files (*.fits *.fit)")
+              if filename:
+                  self.firstImageLineEdit.setText(filename)
+      
+          def browseSecondImage(self):
+              filename, _ = QFileDialog.getOpenFileName(self, "Open Second Image", "", "FITS Files (*.fits *.fit)")
+              if filename:
+                  self.secondImageLineEdit.setText(filename)
+      
+          def browseOutputFile(self):
+              filename, _ = QFileDialog.getSaveFileName(self, "Save Output Image", "", "FITS Files (*.fits *.fit)")
+              if filename:
+                  self.outputLineEdit.setText(filename)
+      
+          def validateInputs(self):
+              """
+              Validate the form entries and return a dictionary of converted values.
+              In case of any validation error, update the statusLabel and return None.
+              """
+              first_file = self.firstImageLineEdit.text().strip()
+              second_file = self.secondImageLineEdit.text().strip()
+              output_file = self.outputLineEdit.text().strip()
+              if not first_file or not second_file or not output_file:
+                  self.statusLabel.setText("Error: Please provide file paths for first image, second image, and output.")
+                  return None
+      
+              try:
+                  brightness = float(self.brightnessLineEdit.text())
+                  img1_num = float(self.img1ContrastNumLineEdit.text())
+                  img1_denom = float(self.img1ContrastDenomLineEdit.text())
+                  img2_num = float(self.img2ContrastNumLineEdit.text())
+                  img2_denom = float(self.img2ContrastDenomLineEdit.text())
+              except ValueError:
+                  self.statusLabel.setText("Error: Brightness and contrast fields must be valid numbers.")
+                  return None
+      
+              if img1_denom == 0 or img2_denom == 0:
+                  self.statusLabel.setText("Error: Contrast denominators must not be zero.")
+                  return None
+      
+              if not os.path.exists(first_file):
+                  self.statusLabel.setText("Error: First image file does not exist.")
+                  return None
+              if not os.path.exists(second_file):
+                  self.statusLabel.setText("Error: Second image file does not exist.")
+                  return None
+      
+              return {
+                  "first_file": first_file,
+                  "second_file": second_file,
+                  "output_file": output_file,
+                  "brightness": brightness,
+                  "img1_scale": img1_num / img1_denom,
+                  "img2_scale": img2_num / img2_denom
+              }
+      
+          def computeOperation(self):
+              # Validate inputs first.
+              inputs = self.validateInputs()
+              if inputs is None:
+                  return
+      
+              op = self.operationComboBox.currentText()
+              try:
+                  # Open FITS files (supports both .fits and .fit extensions).
+                  hdul1 = fits.open(inputs["first_file"])
+                  hdul2 = fits.open(inputs["second_file"])
+                  image_data1 = hdul1[0].data.astype(np.float64)
+                  image_data2 = hdul2[0].data.astype(np.float64)
+      
+                  # Ensure that the images have the same dimensions.
+                  if image_data1.shape != image_data2.shape:
+                      self.statusLabel.setText("Error: Input images do not have the same dimensions!")
+                      hdul1.close()
+                      hdul2.close()
+                      return
+      
+                  # Check if image data is either monochrome (2D array)
+                  # or RGB (a 3D array with 3 channels).
+                  if not ((image_data1.ndim == 2) or (image_data1.ndim == 3 and image_data1.shape[2] == 3)):
+                      self.statusLabel.setText("Error: Image1 must be either Mono (2D) or Color RGB (3D with 3 channels).")
+                      hdul1.close()
+                      hdul2.close()
+                      return
+      
+                  if not ((image_data2.ndim == 2) or (image_data2.ndim == 3 and image_data2.shape[2] == 3)):
+                      self.statusLabel.setText("Error: Image2 must be either Mono (2D) or Color RGB (3D with 3 channels).")
+                      hdul1.close()
+                      hdul2.close()
+                      return
+      
+                  # Apply contrast scaling independently.
+                  im1 = image_data1 * inputs["img1_scale"]
+                  im2 = image_data2 * inputs["img2_scale"]
+      
+                  # Perform the selected arithmetic operation.
+                  if op == "Add":
+                      result_image = im1 + im2 + inputs["brightness"]
+                  elif op == "Subtract":
+                      result_image = im1 - im2 + inputs["brightness"]
+                  elif op == "Multiply":
+                      result_image = im1 * im2 + inputs["brightness"]
+                  elif op == "Divide":
+                      # Use numpy.divide with a condition to prevent division by zero.
+                      result_image = np.divide(im1, im2, out=np.zeros_like(im1), where=im2 != 0) + inputs["brightness"]
+                  elif op == "Max":
+                      result_image = np.maximum(im1, im2) + inputs["brightness"]
+                  elif op == "Min":
+                      result_image = np.minimum(im1, im2) + inputs["brightness"]
+                  else:
+                      self.statusLabel.setText("Unknown operation selected!")
+                      hdul1.close()
+                      hdul2.close()
+                      return
+      
+                  # Write the result to a new FITS file.
+                  result_hdu = fits.PrimaryHDU(result_image)
+                  result_hdulist = fits.HDUList([result_hdu])
+                  result_hdulist.writeto(inputs["output_file"], overwrite=True)
+                  self.statusLabel.setText("Operation completed; output saved successfully.")
+      
+                  hdul1.close()
+                  hdul2.close()
+      
+              except Exception as e:
+                  self.statusLabel.setText(f"An error occurred: {e}")
+      
+      if __name__ == '__main__':
+          app = QApplication(sys.argv)
+          window = PixelMathWindow()
+          window.show()
+          app.exec_()
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
+
+def Color():
+
+  try:
+        
+      class ColorWindow(QMainWindow):
+          def __init__(self):
+              super(ColorWindow, self).__init__()
+              self.setWindowTitle("Color")
+              self.initUI()
+      
+          def initUI(self):
+              # Main container and vertical layout
+              centralWidget = QWidget()
+              self.setCentralWidget(centralWidget)
+              mainLayout = QVBoxLayout(centralWidget)
+      
+              # --- Operation selection ---
+              opLayout = QHBoxLayout()
+              opLabel = QLabel("Select Operation:")
+              self.opCombo = QComboBox()
+              self.opCombo.addItems(["Split Tricolor", "Combine Tricolor", "Create Luminance"])
+              self.opCombo.currentIndexChanged.connect(self.operationChanged)
+              opLayout.addWidget(opLabel)
+              opLayout.addWidget(self.opCombo)
+              opLayout.addStretch()
+              mainLayout.addLayout(opLayout)
+      
+              # --- Stacked widget to show parameters for each operation ---
+              self.stack = QStackedWidget()
+              mainLayout.addWidget(self.stack)
+      
+              # --------- Page 0: Split Tricolor ----------
+              self.splitWidget = QWidget()
+              splitLayout = QGridLayout(self.splitWidget)
+              # Input color image
+              splitLayout.addWidget(QLabel("Input Color Image:"), 0, 0)
+              self.splitInputLine = QLineEdit()
+              splitLayout.addWidget(self.splitInputLine, 0, 1)
+              self.splitInputBrowseBtn = QPushButton("Browse")
+              self.splitInputBrowseBtn.clicked.connect(lambda: self.browseFile(self.splitInputLine))
+              splitLayout.addWidget(self.splitInputBrowseBtn, 0, 2)
+              # Mode: FITS or Other
+              splitLayout.addWidget(QLabel("Mode:"), 1, 0)
+              self.splitModeCombo = QComboBox()
+              self.splitModeCombo.addItems(["FITS", "Other"])
+              splitLayout.addWidget(self.splitModeCombo, 1, 1)
+              # Optional output base name (if not provided then derived from input)
+              splitLayout.addWidget(QLabel("Output Base Name:"), 2, 0)
+              self.splitOutputBaseLine = QLineEdit()
+              splitLayout.addWidget(self.splitOutputBaseLine, 2, 1)
+              self.stack.addWidget(self.splitWidget)
+      
+              # --------- Page 1: Combine Tricolor ----------
+              self.combineWidget = QWidget()
+              combineLayout = QGridLayout(self.combineWidget)
+              # Blue image
+              combineLayout.addWidget(QLabel("Blue Image:"), 0, 0)
+              self.combineBlueLine = QLineEdit()
+              combineLayout.addWidget(self.combineBlueLine, 0, 1)
+              self.combineBlueBrowseBtn = QPushButton("Browse")
+              self.combineBlueBrowseBtn.clicked.connect(lambda: self.browseFile(self.combineBlueLine))
+              combineLayout.addWidget(self.combineBlueBrowseBtn, 0, 2)
+              # Green image
+              combineLayout.addWidget(QLabel("Green Image:"), 1, 0)
+              self.combineGreenLine = QLineEdit()
+              combineLayout.addWidget(self.combineGreenLine, 1, 1)
+              self.combineGreenBrowseBtn = QPushButton("Browse")
+              self.combineGreenBrowseBtn.clicked.connect(lambda: self.browseFile(self.combineGreenLine))
+              combineLayout.addWidget(self.combineGreenBrowseBtn, 1, 2)
+              # Red image
+              combineLayout.addWidget(QLabel("Red Image:"), 2, 0)
+              self.combineRedLine = QLineEdit()
+              combineLayout.addWidget(self.combineRedLine, 2, 1)
+              self.combineRedBrowseBtn = QPushButton("Browse")
+              self.combineRedBrowseBtn.clicked.connect(lambda: self.browseFile(self.combineRedLine))
+              combineLayout.addWidget(self.combineRedBrowseBtn, 2, 2)
+              # Output Combined Image
+              combineLayout.addWidget(QLabel("Output Combined Image:"), 3, 0)
+              self.combineOutputLine = QLineEdit()
+              combineLayout.addWidget(self.combineOutputLine, 3, 1)
+              self.combineOutputBrowseBtn = QPushButton("Browse")
+              self.combineOutputBrowseBtn.clicked.connect(lambda: self.browseFile(self.combineOutputLine, save=True))
+              combineLayout.addWidget(self.combineOutputBrowseBtn, 3, 2)
+              # Mode
+              combineLayout.addWidget(QLabel("Mode:"), 4, 0)
+              self.combineModeCombo = QComboBox()
+              self.combineModeCombo.addItems(["FITS", "Other"])
+              combineLayout.addWidget(self.combineModeCombo, 4, 1)
+              self.stack.addWidget(self.combineWidget)
+      
+              # --------- Page 2: Create Luminance ----------
+              self.luminanceWidget = QWidget()
+              lumLayout = QGridLayout(self.luminanceWidget)
+              # Input color image
+              lumLayout.addWidget(QLabel("Input Color Image:"), 0, 0)
+              self.lumInputLine = QLineEdit()
+              lumLayout.addWidget(self.lumInputLine, 0, 1)
+              self.lumInputBrowseBtn = QPushButton("Browse")
+              self.lumInputBrowseBtn.clicked.connect(lambda: self.browseFile(self.lumInputLine))
+              lumLayout.addWidget(self.lumInputBrowseBtn, 0, 2)
+              # Output Luminance Image
+              lumLayout.addWidget(QLabel("Output Luminance Image:"), 1, 0)
+              self.lumOutputLine = QLineEdit()
+              lumLayout.addWidget(self.lumOutputLine, 1, 1)
+              self.lumOutputBrowseBtn = QPushButton("Browse")
+              self.lumOutputBrowseBtn.clicked.connect(lambda: self.browseFile(self.lumOutputLine, save=True))
+              lumLayout.addWidget(self.lumOutputBrowseBtn, 1, 2)
+              # Mode
+              lumLayout.addWidget(QLabel("Mode:"), 2, 0)
+              self.lumModeCombo = QComboBox()
+              self.lumModeCombo.addItems(["FITS", "Other"])
+              lumLayout.addWidget(self.lumModeCombo, 2, 1)
+              self.stack.addWidget(self.luminanceWidget)
+      
+              # --- Run Button and Status Label ---
+              self.runButton = QPushButton("Run")
+              self.runButton.clicked.connect(self.runOperation)
+              mainLayout.addWidget(self.runButton)
+              self.statusLabel = QLabel("")
+              mainLayout.addWidget(self.statusLabel)
+      
+          def operationChanged(self, index):
+              # Change the shown parameter page
+              self.stack.setCurrentIndex(index)
+      
+          def browseFile(self, lineEdit, save=False):
+              if save:
+                  fileName, _ = QFileDialog.getSaveFileName(self, "Select File", "", "All Files (*)")
+              else:
+                  fileName, _ = QFileDialog.getOpenFileName(self, "Select File", "", "All Files (*)")
+              if fileName:
+                  lineEdit.setText(fileName)
+      
+          def runOperation(self):
+              op = self.opCombo.currentText()
+              if op == "Split Tricolor":
+                  self.runSplitTricolor()
+              elif op == "Combine Tricolor":
+                  self.runCombineTricolor()
+              elif op == "Create Luminance":
+                  self.runCreateLuminance()
+              else:
+                  self.statusLabel.setText("Unknown operation selected.")
+      
+          def runSplitTricolor(self):
+              # Get parameters for split tricolor
+              inputFile = self.splitInputLine.text().strip()
+              mode = self.splitModeCombo.currentText()
+              outputBase = self.splitOutputBaseLine.text().strip()
+              if not inputFile:
+                  self.statusLabel.setText("Input file is required for Split Tricolor.")
+                  return
+              # Derive output base from input file if not provided
+              if not outputBase:
+                  outputBase = os.path.splitext(inputFile)[0]
+              try:
+                  if mode == "FITS":
+                      hdul = fits.open(inputFile)
+                      header = hdul[0].header
+                      data = hdul[0].data.astype(np.float32)
+                      hdul.close()
+                      # Expect data shape to be (3, height, width)
+                      if data.ndim != 3 or data.shape[0] != 3:
+                          self.statusLabel.setText("FITS file does not appear to have 3 channels in first dimension.")
+                          return
+                      b = data[2, :, :]
+                      g = data[1, :, :]
+                      r = data[0, :, :]
+                      fits.writeto(f"{outputBase}_channel_0_64bit.fits", b, header, overwrite=True)
+                      fits.writeto(f"{outputBase}_channel_1_64bit.fits", g, header, overwrite=True)
+                      fits.writeto(f"{outputBase}_channel_2_64bit.fits", r, header, overwrite=True)
+                      self.statusLabel.setText("Split Tricolor (FITS) completed successfully.")
+                  else:  # mode == "Other"
+                      img = cv2.imread(inputFile, -1)
+                      if img is None:
+                          self.statusLabel.setText("Error reading image in Other mode.")
+                          return
+                      channels = cv2.split(img)
+                      # OpenCV reads images in BGR order
+                      cv2.imwrite(f"{outputBase}_Blue.png", channels[0])
+                      cv2.imwrite(f"{outputBase}_Green.png", channels[1])
+                      cv2.imwrite(f"{outputBase}_Red.png", channels[2])
+                      self.statusLabel.setText("Split Tricolor (Other) completed successfully.")
+              except Exception as e:
+                  self.statusLabel.setText(f"Error in Split Tricolor: {e}")
+      
+          def runCombineTricolor(self):
+              # Get parameters for combine tricolor
+              blueFile = self.combineBlueLine.text().strip()
+              greenFile = self.combineGreenLine.text().strip()
+              redFile = self.combineRedLine.text().strip()
+              outputFile = self.combineOutputLine.text().strip()
+              mode = self.combineModeCombo.currentText()
+              if not (blueFile and greenFile and redFile and outputFile):
+                  self.statusLabel.setText("All input and output files are required for Combine Tricolor.")
+                  return
+              try:
+                  if mode == "FITS":
+                      with fits.open(blueFile) as hdul:
+                          header = hdul[0].header
+                          blue = hdul[0].data.astype(np.float32)
+                      with fits.open(greenFile) as hdul:
+                          green = hdul[0].data.astype(np.float32)
+                      with fits.open(redFile) as hdul:
+                          red = hdul[0].data.astype(np.float32)
+                      # Stack channels in order: red, green, blue (to define an RGB image)
+                      RGB = np.stack((red, green, blue))
+                      RGB = np.squeeze(RGB)
+                      # Update header to indicate a 3D image
+                      header['NAXIS'] = 3
+                      header['NAXIS1'] = RGB.shape[1]
+                      header['NAXIS2'] = RGB.shape[0]
+                      header['NAXIS3'] = RGB.shape[2] if RGB.ndim == 3 else 1
+                      hdu = fits.PrimaryHDU(data=RGB, header=header)
+                      hdu.writeto(outputFile, overwrite=True)
+                      self.statusLabel.setText("Combine Tricolor (FITS) completed successfully.")
+                  else:  # mode == "Other"
+                      blue = cv2.imread(blueFile, -1)
+                      green = cv2.imread(greenFile, -1)
+                      red = cv2.imread(redFile, -1)
+                      if blue is None or green is None or red is None:
+                          self.statusLabel.setText("Error reading one of the input images (Other).")
+                          return
+                      # Merge channels into an RGB image (note: OpenCV normally uses BGR order)
+                      merged = cv2.merge((red, green, blue))
+                      cv2.imwrite(outputFile, merged)
+                      self.statusLabel.setText("Combine Tricolor (Other) completed successfully.")
+              except Exception as e:
+                  self.statusLabel.setText(f"Error in Combine Tricolor: {e}")
+      
+          def runCreateLuminance(self):
+              # Get parameters for create luminance
+              inputFile = self.lumInputLine.text().strip()
+              outputFile = self.lumOutputLine.text().strip()
+              mode = self.lumModeCombo.currentText()
+              if not (inputFile and outputFile):
+                  self.statusLabel.setText("Both input and output files are required for Create Luminance.")
+                  return
+              try:
+                  if mode == "FITS":
+                      hdul = fits.open(inputFile)
+                      data = hdul[0].data
+                      hdul.close()
+                      # Assume data shape is (channels, height, width); convert to (height, width, channels)
+                      img = np.transpose(data, (1, 2, 0))
+                      R = img[:, :, 0].astype(np.float64)
+                      G = img[:, :, 1].astype(np.float64)
+                      B = img[:, :, 2].astype(np.float64)
+                      luminance = 0.2989 * R + 0.5870 * G + 0.1140 * B
+                      hdu = fits.PrimaryHDU(data=luminance)
+                      hdu.writeto(outputFile, overwrite=True)
+                      self.statusLabel.setText("Create Luminance (FITS) completed successfully.")
+                  else:  # mode == "Other"
+                      img = cv2.imread(inputFile, -1)
+                      if img is None:
+                          self.statusLabel.setText("Error reading input image (Other).")
+                          return
+                      gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                      cv2.imwrite(outputFile, gray)
+                      self.statusLabel.setText("Create Luminance (Other) completed successfully.")
+              except Exception as e:
+                  self.statusLabel.setText(f"Error in Create Luminance: {e}")
+      
+          def closeEvent(self, event):
+              # Allow clean closing and return control to your main menu flow if needed.
+              event.accept()
+      
+      # --- Run the application ---
+      def Color():
+          app = QApplication(sys.argv)
+          window = ColorWindow()
+          window.show()
+          app.exec_()
+      
+      if __name__ == '__main__':
+          Color()
+      
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
 
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color \n>>1313<< Exit --> ")
   return sysargv1
 
 sysargv1 = ''
@@ -5612,81 +6201,7 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '35':
     DynamicRescale16RGB()
-    currentDirectory = os.path.abspath(os.getcwd())
 
-    # Define the file to delete
-    file_to_delete = "img_enlarged_25x.fit"
-    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
-    # Check if the file exists
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)  # Delete the file
-        print(f"File '{file_to_delete}' has been deleted.")
-    else:
-        print(f"File '{file_to_delete}' does not exist.")
-
-    currentDirectory = os.path.abspath(os.getcwd())
-
-    # Define the file to delete
-    file_to_delete = "channel_0_64bit.fits"
-    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
-    # Check if the file exists
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)  # Delete the file
-        print(f"File '{file_to_delete}' has been deleted.")
-    else:
-        print(f"File '{file_to_delete}' does not exist.")
-
-    # Define the file to delete
-    file_to_delete = "channel_1_64bit.fits"
-    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
-    # Check if the file exists
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)  # Delete the file
-        print(f"File '{file_to_delete}' has been deleted.")
-    else:
-        print(f"File '{file_to_delete}' does not exist.")
-
-    # Define the file to delete
-    file_to_delete = "channel_2_64bit.fits"
-    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
-    # Check if the file exists
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)  # Delete the file
-        print(f"File '{file_to_delete}' has been deleted.")
-    else:
-        print(f"File '{file_to_delete}' does not exist.")
-
-    # Define the file to delete
-    file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_B.fit"
-    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
-    # Check if the file exists
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)  # Delete the file
-        print(f"File '{file_to_delete}' has been deleted.")
-    else:
-        print(f"File '{file_to_delete}' does not exist.")
-
-    # Define the file to delete
-    file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_G.fit"
-    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
-    # Check if the file exists
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)  # Delete the file
-        print(f"File '{file_to_delete}' has been deleted.")
-    else:
-          print(f"File '{file_to_delete}' does not exist.")
-
-    # Define the file to delete
-    file_to_delete = "channel_RGB_64bit_binned_gamma_corrected_drs_R.fit"
-    file_to_delete = (os.path.join(currentDirectory, file_to_delete))
-    # Check if the file exists
-    if os.path.exists(file_to_delete):
-        os.remove(file_to_delete)  # Delete the file
-        print(f"File '{file_to_delete}' has been deleted.")
-    else:
-        print(f"File '{file_to_delete}' does not exist.")
-
-  
   if sysargv1 == '36':
     clahe()
 
@@ -5734,6 +6249,12 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '51':
     CombBgrAlIm()
+
+  if sysargv1 == '52':
+    pixelmath()
+
+  if sysargv1 == '53':
+    Color()
 
   if sysargv1 == '1313':
     sys.exit()
