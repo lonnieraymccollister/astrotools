@@ -29,16 +29,16 @@ from scipy.ndimage import convolve
 from scipy.signal import convolve2d
 from reproject import reproject_interp, reproject_exact
 from reproject.mosaicking import find_optimal_celestial_wcs
-from PyQt5.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
 print("Qt: v", QT_VERSION_STR, "\tPyQt: v", PYQT_VERSION_STR)
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import (
+from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QPushButton,
     QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
     QLineEdit, QMessageBox, QGroupBox, QScrollArea,
     QComboBox, QGridLayout, QStackedWidget
 )
-from PyQt5.QtGui import QDoubleValidator
+from PyQt6.QtGui import QDoubleValidator
 
 def AffineTransform():
 
@@ -50,16 +50,6 @@ def AffineTransform():
       def png16_to_fits32(png_filename, fits_filename):
           """
           Reads a 16-bit PNG image using OpenCV and saves it as a 32-bit FITS file.
-      
-          The function uses cv2.imread with the IMREAD_UNCHANGED flag to preserve the
-          16-bit depth. If the image is a color image (3 channels), it converts the 
-          BGR image (the default in OpenCV) to RGB, then transposes the array so that 
-          its shape becomes (channels, height, width). Finally, it converts the data 
-          to a 32-bit floating point array and writes it to a FITS file.
-      
-          Parameters:
-            png_filename (str): Path to the input 16-bit PNG file.
-            fits_filename (str): Path to the output FITS file.
           """
           # Read the image as-is, preserving the 16-bit depth.
           data = cv2.imread(png_filename, cv2.IMREAD_UNCHANGED)
@@ -77,7 +67,7 @@ def AffineTransform():
               # Transpose the data so that the color channels come first:
               # (height, width, channels) -> (channels, height, width)
               data = np.transpose(data, (2, 0, 1))
-      
+          
           # Convert the 16-bit unsigned integer data into 32-bit float.
           data_32 = data.astype(np.float32)
           
@@ -92,8 +82,9 @@ def AffineTransform():
           clicked = QtCore.pyqtSignal(QtCore.QPoint)
           
           def __init__(self, parent=None):
-              super(ImageLabel, self).__init__(parent)
-              self.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+              super().__init__(parent)
+              # Use fully qualified flags in PyQt6.
+              self.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
               self.setMouseTracking(True)
               self.points = []  # Stores clicked points
               self.display_image = None
@@ -101,11 +92,12 @@ def AffineTransform():
           def setImage(self, cv_img):
               """
               Set the image from an OpenCV-like BGR NumPy array.
-              (This function is used by the Automatic and Manual widgets
-               which rely on OpenCV for processing.)
               """
-              # Since these images come from OpenCV, convert BGR to RGB.
-              rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) if 'cv2' in globals() else cv_img
+              # If cv2 is present, convert BGR to RGB; otherwise assume it's already RGB.
+              if "cv2" in globals():
+                  rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+              else:
+                  rgb_image = cv_img
               h, w, ch = rgb_image.shape
               bytes_per_line = ch * w
               qImg = QtGui.QImage(rgb_image.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
@@ -113,14 +105,15 @@ def AffineTransform():
               self.setPixmap(self.display_image)
               self.points = []
       
-          def mousePressEvent(self, event):
+          def mousePressEvent(self, event: QtGui.QMouseEvent):
               if self.pixmap() is None:
                   return
               point = event.pos()
               self.points.append(point)
+              # Draw a red circle centered at the click point.
               pix = self.pixmap().copy()
               painter = QtGui.QPainter(pix)
-              painter.setPen(QtGui.QPen(QtCore.Qt.red, 5))
+              painter.setPen(QtGui.QPen(QtCore.Qt.GlobalColor.red, 5))
               painter.drawEllipse(point, 5, 5)
               painter.end()
               self.setPixmap(pix)
@@ -129,12 +122,9 @@ def AffineTransform():
       #############################################
       # Automatic Mode Widget (uses OpenCV for ORB/homography)
       #############################################
-      # (This code remains unchanged from the previous examples.)
-      import cv2  # OpenCV is required for the automatic and manual modes below
-      
       class AutoWidget(QtWidgets.QWidget):
           def __init__(self, parent=None):
-              super(AutoWidget, self).__init__(parent)
+              super().__init__(parent)
               layout = QtWidgets.QVBoxLayout(self)
               
               images_layout = QtWidgets.QHBoxLayout()
@@ -142,17 +132,17 @@ def AffineTransform():
               
               self.refLabel = QtWidgets.QLabel("Reference Image", self)
               self.refLabel.setFixedSize(400, 400)
-              self.refLabel.setFrameShape(QtWidgets.QFrame.Box)
+              self.refLabel.setFrameShape(QtWidgets.QFrame.Shape.Box)
               images_layout.addWidget(self.refLabel)
               
               self.alignLabel = QtWidgets.QLabel("Alignment Image", self)
               self.alignLabel.setFixedSize(400, 400)
-              self.alignLabel.setFrameShape(QtWidgets.QFrame.Box)
+              self.alignLabel.setFrameShape(QtWidgets.QFrame.Shape.Box)
               images_layout.addWidget(self.alignLabel)
               
               self.resultLabel = QtWidgets.QLabel("Result", self)
               self.resultLabel.setFixedSize(400, 400)
-              self.resultLabel.setFrameShape(QtWidgets.QFrame.Box)
+              self.resultLabel.setFrameShape(QtWidgets.QFrame.Shape.Box)
               layout.addWidget(self.resultLabel)
               
               btn_layout = QtWidgets.QHBoxLayout()
@@ -245,7 +235,7 @@ def AffineTransform():
                       result16 = self.resultImage
                   if cv2.imwrite(fileName, result16):
                       fits_filename = fileName.rsplit('.', 1)[0] + ".fits"
-                      # Convert from BGR to RGB before saving to FITS.
+                      # Convert from BGR to RGB before writing to FITS.
                       rgb_result = cv2.cvtColor(result16, cv2.COLOR_BGR2RGB)
                       fits_data = rgb_result.astype(np.float32)
                       fits.writeto(fits_filename, fits_data, overwrite=True)
@@ -259,7 +249,8 @@ def AffineTransform():
               bytes_per_line = channels * width
               qImg = QtGui.QImage(rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
               pixmap = QtGui.QPixmap.fromImage(qImg)
-              pixmap = pixmap.scaled(label.size(), QtCore.Qt.KeepAspectRatio)
+              # Use PyQt6 enum for aspect ratio mode:
+              pixmap = pixmap.scaled(label.size(), QtCore.Qt.AspectRatioMode.KeepAspectRatio)
               label.setPixmap(pixmap)
       
       #############################################
@@ -267,7 +258,7 @@ def AffineTransform():
       #############################################
       class ManualWidget(QtWidgets.QWidget):
           def __init__(self, parent=None):
-              super(ManualWidget, self).__init__(parent)
+              super().__init__(parent)
               self.source_image = None
               self.target_image = None
               self.src_points = []  # Three clicked points on source
@@ -277,7 +268,7 @@ def AffineTransform():
               self.srcLabel = ImageLabel()
               self.dstLabel = ImageLabel()
               self.resultLabel = QtWidgets.QLabel("Result image will appear here")
-              self.resultLabel.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+              self.resultLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
               
               self.srcScrollArea = QtWidgets.QScrollArea()
               self.srcScrollArea.setWidget(self.srcLabel)
@@ -419,7 +410,7 @@ def AffineTransform():
               bytes_per_line = ch * w
               qImg = QtGui.QImage(rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
               pixmap = QtGui.QPixmap.fromImage(qImg)
-              pixmap = pixmap.scaled(self.resultLabel.size(), QtCore.Qt.KeepAspectRatio)
+              pixmap = pixmap.scaled(self.resultLabel.size(), QtCore.Qt.AspectRatioMode.KeepAspectRatio)
               self.resultLabel.setPixmap(pixmap)
           
           def saveResult(self):
@@ -438,8 +429,7 @@ def AffineTransform():
                       rgb_result = cv2.cvtColor(transformed16, cv2.COLOR_BGR2RGB)
                       fits_data = rgb_result.astype(np.float32)
                       fits.writeto(fits_filename, fits_data, overwrite=True)
-                      QtWidgets.QMessageBox.information(self, "Saved",
-                                                        f"Saved:\n{filename}\n{fits_filename}")
+                      QtWidgets.QMessageBox.information(self, "Saved", f"Saved:\n{filename}\n{fits_filename}")
                   else:
                       QtWidgets.QMessageBox.warning(self, "Error", "Failed to save the image!")
       
@@ -449,7 +439,7 @@ def AffineTransform():
       #############################################
       class FitsWidget(QtWidgets.QWidget):
           def __init__(self, parent=None):
-              super(FitsWidget, self).__init__(parent)
+              super().__init__(parent)
               layout = QtWidgets.QVBoxLayout(self)
               
               self.btnLoadPNG = QtWidgets.QPushButton("Load 16-bit PNG")
@@ -490,7 +480,7 @@ def AffineTransform():
       #############################################
       class MainWindow(QtWidgets.QMainWindow):
           def __init__(self):
-              super(MainWindow, self).__init__()
+              super().__init__()
               self.setWindowTitle("Image Transformation: Automatic, Manual, and FITS Modes")
               self.resize(1000, 800)
               
@@ -498,14 +488,14 @@ def AffineTransform():
               self.setCentralWidget(central_widget)
               main_layout = QtWidgets.QVBoxLayout(central_widget)
               
-              # Drop-down selection for mode.
+              # Drop-down for mode.
               self.modeComboBox = QtWidgets.QComboBox()
               self.modeComboBox.addItem("Automatic")
               self.modeComboBox.addItem("Manual")
               self.modeComboBox.addItem("FITS")
               main_layout.addWidget(self.modeComboBox)
               
-              # Stacked widget to hold the three different mode widgets.
+              # Stacked widget for different mode widgets.
               self.stackedWidget = QtWidgets.QStackedWidget()
               self.autoWidget = AutoWidget()
               self.manualWidget = ManualWidget()
@@ -521,14 +511,17 @@ def AffineTransform():
               self.stackedWidget.setCurrentIndex(index)
       
       #############################################
-      # Run the Application.
+      # Run the application.
       #############################################
-      if __name__ == '__main__':
+      def main():
           app = QtWidgets.QApplication(sys.argv)
           window = MainWindow()
           window.show()
-          app.exec_()
+          app.exec()
       
+      if __name__ == '__main__':
+          main()
+            
 
   except Exception as e:
       print(f"An error occurred: {e}")
@@ -1817,31 +1810,61 @@ def imgcrop():
   im1 = im.crop((one, two, three, four))
   im1.save('crop.png')
 
+import numpy as np
+import cv2
+from astropy.io import fits
+
 def unsharpMask():
+    try:
+        def main():
+            # Data entry instructions (do not change these)
+            sysargv1 = input("Enter the Color Image  -->")
+            sysargv2 = input("Enter the unsharpMask image to be created  -->")
+            
+            # Read the input FITS file.
+            hdul = fits.open(sysargv1)
+            header = hdul[0].header
+            data = hdul[0].data.astype(np.float64)
+            hdul.close()
+            
+            # Process based on data dimensions.
+            # If the data is 2D (grayscale), process directly;
+            # if it is 3D (height, width, channels), process each channel.
+            if data.ndim == 2:
+                # Apply a Gaussian blur with sigma = 2.0
+                blurred = cv2.GaussianBlur(data, (0, 0), 2.0)
+                # Compute unsharp mask: result = 2*original - blurred
+                unsharp = cv2.addWeighted(data, 2.0, blurred, -1.0, 0)
+            elif data.ndim == 3:
+                # Assume data stored as (height, width, channels)
+                h, w, ch = data.shape
+                unsharp_channels = []
+                for c in range(ch):
+                    channel = data[:, :, c]
+                    blurred = cv2.GaussianBlur(channel, (0, 0), 2.0)
+                    # Apply unsharp mask to this channel
+                    unsharp_channel = cv2.addWeighted(channel, 2.0, blurred, -1.0, 0)
+                    unsharp_channels.append(unsharp_channel)
+                unsharp = np.stack(unsharp_channels, axis=2)
+            else:
+                print("Unsupported data dimensions.")
+                return
+            
+            # Write the resulting image to a new FITS file.
+            fits.writeto(sysargv2, unsharp.astype(np.float64), header, overwrite=True)
+            print("Unsharp mask processing completed. Output saved to", sysargv2)
+            
+        if __name__ == "__main__":
+            main()
+            
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        print("Returning to the Main Menue...")
+        return sysargv1  # If you have a menue() routine, you may call it here.
+        menue()
 
-  try:
-
-      def main():
-
-                 sysargv1  = input("Enter the Color Image  -->")
-                 sysargv2  = input("Enter the unsharpMask image to be created  -->")
-           
-                 image = cv2.imread(sysargv1, -1)
-                 gaussian_3 = cv2.GaussianBlur(image, (0, 0), 2.0)
-                 unsharp_image = cv2.addWeighted(image, 2.0, gaussian_3, -1.0, 0)
-                 cv2.imwrite( sysargv2, unsharp_image)
-
-      if __name__ == "__main__":
-          main()
-           
-  except Exception as e:
-      print(f"An error occurred: {e}")
-      print("Returning to the Main Menue...")
-      return sysargv1
-      menue()
-
-  return sysargv1
-  menue()
+    return sysargv1
+    menue()
 
 def DynamicRescale16():
 
@@ -3209,43 +3232,56 @@ def  LrDeconv():
   menue()
 
 def erosion():
-
-  try:
-
-      def main():
-
-                 sysargv2  = input("Enter the input file name --> ")
-                 sysargv3  = input("Enter number of iterations example 3,5,7 --> ")
-                 sysargv4  = input("Enter (Kernel)structuring element of radius example 3,5,7 --> ")
-           
-                 # Read the image as grayscale
-                 img = (io.imread(sysargv2))
-                 # Define a kernel (a matrix of odd size) for the erosion operation
-                 # You can choose different shapes and sizes for the kernel
-                 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ((int(sysargv4)), (int(sysargv4))))
-           
-                 # Apply the erosion operation using cv2.erode()
-                 # You can adjust the number of iterations for more or less erosion
-                 img_erosion = cv2.erode(img, kernel, iterations=(int(sysargv3)))
-                 cv2.imshow('output', img)
-                 cv2.imshow('Erosion', img_erosion)
-           
-                 # Wait for a key press to exit
-                 cv2.waitKey(0)
-                 # close the window 
-                 cv2.destroyAllWindows() 
-
-      if __name__ == "__main__":
-          main()
-           
-  except Exception as e:
-      print(f"An error occurred: {e}")
-      print("Returning to the Main Menue...")
-      return sysargv1
-      menue()
-
-  return sysargv1
-  menue()
+    try:
+        def main():
+            # Do not change these data entry instructions
+            sysargv2  = input("Enter the input file name --> ")
+            sysargv3  = input("Enter number of iterations example 3,5,7 --> ")
+            sysargv4  = input("Enter (Kernel)structuring element of radius example 3,5,7 --> ")
+            
+            # Read the input FITS file
+            hdul = fits.open(sysargv2)
+            header = hdul[0].header
+            data = hdul[0].data.astype(np.float64)
+            hdul.close()
+            
+            # Assume the data are stored as (height, width, channels)
+            if data.ndim == 3:
+                height, width, channels = data.shape
+                processed_channels = []
+                for ch in range(channels):
+                    channel_data = data[:, :, ch]
+                    ksize = int(sysargv4)
+                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+                    iterations = int(sysargv3)
+                    eroded = cv2.erode(channel_data, kernel, iterations=iterations)
+                    processed_channels.append(eroded)
+                result = np.stack(processed_channels, axis=2)
+            elif data.ndim == 2:
+                ksize = int(sysargv4)
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+                iterations = int(sysargv3)
+                result = cv2.erode(data, kernel, iterations=iterations)
+            else:
+                print("Unsupported data dimensions.")
+                return
+            
+            # Write the processed (eroded) image to a new FITS file
+            output_file = "erosion_out.fits"
+            fits.writeto(output_file, result.astype(np.float64), header, overwrite=True)
+            print("Erosion completed. Output saved to", output_file)
+        
+        if __name__ == "__main__":
+            main()
+            
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        print("Returning to the Main Menue...")
+        return sysargv1
+        menue()
+    
+    return sysargv1
+    menue()
 
 def jpgcomp():
 
@@ -5768,7 +5804,7 @@ def pixelmath():
           app = QApplication(sys.argv)
           window = PixelMathWindow()
           window.show()
-          app.exec_()
+          app.exec()
 
   except Exception as e:
       print(f"An error occurred: {e}")
@@ -6051,7 +6087,7 @@ def Color():
           app = QApplication(sys.argv)
           window = ColorWindow()
           window.show()
-          app.exec_()
+          app.exec()
       
       if __name__ == '__main__':
           Color()
@@ -6065,9 +6101,633 @@ def Color():
   return sysargv1
   menue()
 
+def ImageFilters():
+  try:
+
+      # ----------------------------
+      # Main Window Definition
+      # ----------------------------
+      class ImageFiltersWindow(QMainWindow):
+          def __init__(self):
+              super().__init__()
+              self.setWindowTitle("Image Filters")
+              self.initUI()
+      
+          def initUI(self):
+              centralWidget = QWidget()
+              self.setCentralWidget(centralWidget)
+              mainLayout = QVBoxLayout(centralWidget)
+      
+              # Top: Dropdown for filter selection
+              topLayout = QHBoxLayout()
+              topLayout.addWidget(QLabel("Select Filter:"))
+              self.filterCombo = QComboBox()
+              self.filterCombo.addItems([
+                  "Unsharp Mask", "LrDeconv", "FFT", "Erosion",
+                  "Dilation", "Gaussian", "HpMore", "LocAdapt"
+              ])
+              self.filterCombo.currentIndexChanged.connect(self.changePage)
+              topLayout.addWidget(self.filterCombo)
+              topLayout.addStretch()
+              mainLayout.addLayout(topLayout)
+      
+              # Stacked widget for parameters for each filter
+              self.stack = QStackedWidget()
+              mainLayout.addWidget(self.stack)
+      
+              self.stack.addWidget(self.createUnsharpPage())   # Page 0
+              self.stack.addWidget(self.createLrDeconvPage())    # Page 1
+              self.stack.addWidget(self.createFFTPage())         # Page 2
+              self.stack.addWidget(self.createErosionPage())     # Page 3
+              self.stack.addWidget(self.createDilationPage())    # Page 4
+              self.stack.addWidget(self.createGaussianPage())    # Page 5
+              self.stack.addWidget(self.createHpMorePage())      # Page 6
+              self.stack.addWidget(self.createLocAdaptPage())    # Page 7
+      
+              # Run button and status label
+              btnLayout = QHBoxLayout()
+              self.runButton = QPushButton("Run")
+              self.runButton.clicked.connect(self.runFilter)
+              btnLayout.addWidget(self.runButton)
+              btnLayout.addStretch()
+              mainLayout.addLayout(btnLayout)
+              self.statusLabel = QLabel("")
+              mainLayout.addWidget(self.statusLabel)
+      
+          def changePage(self, index):
+              self.stack.setCurrentIndex(index)
+              self.statusLabel.setText("")
+      
+          # ----------------------------
+          # Helper: browse for FITS file
+          def browseFile(self, lineEdit, save=False):
+              if save:
+                  fname, _ = QFileDialog.getSaveFileName(self, "Select File", "", "FITS Files (*.fits)")
+              else:
+                  fname, _ = QFileDialog.getOpenFileName(self, "Select File", "", "FITS Files (*.fits)")
+              if fname:
+                  lineEdit.setText(fname)
+      
+          # ----------------------------
+          # Page 0: Unsharp Mask
+          def createUnsharpPage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.usInput = QLineEdit()
+              layout.addWidget(self.usInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.usInput))
+              layout.addWidget(btn, 0, 2)
+      
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.usOutput = QLineEdit()
+              layout.addWidget(self.usOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.usOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              return page
+      
+          # ----------------------------
+          # Page 1: LrDeconv (Richardson-Lucy)
+          def createLrDeconvPage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.lrInput = QLineEdit()
+              layout.addWidget(self.lrInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.lrInput))
+              layout.addWidget(btn, 0, 2)
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.lrOutput = QLineEdit()
+              layout.addWidget(self.lrOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.lrOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              layout.addWidget(QLabel("PSF Mode:"), 2, 0)
+              self.lrPsfMode = QComboBox()
+              self.lrPsfMode.addItems(["Analytical", "Extract"])
+              layout.addWidget(self.lrPsfMode, 2, 1)
+              layout.addWidget(QLabel("PSF X (if extract):"), 3, 0)
+              self.lrPsfX = QLineEdit()
+              layout.addWidget(self.lrPsfX, 3, 1)
+              layout.addWidget(QLabel("PSF Y:"), 4, 0)
+              self.lrPsfY = QLineEdit()
+              layout.addWidget(self.lrPsfY, 4, 1)
+              layout.addWidget(QLabel("PSF Size:"), 5, 0)
+              self.lrPsfSize = QLineEdit()
+              layout.addWidget(self.lrPsfSize, 5, 1)
+              layout.addWidget(QLabel("Iterations:"), 6, 0)
+              self.lrIter = QLineEdit("30")
+              layout.addWidget(self.lrIter, 6, 1)
+              return page
+      
+          # ----------------------------
+          # Page 2: FFT Filter
+          def createFFTPage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.fftInput = QLineEdit()
+              layout.addWidget(self.fftInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.fftInput))
+              layout.addWidget(btn, 0, 2)
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.fftOutput = QLineEdit()
+              layout.addWidget(self.fftOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.fftOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              layout.addWidget(QLabel("Cutoff:"), 2, 0)
+              self.fftCutoff = QLineEdit("25")
+              layout.addWidget(self.fftCutoff, 2, 1)
+              layout.addWidget(QLabel("Weight:"), 3, 0)
+              self.fftWeight = QLineEdit("50")
+              layout.addWidget(self.fftWeight, 3, 1)
+              layout.addWidget(QLabel("Denom:"), 4, 0)
+              self.fftDenom = QLineEdit("100")
+              layout.addWidget(self.fftDenom, 4, 1)
+              layout.addWidget(QLabel("Radius:"), 5, 0)
+              self.fftRadius = QLineEdit("1")
+              layout.addWidget(self.fftRadius, 5, 1)
+              layout.addWidget(QLabel("Second Cutoff:"), 6, 0)
+              self.fftSecondCutoff = QLineEdit("10")
+              layout.addWidget(self.fftSecondCutoff, 6, 1)
+              return page
+      
+          # ----------------------------
+          # Page 3: Erosion
+          def createErosionPage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.erInput = QLineEdit()
+              layout.addWidget(self.erInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.erInput))
+              layout.addWidget(btn, 0, 2)
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.erOutput = QLineEdit("erosion_out.fits")
+              layout.addWidget(self.erOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.erOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              layout.addWidget(QLabel("Iterations:"), 2, 0)
+              self.erIter = QLineEdit("3")
+              layout.addWidget(self.erIter, 2, 1)
+              layout.addWidget(QLabel("Kernel Size:"), 3, 0)
+              self.erKernel = QLineEdit("3")
+              layout.addWidget(self.erKernel, 3, 1)
+              return page
+      
+          # ----------------------------
+          # Page 4: Dilation
+          def createDilationPage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.diInput = QLineEdit()
+              layout.addWidget(self.diInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.diInput))
+              layout.addWidget(btn, 0, 2)
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.diOutput = QLineEdit("dilation_out.fits")
+              layout.addWidget(self.diOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.diOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              layout.addWidget(QLabel("Iterations:"), 2, 0)
+              self.diIter = QLineEdit("3")
+              layout.addWidget(self.diIter, 2, 1)
+              layout.addWidget(QLabel("Kernel Size:"), 3, 0)
+              self.diKernel = QLineEdit("3")
+              layout.addWidget(self.diKernel, 3, 1)
+              return page
+      
+          # ----------------------------
+          # Page 5: Gaussian Blur
+          def createGaussianPage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.gaInput = QLineEdit()
+              layout.addWidget(self.gaInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.gaInput))
+              layout.addWidget(btn, 0, 2)
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.gaOutput = QLineEdit("gaussian_out.fits")
+              layout.addWidget(self.gaOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.gaOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              layout.addWidget(QLabel("Sigma:"), 2, 0)
+              self.gaSigma = QLineEdit("2.0")
+              layout.addWidget(self.gaSigma, 2, 1)
+              return page
+      
+          # ----------------------------
+          # Page 6: HpMore (High-pass More)
+          def createHpMorePage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.hpInput = QLineEdit()
+              layout.addWidget(self.hpInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.hpInput))
+              layout.addWidget(btn, 0, 2)
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.hpOutput = QLineEdit()
+              layout.addWidget(self.hpOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.hpOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              return page
+      
+          # ----------------------------
+          # Page 7: LocAdapt
+          def createLocAdaptPage(self):
+              page = QWidget()
+              layout = QGridLayout(page)
+              layout.addWidget(QLabel("Input FITS File:"), 0, 0)
+              self.laInput = QLineEdit()
+              layout.addWidget(self.laInput, 0, 1)
+              btn = QPushButton("Browse")
+              btn.clicked.connect(lambda: self.browseFile(self.laInput))
+              layout.addWidget(btn, 0, 2)
+              layout.addWidget(QLabel("Output FITS File:"), 1, 0)
+              self.laOutput = QLineEdit("locadapt_out.fits")
+              layout.addWidget(self.laOutput, 1, 1)
+              btn2 = QPushButton("Browse")
+              btn2.clicked.connect(lambda: self.browseFile(self.laOutput, save=True))
+              layout.addWidget(btn2, 1, 2)
+              layout.addWidget(QLabel("Neighborhood Size:"), 2, 0)
+              self.laNeigh = QLineEdit("15")
+              layout.addWidget(self.laNeigh, 2, 1)
+              layout.addWidget(QLabel("Contrast (target std):"), 3, 0)
+              self.laContrast = QLineEdit("50")
+              layout.addWidget(self.laContrast, 3, 1)
+              layout.addWidget(QLabel("Feather Distance:"), 4, 0)
+              self.laFeather = QLineEdit("5")
+              layout.addWidget(self.laFeather, 4, 1)
+              return page
+      
+          # ----------------------------
+          # Run Filter button handler:
+          def runFilter(self):
+              idx = self.filterCombo.currentIndex()
+              try:
+                  if idx == 0:
+                      self.runUnsharpMask()
+                  elif idx == 1:
+                      self.runLrDeconv()
+                  elif idx == 2:
+                      self.runFFT()
+                  elif idx == 3:
+                      self.runErosion()
+                  elif idx == 4:
+                      self.runDilation()
+                  elif idx == 5:
+                      self.runGaussian()
+                  elif idx == 6:
+                      self.runHpMore()
+                  elif idx == 7:
+                      self.runLocAdapt()
+              except Exception as e:
+                  self.statusLabel.setText("Error: " + str(e))
+      
+          # ---------------------------------------------------------
+          # Processing routines – each reads input FITS, processes, and writes output FITS.
+          def runUnsharpMask(self):
+              inp = self.usInput.text().strip()
+              outp = self.usOutput.text().strip()
+              if not inp or not outp:
+                  self.statusLabel.setText("Provide input and output files.")
+                  return
+              hdul = fits.open(inp)
+              header = hdul[0].header
+              data = hdul[0].data.astype(np.float64)
+              hdul.close()
+              if data.ndim == 2:
+                  blurred = cv2.GaussianBlur(data, (0, 0), 2.0)
+                  result = cv2.addWeighted(data, 2.0, blurred, -1.0, 0)
+              elif data.ndim == 3:
+                  res_channels = []
+                  for c in range(data.shape[2]):
+                      channel = data[:, :, c]
+                      blurred = cv2.GaussianBlur(channel, (0, 0), 2.0)
+                      res_channels.append(cv2.addWeighted(channel, 2.0, blurred, -1.0, 0))
+                  result = np.stack(res_channels, axis=2)
+              else:
+                  self.statusLabel.setText("Unsupported dimensions for Unsharp Mask.")
+                  return
+              fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+              self.statusLabel.setText("Unsharp Mask saved to " + outp)
+      
+          def runLrDeconv(self):
+              inp = self.lrInput.text().strip()
+              outp = self.lrOutput.text().strip()
+              iters = int(self.lrIter.text().strip())
+              psf_mode = self.lrPsfMode.currentText()
+              hdul = fits.open(inp)
+              header = hdul[0].header
+              image = hdul[0].data.astype(np.float64)
+              hdul.close()
+              def richardson_lucy(im, psf, iterations):
+                  im_est = im.copy()
+                  psf_mirror = psf[::-1, ::-1]
+                  for i in range(iterations):
+                      conv_est = np.abs(np.fft.ifft2(np.fft.fft2(im_est) * np.fft.fft2(psf, s=im.shape)))
+                      conv_est[conv_est==0] = 1e-7
+                      relative_blur = im / conv_est
+                      correction = np.abs(np.fft.ifft2(np.fft.fft2(relative_blur) * np.fft.fft2(psf_mirror, s=im.shape)))
+                      im_est *= correction
+                  return im_est
+              if psf_mode == "Analytical":
+                  sigma = 2.0; ks = 25
+                  ax = np.linspace(-(ks-1)/2., (ks-1)/2., ks)
+                  xx, yy = np.meshgrid(ax, ax)
+                  psf = np.exp(-(xx**2+yy**2)/(2.*sigma**2))
+                  psf /= psf.sum()
+              else:
+                  x = float(self.lrPsfX.text().strip())
+                  y = float(self.lrPsfY.text().strip())
+                  size = int(self.lrPsfSize.text().strip())
+                  # For simplicity, extract a PSF from the top-left region of the image
+                  psf = image[0:size, 0:size]
+                  psf = psf - np.median(psf)
+                  psf[psf < 0] = 0
+                  if psf.sum() != 0:
+                      psf /= psf.sum()
+              if image.ndim == 2:
+                  deconv = richardson_lucy(image, psf, iters)
+              elif image.ndim == 3:
+                  deconv_channels = []
+                  for c in range(image.shape[2]):
+                      deconv_channels.append(richardson_lucy(image[:, :, c], psf, iters))
+                  deconv = np.stack(deconv_channels, axis=2)
+              else:
+                  self.statusLabel.setText("Unsupported dimensions for LrDeconv.")
+                  return
+              fits.writeto(outp, deconv.astype(np.float64), header, overwrite=True)
+              self.statusLabel.setText("LrDeconv saved to " + outp)
+      
+          def runFFT(self):
+              inp = self.fftInput.text().strip()
+              outp = self.fftOutput.text().strip()
+              cutoff = float(self.fftCutoff.text().strip())
+              weight = float(self.fftWeight.text().strip())
+              denom = float(self.fftDenom.text().strip())
+              radius = int(self.fftRadius.text().strip())
+              cutoff2 = float(self.fftSecondCutoff.text().strip())
+              hdul = fits.open(inp)
+              header = hdul[0].header
+              data = hdul[0].data.astype(np.float64)
+              hdul.close()
+              # Ensure 3-channel image: if not in (3, height, width), transpose accordingly.
+              if data.ndim == 3:
+                  if data.shape[0] != 3 and data.shape[-1] == 3:
+                      data = np.transpose(data, (2, 0, 1))
+              else:
+                  self.statusLabel.setText("FFT requires a 3-channel image.")
+                  return
+              # Get channels (assumed order: blue, green, red)
+              b, g, r = data[0], data[1], data[2]
+              def high_pass_filter(im, cutoff, weight):
+                  fft = np.fft.fft2(im)
+                  fft_shift = np.fft.fftshift(fft)
+                  rows, cols = im.shape
+                  crow, ccol = rows // 2, cols // 2
+                  rad = int(cutoff * min(rows, cols))
+                  mask = np.ones((rows, cols), np.float32)
+                  mask[crow-rad:crow+rad, ccol-rad:ccol+rad] = 0
+                  fft_shift_filtered = fft_shift * mask
+                  fft_inverse = np.fft.ifftshift(fft_shift_filtered)
+                  im_filt = np.abs(np.fft.ifft2(fft_inverse))
+                  im_weighted = cv2.addWeighted(im, 1 - weight, im_filt.astype(np.float32), weight, 0)
+                  return im_weighted
+              def feather_image(im, radius, distance):
+                  im_blur = cv2.GaussianBlur(im, (radius, radius), 0)
+                  mask = np.full(im.shape, 255, dtype=np.uint8)
+                  mask_blur = cv2.GaussianBlur(mask, (distance*2+1, distance*2+1), 0)
+                  return cv2.bitwise_and(im_blur, im_blur, mask=mask_blur)
+              def process_channel(ch):
+                  ch_norm = np.interp(ch, (ch.min(), ch.max()), (0, 1)).astype(np.float32)
+                  filtered = high_pass_filter(ch_norm, cutoff/denom, weight/denom)
+                  return feather_image(filtered, radius, int(cutoff2))
+              b_proc = process_channel(b)
+              g_proc = process_channel(g)
+              r_proc = process_channel(r)
+              processed = np.stack([b_proc, g_proc, r_proc], axis=0)
+              fits.writeto(outp, processed.astype(np.float64), header, overwrite=True)
+              self.statusLabel.setText("FFT saved to " + outp)
+      
+          def runErosion(self):
+              inp = self.erInput.text().strip()
+              outp = self.erOutput.text().strip()
+              iters = int(self.erIter.text().strip())
+              ksize = int(self.erKernel.text().strip())
+              hdul = fits.open(inp)
+              header = hdul[0].header
+              data = hdul[0].data.astype(np.float64)
+              hdul.close()
+              if data.ndim == 3:
+                  res_channels = []
+                  for c in range(data.shape[2]):
+                      channel = data[:, :, c]
+                      kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+                      res_channels.append(cv2.erode(channel, kernel, iterations=iters))
+                  result = np.stack(res_channels, axis=2)
+              elif data.ndim == 2:
+                  kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+                  result = cv2.erode(data, kernel, iterations=iters)
+              else:
+                  self.statusLabel.setText("Unsupported dimensions in erosion.")
+                  return
+              fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+              self.statusLabel.setText("Erosion saved to " + outp)
+      
+          def runDilation(self):
+              inp = self.diInput.text().strip()
+              outp = self.diOutput.text().strip()
+              iters = int(self.diIter.text().strip())
+              ksize = int(self.diKernel.text().strip())
+              hdul = fits.open(inp)
+              header = hdul[0].header
+              data = hdul[0].data.astype(np.float64)
+              hdul.close()
+              if data.ndim == 3:
+                  res_channels = []
+                  for c in range(data.shape[2]):
+                      channel = data[:, :, c]
+                      kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+                      res_channels.append(cv2.dilate(channel, kernel, iterations=iters))
+                  result = np.stack(res_channels, axis=2)
+              elif data.ndim == 2:
+                  kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+                  result = cv2.dilate(data, kernel, iterations=iters)
+              else:
+                  self.statusLabel.setText("Unsupported dimensions in dilation.")
+                  return
+              fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+              self.statusLabel.setText("Dilation saved to " + outp)
+      
+          def runGaussian(self):
+              inp = self.gaInput.text().strip()
+              outp = self.gaOutput.text().strip()
+              sigma = float(self.gaSigma.text().strip())
+              hdul = fits.open(inp)
+              header = hdul[0].header
+              data = hdul[0].data.astype(np.float64)
+              hdul.close()
+              # Process each channel if 3D.
+              if data.ndim == 3:
+                  res_channels = []
+                  for c in range(data.shape[2]):
+                      channel = data[:, :, c]
+                      # Normalize for processing
+                      norm = np.interp(channel, (channel.min(), channel.max()), (0, 1)).astype(np.float32)
+                      res_channels.append(cv2.GaussianBlur(norm, (0,0), sigmaX=sigma, sigmaY=sigma))
+                  result = np.stack(res_channels, axis=2)
+              elif data.ndim == 2:
+                  norm = np.interp(data, (data.min(), data.max()), (0, 1)).astype(np.float32)
+                  result = cv2.GaussianBlur(norm, (0,0), sigmaX=sigma, sigmaY=sigma)
+              else:
+                  self.statusLabel.setText("Unsupported dimensions in Gaussian.")
+                  return
+              fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+              self.statusLabel.setText("Gaussian blur saved to " + outp)
+      
+          def runHpMore(self):
+              inp = self.hpInput.text().strip()
+              outp = self.hpOutput.text().strip()
+              # Read the input FITS file.
+              hdul = fits.open(inp)
+              data = hdul[0].data.astype(np.float64)
+              hdul.close()
+              # Check image dimensions and ensure 3-channel color.
+              if data.ndim == 3:
+                  if data.shape[-1] == 3:  # assume (ny, nx, 3)
+                      data = np.transpose(data, (2, 0, 1))  # to (3, ny, nx)
+                  elif data.shape[0] == 3:
+                      pass
+                  else:
+                      self.statusLabel.setText("Unexpected color image shape in HpMore.")
+                      return
+              else:
+                  self.statusLabel.setText("Input FITS is not a 3-channel image in HpMore.")
+                  return
+              # Define a 5x5 high-pass kernel (Laplacian-style)
+              hp_kernel_5x5 = np.array([
+                  [-1, -1, -1, -1, -1],
+                  [-1,  1,  2,  1, -1],
+                  [-1,  2,  4,  2, -1],
+                  [-1,  1,  2,  1, -1],
+                  [-1, -1, -1, -1, -1]
+              ], dtype=float)
+              # Process each channel with convolution and thresholding.
+              filtered_channels = np.empty_like(data)
+              for i in range(data.shape[0]):
+                  channel = data[i]
+                  highpass = convolve2d(channel, hp_kernel_5x5, mode='same', boundary='symm')
+                  threshold = np.percentile(channel, 70)
+                  mask = channel > threshold
+                  filtered_channel = channel.copy()
+                  filtered_channel[mask] = channel[mask] + highpass[mask]
+                  filtered_channels[i] = filtered_channel
+              # Save using original ordering (channels first)
+              fits.writeto(outp, filtered_channels.astype(np.float64), overwrite=True)
+              self.statusLabel.setText("HpMore saved to " + outp)
+      
+          def runLocAdapt(self):
+              inp = self.laInput.text().strip()
+              outp = self.laOutput.text().strip()
+              neigh = int(self.laNeigh.text().strip())
+              target_std = float(self.laContrast.text().strip())
+              feather_dist = float(self.laFeather.text().strip())
+              hdul = fits.open(inp)
+              header = hdul[0].header
+              data = hdul[0].data.astype(float)
+              hdul.close()
+              # For color images, split channels (assume data stored as (3, ny, nx))
+              if data.ndim == 3 and data.shape[0] == 3:
+                  # Process each channel separately; here for simplicity we apply processing only on the first channel.
+                  # (LocAdapt code can be extended to process all channels.)
+                  channel = data[0]
+              elif data.ndim == 2:
+                  channel = data
+              else:
+                  self.statusLabel.setText("Unsupported dimensions for LocAdapt.")
+                  return
+              # Define helper functions for local contrast calculation:
+              def compute_optimum_contrast_percentage(image, target_std):
+                  current_std = np.std(image)
+                  if current_std == 0:
+                      return 100.0
+                  return (target_std / current_std) * 100.0
+              def compute_optimum_feather_distance(image, neighborhood_size, factor=1.0):
+                  adjusted_size = max(1, neighborhood_size - 1)
+                  kernel = np.ones((adjusted_size, adjusted_size), dtype=np.float32) / (adjusted_size*adjusted_size)
+                  local_mean = convolve(image, kernel, mode='reflect')
+                  local_mean_sq = convolve(image**2, kernel, mode='reflect')
+                  local_std = np.sqrt(np.abs(local_mean_sq - local_mean**2))
+                  return factor * np.median(local_std)
+              def contrast_filter(image, neighborhood_size, contrast_factor, feather_distance):
+                  adjusted_size = max(1, neighborhood_size - 1)
+                  kernel = np.ones((adjusted_size, adjusted_size), dtype=float)
+                  kernel /= kernel.size
+                  local_mean = convolve(image, kernel, mode='reflect')
+                  enhanced = (image - local_mean) * contrast_factor + local_mean
+                  squared = np.square(image)
+                  local_mean_sq = convolve(squared, kernel, mode='reflect')
+                  local_std = np.sqrt(np.abs(local_mean_sq - np.square(local_mean)))
+                  weight = np.clip(local_std / feather_distance, 0, 1)
+                  return weight * enhanced + (1 - weight) * image
+              opt_contrast = compute_optimum_contrast_percentage(channel, target_std)
+              contrast_factor = opt_contrast / 100.0
+              opt_feather = compute_optimum_feather_distance(channel, neigh, feather_dist)
+              fd = opt_feather / 100.0
+              enhanced = contrast_filter(channel, neigh, contrast_factor, fd)
+              # For color images, you might simply replace the first channel.
+              if data.ndim == 3 and data.shape[0] == 3:
+                  data[0] = enhanced
+                  result = data
+              else:
+                  result = enhanced
+              fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+              self.statusLabel.setText("LocAdapt saved to " + outp)
+      
+      # ----------------------------
+      # Main method
+      def main():
+          app = QApplication(sys.argv)
+          window = ImageFiltersWindow()
+          window.show()
+          sys.exit(app.exec())
+      
+      if __name__ == "__main__":
+          main()
+
+      
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
+
+
 
 def menue(sysargv1):
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color \n>>1313<< Exit --> ")
+#  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay >>46<< Stacking \n>>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>51<< CombBgrAlIm >>52<< PixelMath \n>>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
+
   return sysargv1
 
 sysargv1 = ''
@@ -6255,6 +6915,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '53':
     Color()
+
+  if sysargv1 == '54':
+    ImageFilters()
 
   if sysargv1 == '1313':
     sys.exit()
