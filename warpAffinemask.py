@@ -6707,7 +6707,7 @@ def ImageFilters():
           app = QApplication(sys.argv)
           window = ImageFiltersWindow()
           window.show()
-          sys.exit(app.exec())
+          app.exec()
       
       if __name__ == "__main__":
           main()
