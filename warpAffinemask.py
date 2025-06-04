@@ -6429,40 +6429,64 @@ def ImageFilters():
               self.statusLabel.setText("Unsharp Mask saved to " + outp)
       
           def runLrDeconv(self):
+              # Retrieve inputs from the GUI.
               inp = self.lrInput.text().strip()
               outp = self.lrOutput.text().strip()
               iters = int(self.lrIter.text().strip())
               psf_mode = self.lrPsfMode.currentText()
+          
+              # Open the FITS file and retrieve image & header.
               hdul = fits.open(inp)
               header = hdul[0].header
               image = hdul[0].data.astype(np.float64)
               hdul.close()
+          
+              # ------------------------------------------------------------------
+              # Define the Richardson–Lucy deconvolution using convolve_fft.
+              from astropy.convolution import convolve_fft
               def richardson_lucy(im, psf, iterations):
-                  im_est = im.copy()
-                  psf_mirror = psf[::-1, ::-1]
+                  # Ensure image is float64.
+                  im = im.astype(np.float64)
+                  im_est = im.copy()  # initial estimate
+                  psf_mirror = psf[::-1, ::-1]  # mirror the PSF
                   for i in range(iterations):
-                      conv_est = np.abs(np.fft.ifft2(np.fft.fft2(im_est) * np.fft.fft2(psf, s=im.shape)))
-                      conv_est[conv_est==0] = 1e-7
+                      conv_est = convolve_fft(im_est, psf, normalize_kernel=True)
+                      conv_est[conv_est == 0] = 1e-7  # Avoid divide-by-zero
                       relative_blur = im / conv_est
-                      correction = np.abs(np.fft.ifft2(np.fft.fft2(relative_blur) * np.fft.fft2(psf_mirror, s=im.shape)))
+                      correction = convolve_fft(relative_blur, psf_mirror, normalize_kernel=True)
                       im_est *= correction
                   return im_est
+          
+              # ------------------------------------------------------------------
+              # PSF definition and extraction.
               if psf_mode == "Analytical":
-                  sigma = 2.0; ks = 25
+                  # Create an analytical Gaussian PSF.
+                  sigma = 2.0
+                  ks = 25  # kernel size
                   ax = np.linspace(-(ks-1)/2., (ks-1)/2., ks)
                   xx, yy = np.meshgrid(ax, ax)
-                  psf = np.exp(-(xx**2+yy**2)/(2.*sigma**2))
-                  psf /= psf.sum()
+                  psf = np.exp(-(xx**2 + yy**2) / (2. * sigma**2))
+                  psf /= psf.sum()  # Normalize the PSF.
+                  print("Using an analytical Gaussian PSF.")
               else:
+                  # Extract the PSF using the user-provided (x, y) coordinates.
+                  # Coordinates here are interpreted as the center of the PSF cutout.
+                  from astropy.nddata import Cutout2D
                   x = float(self.lrPsfX.text().strip())
                   y = float(self.lrPsfY.text().strip())
                   size = int(self.lrPsfSize.text().strip())
-                  # For simplicity, extract a PSF from the top-left region of the image
-                  psf = image[0:size, 0:size]
-                  psf = psf - np.median(psf)
+                  # Create a cutout of size 'size' centered at (x, y)
+                  cutout = Cutout2D(image, (x, y), size)
+                  psf = cutout.data.copy()
+                  # Normalize the PSF.
+                  psf -= np.median(psf)
                   psf[psf < 0] = 0
                   if psf.sum() != 0:
                       psf /= psf.sum()
+                  print("Using the PSF extracted from the image at (%.2f, %.2f) with size %d." % (x, y, size))
+          
+              # ------------------------------------------------------------------
+              # Deconvolve the image or each channel.
               if image.ndim == 2:
                   deconv = richardson_lucy(image, psf, iters)
               elif image.ndim == 3:
@@ -6473,9 +6497,11 @@ def ImageFilters():
               else:
                   self.statusLabel.setText("Unsupported dimensions for LrDeconv.")
                   return
+          
+              # Save the deconvolved image to file.
               fits.writeto(outp, deconv.astype(np.float64), header, overwrite=True)
               self.statusLabel.setText("LrDeconv saved to " + outp)
-      
+                
           def runFFT(self):
               inp = self.fftInput.text().strip()
               outp = self.fftOutput.text().strip()
