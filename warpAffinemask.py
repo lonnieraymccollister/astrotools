@@ -32,11 +32,13 @@ from reproject.mosaicking import find_optimal_celestial_wcs
 from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
 print("Qt: v", QT_VERSION_STR, "\tPyQt: v", PYQT_VERSION_STR)
 from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QPushButton,
     QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
     QLineEdit, QMessageBox, QGroupBox, QScrollArea,
-    QComboBox, QGridLayout, QStackedWidget
+    QComboBox, QGridLayout, QStackedWidget,
+    QFormLayout
 )
 from PyQt6.QtGui import QDoubleValidator
 
@@ -6748,11 +6750,165 @@ def ImageFilters():
   return sysargv1
   menue()
 
+def AlignImgs():
 
+  try:
+                           
+      class AlignImagesForm(QWidget):
+          def __init__(self):
+              super().__init__()
+              self.setWindowTitle("Align images")
+              self.resize(600, 400)
+      
+              # Dropdown to pick 2–6 images
+              self.count_combo = QComboBox()
+              self.count_combo.addItems(["02","03","04","05","06"])
+              self.count_combo.currentTextChanged.connect(self._update_fields)
+      
+              # Groups for inputs/outputs
+              self.input_group  = QGroupBox("Reference FITS files")
+              self.output_group = QGroupBox("Aligned FITS files")
+              self.input_form   = QFormLayout()
+              self.output_form  = QFormLayout()
+              self.input_group.setLayout(self.input_form)
+              self.output_group.setLayout(self.output_form)
+      
+              # ----- KEY CHANGE #1 & #2 -----
+              # Keep parallel lists of labels & container‐widgets
+              self.in_labels      = []
+              self.in_containers  = []
+              self.out_labels     = []
+              self.out_containers = []
+      
+              for i in range(6):
+                  # build Input row
+                  lab_in = QLabel(f"Image {i+1}:")
+                  edit_in = QLineEdit()
+                  btn_in  = QPushButton("Browse…")
+                  btn_in.clicked.connect(lambda _, idx=i: self._browse_input(idx))
+                  hbox_in = QHBoxLayout()
+                  hbox_in.addWidget(edit_in)
+                  hbox_in.addWidget(btn_in)
+                  container_in = QWidget()
+                  container_in.setLayout(hbox_in)
+                  self.input_form.addRow(lab_in, container_in)
+      
+                  # build Output row
+                  lab_out = QLabel(f"Aligned {i+1}:")
+                  edit_out = QLineEdit()
+                  btn_out  = QPushButton("Browse…")
+                  btn_out.clicked.connect(lambda _, idx=i: self._browse_output(idx))
+                  hbox_out = QHBoxLayout()
+                  hbox_out.addWidget(edit_out)
+                  hbox_out.addWidget(btn_out)
+                  container_out = QWidget()
+                  container_out.setLayout(hbox_out)
+                  self.output_form.addRow(lab_out, container_out)
+      
+                  # store references
+                  self.in_labels.append(lab_in)
+                  self.in_containers.append(container_in)
+                  self.out_labels.append(lab_out)
+                  self.out_containers.append(container_out)
+      
+              # Align button
+              self.align_button = QPushButton("Align")
+              self.align_button.clicked.connect(self._on_align)
+      
+              # Layout assembly
+              top = QHBoxLayout()
+              top.addWidget(QLabel("Number of images:"))
+              top.addWidget(self.count_combo)
+              top.addStretch()
+      
+              main = QVBoxLayout(self)
+              main.addLayout(top)
+              main.addWidget(self.input_group)
+              main.addWidget(self.output_group)
+              main.addStretch()
+              main.addWidget(self.align_button, alignment=Qt.AlignmentFlag.AlignRight)
+      
+              # hide all but the first N rows
+              self._update_fields(self.count_combo.currentText())
+      
+          # ----- KEY CHANGE #3 -----
+          def _update_fields(self, txt):
+              n = int(txt)
+              for i in range(6):
+                  show = (i < n)
+                  self.in_labels[i].setVisible(show)
+                  self.in_containers[i].setVisible(show)
+                  self.out_labels[i].setVisible(show)
+                  self.out_containers[i].setVisible(show)
+      
+          def _browse_input(self, idx):
+              fn, _ = QFileDialog.getOpenFileName(
+                  self, f"Select reference #{idx+1}", "", "FITS Files (*.fits)"
+              )
+              if fn:
+                  le = self.in_containers[idx].findChild(QLineEdit)
+                  le.setText(fn)
+      
+          def _browse_output(self, idx):
+              fn, _ = QFileDialog.getSaveFileName(
+                  self, f"Save aligned #{idx+1}", "", "FITS Files (*.fits)"
+              )
+              if fn:
+                  le = self.out_containers[idx].findChild(QLineEdit)
+                  le.setText(fn)
+      
+          def _on_align(self):
+              count = int(self.count_combo.currentText())
+              inputs  = [self.in_containers[i].findChild(QLineEdit).text().strip() 
+                         for i in range(count)]
+              outputs = [self.out_containers[i].findChild(QLineEdit).text().strip() 
+                         for i in range(count)]
+      
+              if any(not p for p in inputs+outputs):
+                  QMessageBox.warning(self, "Missing", "Fill in all paths.")
+                  return
+      
+              try:
+                  # read data & headers
+                  dw = []
+                  for fn in inputs:
+                      with fits.open(fn) as hd:
+                          dw.append((hd[0].data.astype(np.float64), hd[0].header))
+      
+                  # compute common WCS/shape
+                  wcs_out, shape_out = find_optimal_celestial_wcs(dw)
+      
+                  # reproject & save each
+                  for (data, hdr), outfn in zip(dw, outputs):
+                      arr, _ = reproject_interp((data, hdr), wcs_out, shape_out=shape_out)
+                      hdu = fits.PrimaryHDU(arr, header=wcs_out.to_header())
+                      hdu.writeto(outfn, overwrite=True)
+      
+                  QMessageBox.information(self, "Done", f"Aligned {count} images.")
+              except Exception as e:
+                  QMessageBox.critical(self, "Error", str(e))
+      
+      def main():
+          app = QApplication(sys.argv)
+          w = AlignImagesForm()
+          w.show()
+          sys.exit(app.exec())
+      
+      if __name__ == "__main__":
+          main()
+      
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
 
 def menue(sysargv1):
 #  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay >>46<< Stacking \n>>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>51<< CombBgrAlIm >>52<< PixelMath \n>>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) >>10<< Centroid_Custom_filter(2ax) \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
 
   return sysargv1
 
@@ -6944,6 +7100,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '54':
     ImageFilters()
+
+  if sysargv1 == '55':
+    AlignImgs()
 
   if sysargv1 == '1313':
     sys.exit()
