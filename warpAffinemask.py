@@ -6762,7 +6762,7 @@ def AlignImgs():
       
               # Dropdown to pick 2–6 images
               self.count_combo = QComboBox()
-              self.count_combo.addItems(["02","03","04","05","06"])
+              self.count_combo.addItems(["02","03","04","05","06","07","08"])
               self.count_combo.currentTextChanged.connect(self._update_fields)
       
               # Groups for inputs/outputs
@@ -6780,7 +6780,7 @@ def AlignImgs():
               self.out_labels     = []
               self.out_containers = []
       
-              for i in range(6):
+              for i in range(8):
                   # build Input row
                   lab_in = QLabel(f"Image {i+1}:")
                   edit_in = QLineEdit()
@@ -6834,7 +6834,7 @@ def AlignImgs():
           # ----- KEY CHANGE #3 -----
           def _update_fields(self, txt):
               n = int(txt)
-              for i in range(6):
+              for i in range(8):
                   show = (i < n)
                   self.in_labels[i].setVisible(show)
                   self.in_containers[i].setVisible(show)
@@ -6892,7 +6892,7 @@ def AlignImgs():
           app = QApplication(sys.argv)
           w = AlignImagesForm()
           w.show()
-          sys.exit(app.exec())
+          app.exec()
       
       if __name__ == "__main__":
           main()
