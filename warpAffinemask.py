@@ -5538,7 +5538,7 @@ def CombBgrAlIm():
            
            
                  # Collect all files with names starting with 'reproj' and ending with '.fits'
-                 filenames = sorted(glob.glob("m16_*_pspcchannel_BGR_64bitAL.fits"))
+                 filenames = sorted(glob.glob(sysargv0))
            
                  print("Files found:", filenames)
            
