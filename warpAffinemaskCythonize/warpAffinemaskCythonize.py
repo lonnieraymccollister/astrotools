@@ -41,6 +41,7 @@ from PyQt6.QtWidgets import (
     QFormLayout
 )
 from PyQt6.QtGui import QDoubleValidator
+from warpaffinemaskrescale import warp_affine_mask_rescale
 
 def AffineTransform():
 
@@ -1960,6 +1961,17 @@ def DynamicRescale16():
                      # Resize the image using cv2.resize.
                      resized_image = cv2.resize(norm_image, None, fx=(resize_factor / resize_div), 
                                                 fy=(resize_factor / resize_div), interpolation=cv2.INTER_LANCZOS4)
+
+                     # ----------------------------------------------------------------
+                     # 2) QUICK PYTHON CAST: make sure your Cython sees float64 inputs
+                     # ----------------------------------------------------------------
+                     # cast input to float64
+                     img64 = resized_image.astype(np.float64)
+                     # allocate a same‐shape float64 output buffer
+                     out64 = np.empty_like(img64, dtype=np.float64)
+                     # (you no longer need your old `my_data = resized_image * 65535`)
+
+                     # 3) call the Cython routine
                
                      # Multiply the resized image to scale it up.
                      my_data = resized_image * 65535
@@ -1967,21 +1979,9 @@ def DynamicRescale16():
            
                      # Use the provided square block width for dynamic square processing.
                      block_size = int(width_of_square)
-                     new_h, new_w = resized_image.shape
            
-                     # Process image in blocks.
-                     for xw in range(0, new_h, block_size):
-                         for yh in range(0, new_w, block_size):
-                             block_h = min(block_size, new_h - xw)
-                             block_w = min(block_size, new_w - yh)
-                             my_data1 = np.zeros((block_h, block_w))
-                             for x in range(block_h):
-                                 for y in range(block_w):
-                                     my_data1[x, y] = img[x + xw, y + yh]
-                             # Rescale block to the 0–65535 range.
-                             rescaled1 = ((my_data1.max() + 1) * ((my_data1 + 1) - my_data1.min()) / 65535.0).astype(np.float64)
-                             rescaled = np.round(rescaled1)
-                             my_data[xw:xw+block_h, yh:yh+block_w] = rescaled[:block_h, :block_w]
+                     warp_affine_mask_rescale(img64, out64, block_size)
+                     my_data = out64
            
                      # Apply gamma correction.
                      gamma_corrected1 = np.array(65535.0 * (my_data / 65535) ** gamma_value, dtype='float64')
@@ -5159,7 +5159,7 @@ def Stacking():
       
       if __name__ == "__main__":
           Stacking()
-      
+
   except Exception as e:
       print(f"An error occurred: {e}")
       print("Returning to the Main Menue...")
