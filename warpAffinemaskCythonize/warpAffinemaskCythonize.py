@@ -4971,203 +4971,108 @@ def WcsOvrlay():
 
   return sysargv1
   menue()
-
+      
 def Stacking():
+                  
+               def AlignImgsByDir():
+                   class AlignImagesForm(QWidget):
+                       def __init__(self):
+                           super().__init__()
+                           self.setWindowTitle("Batch Align Images (glob mode)")
+                           self.resize(500, 150)
 
-  try:
-              
-      # For astrometric stacking, we import reproject here when needed.
-      # The import is placed inside the astrometric block.
-      
-      def compute_roundness_ratio(data, x0, y0, size=11):
-          # ... your existing docstring ...
-          x0, y0 = int(round(x0)), int(round(y0))
-          half = size // 2
-          ny, nx = data.shape
-          y_min = max(0, y0 - half)
-          y_max = min(ny, y0 + half + 1)
-          x_min = max(0, x0 - half)
-          x_max = min(nx, x0 + half + 1)
-          cutout = data[y_min:y_max, x_min:x_max]
-          y_grid, x_grid = np.indices(cutout.shape)
-          x_centered = x_grid - (cutout.shape[1] - 1) / 2.0
-          y_centered = y_grid - (cutout.shape[0] - 1) / 2.0
-          I = cutout
-          total_intensity = np.sum(I)
-          if total_intensity == 0:
-              return 0
-          mxx = np.sum(I * x_centered**2) / total_intensity
-          myy = np.sum(I * y_centered**2) / total_intensity
-          mxy = np.sum(I * x_centered * y_centered) / total_intensity
-          T = mxx + myy
-          D = np.sqrt((mxx - myy)**2 + 4 * mxy**2)
-          lambda1 = (T + D) / 2.0
-          lambda2 = (T - D) / 2.0
-          if lambda1 == 0:
-              return 0
-          return np.sqrt(lambda2 / lambda1)
-      
-      def Stacking():
-          try:
-              # 1) Interactive inputs
-              directory = input("Enter the directory containing the FITS files (enter for current directory): ").strip() or "."
-              pattern   = input("Enter FITS file glob pattern (default: *.fits): ").strip() or "*.fits"
-              method    = input("Enter stacking method [average, weighted, astrometric]: ").strip().lower()
-              if method not in ["average", "weighted", "astrometric"]:
-                  print("Invalid method; defaulting to 'average'")
-                  method = "average"
-              weighted_astrometric = False
-              if method == "astrometric":
-                  wa = input("Use weighted astrometric stacking? (Y/N): ").strip().lower()
-                  if wa and wa[0] == "y":
-                      weighted_astrometric = True
-              try:
-                  roundness_threshold = float(input("Enter roundness threshold (default 0.5): ").strip() or "0.5")
-              except ValueError:
-                  print("Invalid threshold; defaulting to 0.5")
-                  roundness_threshold = 0.5
-      
-              # 2) Find FITS
-              search_pattern = os.path.join(directory, pattern)
-              fits_files = glob.glob(search_pattern)
-              if not fits_files:
-                  raise ValueError(f"No FITS files found matching {search_pattern}")
-              print(f"\nFound {len(fits_files)} file(s) in {directory}\n")
-      
-              # 3) Build lists
-              valid_data_list = []   # Accepted image arrays
-              std_list        = []   # background sigma per frame
-              headers_list    = []   # header for each frame
-              rejected_files  = []
-      
-              for file in fits_files:
-                  try:
-                      with fits.open(file) as hdul:
-                          data   = hdul[0].data.astype(np.float64)
-                          header = hdul[0].header
-                  except Exception as e:
-                      reason = f"Error reading: {e}"
-                      print(f"{file}: {reason}")
-                      rejected_files.append((file, reason))
-                      continue
-      
-                  # background & star detect
-                  mean, median, std = sigma_clipped_stats(data, sigma=3.0)
-                  daofind = DAOStarFinder(fwhm=3.0, threshold=5.0 * std)
-                  sources = daofind(data - median)
-                  if sources is None or len(sources) == 0:
-                      reason = "No stars detected"
-                      print(f"{file}: {reason}")
-                      rejected_files.append((file, reason))
-                      continue
-      
-                  # roundness
-                  star = sources[np.argmax(sources['peak'])]
-                  r_ratio = compute_roundness_ratio(data, star['xcentroid'], star['ycentroid'])
-                  print(f"{file}: roundness = {r_ratio:.3f}")
-                  if r_ratio < roundness_threshold:
-                      reason = f"Roundness {r_ratio:.3f} < threshold {roundness_threshold}"
-                      print(f"{file}: {reason}")
-                      rejected_files.append((file, reason))
-                      continue
-      
-                  # accept
-                  valid_data_list.append(data)
-                  std_list.append(std)
-                  headers_list.append(header)
-      
-              # report rejects
-              if rejected_files:
-                  print("\nRejected files:")
-                  for fn, reason in rejected_files:
-                      print(f"  {os.path.basename(fn)}: {reason}")
-              else:
-                  print("No files were rejected.")
-      
-              if not valid_data_list:
-                  raise ValueError("No valid images after filtering.")
-      
-              # 4) Uniform shape (crop if needed)
-              shapes = [img.shape for img in valid_data_list]
-              if len(set(shapes)) > 1:
-                  print("⚠️  Inhomogeneous shapes:", set(shapes))
-                  min_shape = np.min(np.stack(shapes), axis=0)
-                  print("  Cropping to:", tuple(min_shape))
-                  def crop_center(arr, new_shape):
-                      y, x = arr.shape; ny, nx = new_shape
-                      cy, cx = y//2, x//2; hy, hx = ny//2, nx//2
-                      return arr[cy-hy:cy-hy+ny, cx-hx:cx-hx+nx]
-                  valid_data_list = [crop_center(img, min_shape) for img in valid_data_list]
-      
-              # 5) Compute SNR weights
-              snr_list = [
-                  (np.median(img) / sigma) if sigma > 0 else 0
-                  for img, sigma in zip(valid_data_list, std_list)
-              ]
-              snr_weights = np.array(snr_list)         # linear SNR
-              # snr_weights = np.array(snr_list)**2    # or SNR^2
-      
-              # 6) Alignment for average/weighted
-              if method in ["average", "weighted"]:
-                  from reproject import reproject_interp
-                  ref_hdr  = headers_list[0]
-                  ref_shape = valid_data_list[0].shape
-                  aligned = []
-                  for data, hdr in zip(valid_data_list, headers_list):
-                      reproj, _ = reproject_interp((data, hdr), ref_hdr, shape_out=ref_shape)
-                      aligned.append(reproj)
-                  valid_data_list = aligned
-      
-              # 7) Final stacking
-              data_stack = np.array(valid_data_list)  # shape (N, H, W)
-              if method == "average":
-                  stacked_image = data_stack.mean(axis=0)
-                  stacking_info = "Unweighted average stacking."
-              elif method == "weighted":
-                  weighted_sum  = np.tensordot(snr_weights, data_stack, axes=([0],[0]))
-                  stacked_image = weighted_sum / snr_weights.sum()
-                  stacking_info = "SNR-weighted stacking."
-              else:  # astrometric
-                  from reproject import reproject_interp
-                  ref_hdr = headers_list[0]; ref_shape = valid_data_list[0].shape
-                  reproj_imgs = []
-                  for data, hdr in zip(valid_data_list, headers_list):
-                      rimg, _ = reproject_interp((data, hdr), ref_hdr, shape_out=ref_shape)
-                      reproj_imgs.append(rimg)
-                  arr = np.array(reproj_imgs)
-                  if weighted_astrometric:
-                      w = np.array(snr_weights)
-                      ws = np.tensordot(w, arr, axes=([0],[0]))
-                      stacked_image = ws / w.sum()
-                      stacking_info = "Weighted astrometric stacking."
-                  else:
-                      stacked_image = arr.mean(axis=0)
-                      stacking_info = "Astrometric stacking (average)."
-                  headers_list[0] = ref_hdr
-      
-              # 8) Save
-              out_hdr = headers_list[0]
-              out_hdr.add_history(f"Stacked {len(valid_data_list)} frames via '{method}'")
-              out_hdr.add_history(stacking_info)
-              fits.writeto("stacked.fits", stacked_image, out_hdr, overwrite=True)
-              print(f"\nDone → stacked.fits ({stacking_info})")
-      
-          except Exception as e:
-              print(f"An error occurred: {e}")
-              print("Returning to the Main Menu...")
-              return
-      
-      if __name__ == "__main__":
-          Stacking()
+                           # Input directory chooser
+                           self.in_dir_le = QLineEdit()
+                           btn_in_dir = QPushButton("Browse Input Dir…")
+                           btn_in_dir.clicked.connect(self._browse_input_dir)
+                           h1 = QHBoxLayout()
+                           h1.addWidget(QLabel("Input folder:"))
+                           h1.addWidget(self.in_dir_le)
+                           h1.addWidget(btn_in_dir)
 
-  except Exception as e:
-      print(f"An error occurred: {e}")
-      print("Returning to the Main Menue...")
-      return sysargv1
-      menue()
+                           # Output directory chooser
+                           self.out_dir_le = QLineEdit()
+                           btn_out_dir = QPushButton("Browse Output Dir…")
+                           btn_out_dir.clicked.connect(self._browse_output_dir)
+                           h2 = QHBoxLayout()
+                           h2.addWidget(QLabel("Output folder:"))
+                           h2.addWidget(self.out_dir_le)
+                           h2.addWidget(btn_out_dir)
 
-  return sysargv1
-  menue()
+                           # Align button
+                           self.align_button = QPushButton("Align All FITS")
+                           self.align_button.clicked.connect(self._on_align)
+
+                           layout = QVBoxLayout(self)
+                           layout.addLayout(h1)
+                           layout.addLayout(h2)
+                           layout.addWidget(self.align_button, alignment=Qt.AlignmentFlag.AlignRight)
+
+                       def _browse_input_dir(self):
+                           d = QFileDialog.getExistingDirectory(self, "Select input folder with FITS")
+                           if d:
+                               self.in_dir_le.setText(d)
+
+                       def _browse_output_dir(self):
+                           d = QFileDialog.getExistingDirectory(self, "Select output folder")
+                           if d:
+                               self.out_dir_le.setText(d)
+
+                       def _on_align(self):
+                           in_dir  = self.in_dir_le.text().strip()
+                           out_dir = self.out_dir_le.text().strip()
+
+                           if not in_dir or not out_dir:
+                               QMessageBox.warning(self, "Missing", "Please select both folders.")
+                               return
+
+                           # ----- glob all .fits in input dir -----
+                           pattern = os.path.join(in_dir, "*.fit*")
+                           inputs = sorted(glob.glob(pattern))
+                           if not inputs:
+                               QMessageBox.critical(self, "No FIT*", f"No .fit* files found in {in_dir}")
+                               return
+
+                           # ----- auto-generate outputs in out_dir -----
+                           outputs = [
+                               os.path.join(out_dir, "aligned_" + os.path.basename(fn))
+                               for fn in inputs
+                           ]
+                           try:
+                               # load all data+hdr
+                               dw = []
+                               for fn in inputs:
+                                   with fits.open(fn) as hd:
+                                       dw.append((hd[0].data.astype(np.float64), hd[0].header))
+
+                               # compute common WCS & shape
+                               wcs_out, shape_out = find_optimal_celestial_wcs(dw)
+
+                               # reproject & save each
+                               for (data, hdr), outfn in zip(dw, outputs):
+                                   arr, _ = reproject_interp((data, hdr), wcs_out, shape_out=shape_out)
+                                   hdu = fits.PrimaryHDU(arr, header=wcs_out.to_header())
+                                   hdu.writeto(outfn, overwrite=True)
+               
+                               QMessageBox.information(
+                                   self, "Done", f"Aligned {len(inputs)} images to:\n{out_dir}"
+                               )
+                           except Exception as e:
+                               QMessageBox.critical(self, "Error", str(e))
+
+                   app = QApplication(sys.argv)
+                   w = AlignImagesForm()
+                   w.show()
+                   app.exec()
+
+               if __name__ == "__main__":
+                   try:
+                       AlignImgsByDir()
+                   except Exception as e:
+                       print("Fatal error in AlignImgs():", e)
+                       # fall back to main menu, etc.
+                       return sysargv1
+                       menue()
 
 def combinelrgb():
 
@@ -5529,14 +5434,17 @@ def CombBgrAlIm():
 
       def main():
 
-                 sysargv0  = input("Enter wildcard fits image*.fit  -->")
+                 input_dir = input("Enter directory path → ")   # e.g. "C:/data/fits"
+                 file_pat  = input("Enter file pattern   → ").strip()   # e.g. "*.fit" or "*.fits"
            
-                 # List the filenames of your six reprojected FITS images.
+                 # List the filenames of your reprojected FITS images.
                  # It is assumed that each image is on the same canvas and black (0) indicates no data.
            
            
                  # Collect all files with names starting with 'reproj' and ending with '.fits'
-                 filenames = sorted(glob.glob(sysargv0))
+                 #filenames = sorted(glob.glob(sysargv0))
+                 pattern   = os.path.join(input_dir, file_pat)          # e.g. "C:/data/fits/*.fit"
+                 filenames = sorted(glob.glob(pattern))
            
                  print("Files found:", filenames)
            
@@ -6905,8 +6813,8 @@ def AlignImgs():
   menue()
 
 def menue(sysargv1):
-#  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) \n>>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) >>10<< Centroid_Custom_filter(2ax) \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
+#  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) >>10<< Centroid_Custom_filter(2ax) \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
 
   return sysargv1
 
