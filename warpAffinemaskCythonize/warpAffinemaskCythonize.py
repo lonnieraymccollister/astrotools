@@ -1031,50 +1031,44 @@ def splittricolor():
 
       def main():
 
-                 sysargv2a  = input("Enter the Color Image to be split  -->")
-                 sysargv7  = input("Enter 0 for fits or 1 for other file -->")
-                 sysargv2 = sysargv2a.split('.')[0]
-           
-                 if sysargv7 == '0':
-           
-                   # Function to read FITS file and return data
-                   def read_fits(file):
-                       hdul = fits.open(file)
-                       header = hdul[0].header
-                       data = hdul[0].data
-                       hdul.close()
-                       return data, header
-           
-                   # Read the FITS files
-                   file1 = sysargv2a
-           
-                   # Read the image data from the FITS file
-                   image_data, header = read_fits(file1)
-                   image_data = image_data.astype(np.float32)
-            
-                   # Split the color image into its individual channels
-                   #b, g, r = cv2.split(image_data)
-                   b, g, r = image_data[2, :, :], image_data[1, :, :], image_data[0, :, :] 
-           
-           
-                   # Save each channel as a separate file
-                   fits.writeto(f'{sysargv2}channel_0_64bit.fits', b.astype(np.float32), header, overwrite=True)
-                   fits.writeto(f'{sysargv2}channel_1_64bit.fits', g.astype(np.float32), header, overwrite=True)
-                   fits.writeto(f'{sysargv2}channel_2_64bit.fits', r.astype(np.float32), header, overwrite=True)
-           
-                 if sysargv7 == '1':
-           
-                   img = cv2.imread(sysargv2, -1)
-           
-                   # split the Blue, Green and Red color channels
-                   blue,green,red = cv2.split(img)
-                   sysargv2 = "Blue" + sysargv1
-                   cv2.imwrite(sysargv2, blue)
-                   sysargv2 = "Green" + sysargv1
-                   cv2.imwrite(sysargv2, green)
-                   sysargv2 = "Red" + sysargv1
-                   cv2.imwrite(sysargv2, red)
+                 input_dir = input("Directory with FITS to split → ").strip() or "."
+                 pattern   = input("Filename pattern [*.fit] → ").strip() or "*.fit"
 
+                 # Function to read FITS file and return data
+                 def read_fits(file):
+                     hdul = fits.open(file)
+                     header = hdul[0].header
+                     if 'A_ORDER' not in header:
+                         header['A_ORDER'] = (0, 'dummy SIP order - no distortion')
+                         header['B_ORDER'] = (0, 'dummy SIP order - no distortion')
+                     data = hdul[0].data
+                     hdul.close()
+                     return data, header
+         
+                 files = glob.glob(os.path.join(input_dir, pattern))
+                 if not files:
+                     print(f"No FITS found: {input_dir}/{pattern}")
+                     return
+
+                 for fn in files:
+                     with fits.open(fn) as hdul:
+
+
+                         image_data = hdul[0].data
+
+                         # Read the image data from the FITS file
+                         image_data, header = read_fits(fn)
+                         image_data = image_data.astype(np.float32)
+            
+                         # Split the color image into its individual channels
+                         #b, g, r = cv2.split(image_data)
+                         b, g, r = image_data[2, :, :], image_data[1, :, :], image_data[0, :, :]       
+           
+                         # Save each channel as a separate file
+                         fits.writeto(f'{fn}_b.fits', b.astype(np.float32), header, overwrite=True)
+                         fits.writeto(f'{fn}_g.fits', g.astype(np.float32), header, overwrite=True)
+                         fits.writeto(f'{fn}_r.fits', r.astype(np.float32), header, overwrite=True)
+           
       if __name__ == "__main__":
           main()
 
@@ -5651,23 +5645,11 @@ def pixelmath():
                   image_data1 = hdul1[0].data.astype(np.float64)
                   image_data2 = hdul2[0].data.astype(np.float64)
       
-                  # Ensure that the images have the same dimensions.
+                  # Ensure that the images/data have the same dimensions.
                   if image_data1.shape != image_data2.shape:
                       self.statusLabel.setText("Error: Input images do not have the same dimensions!")
-                      hdul1.close()
-                      hdul2.close()
-                      return
-      
-                  # Check if image data is either monochrome (2D array)
-                  # or RGB (a 3D array with 3 channels).
-                  if not ((image_data1.ndim == 2) or (image_data1.ndim == 3 and image_data1.shape[2] == 3)):
+                  if not (image_data1.ndim == image_data2.ndim ):
                       self.statusLabel.setText("Error: Image1 must be either Mono (2D) or Color RGB (3D with 3 channels).")
-                      hdul1.close()
-                      hdul2.close()
-                      return
-      
-                  if not ((image_data2.ndim == 2) or (image_data2.ndim == 3 and image_data2.shape[2] == 3)):
-                      self.statusLabel.setText("Error: Image2 must be either Mono (2D) or Color RGB (3D with 3 channels).")
                       hdul1.close()
                       hdul2.close()
                       return
@@ -6814,7 +6796,7 @@ def AlignImgs():
 
 def menue(sysargv1):
 #  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) >>10<< Centroid_Custom_filter(2ax) \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< Split tricolor \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
 
   return sysargv1
 

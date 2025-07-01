@@ -5645,26 +5645,15 @@ def pixelmath():
                   image_data1 = hdul1[0].data.astype(np.float64)
                   image_data2 = hdul2[0].data.astype(np.float64)
       
-                  # Ensure that the images have the same dimensions.
+                  # Ensure that the images/data have the same dimensions.
                   if image_data1.shape != image_data2.shape:
                       self.statusLabel.setText("Error: Input images do not have the same dimensions!")
-                      hdul1.close()
-                      hdul2.close()
-                      return
-      
-                  # Check if image data is either monochrome (2D array)
-                  # or RGB (a 3D array with 3 channels).
-                  if not ((image_data1.ndim == 2) or (image_data1.ndim == 3 and image_data1.shape[2] == 3)):
+                  if not (image_data1.ndim == image_data2.ndim ):
                       self.statusLabel.setText("Error: Image1 must be either Mono (2D) or Color RGB (3D with 3 channels).")
                       hdul1.close()
                       hdul2.close()
                       return
       
-                  if not ((image_data2.ndim == 2) or (image_data2.ndim == 3 and image_data2.shape[2] == 3)):
-                      self.statusLabel.setText("Error: Image2 must be either Mono (2D) or Color RGB (3D with 3 channels).")
-                      hdul1.close()
-                      hdul2.close()
-                      return
       
                   # Apply contrast scaling independently.
                   im1 = image_data1 * inputs["img1_scale"]
