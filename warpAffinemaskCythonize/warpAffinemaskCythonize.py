@@ -646,7 +646,7 @@ def resize():
                  sysargv2  = input("Enter the scale(num)(1,2,3, or 4)(***Cubic only picels, gry and (x=y)***)  -->")
                  sysargv2a = input("Enter the scale(denom)(1,2,3, or 4)   -->")
                  sysargv3  = input("Enter the filename of the resized image to be saved(16bit uses .tif/.fit)  -->")    
-                 sysargv7  = input("Enter 0 for fits cubic gry float64, 1 for fits LANCZOS4(32bit) or 2 for other file -->")
+                 sysargv7  = input("Enter 0 for fits cubic gry float64, 1 for fits LANCZOS4((Note cv2->RGB<-)32bit) or 2 for other file -->")
            
                  if sysargv7 == '0':
                    # Open the FITS file
