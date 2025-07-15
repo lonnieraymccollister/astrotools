@@ -5071,101 +5071,122 @@ def Stacking():
 def combinelrgb():
 
   try:
-
-      def main():
-
-                 sysargv0  = input("Enter the Lum image to be combined  -->")
-                 sysargv1  = input("Enter the Blue image to be combined  -->")
-                 sysargv2  = input("Enter the Green image to be combined  -->")
-                 sysargv3  = input("Enter the Red image to be combined  -->")
-                 sysargv4  = input("Enter the RGB file to be created  -->")
-            
-                 with fits.open(sysargv1) as old_hdul:
-                   # Access the header of the primary HDU
-                   old_header = old_hdul[0].header
-                   old_data = old_hdul[0].data
                
-                 # Function to read FITS file and return data
-                 def read_fits(file):
-                   with fits.open(file, mode='update') as hdul:#
-                     data = hdul[0].data
-                     # hdul.close()
-                   return data
-           
-                 # Read the FITS files
-                 file0 = sysargv0
-                 file1 = sysargv1
-                 file2 = sysargv2
-                 file3 = sysargv3
-           
-                 # Read the image data from the FITS file
-                 lum = read_fits(file0)
-                 blue = read_fits(file1)
-                 green = read_fits(file2)
-                 red = read_fits(file3)
-           
-                 lum = blue.astype(np.float64)
-                 blue = blue.astype(np.float64)
-                 green = green.astype(np.float64)
-                 red = red.astype(np.float64)
-           
-                 # Check dimensions
-                 print("Data0 shape:", lum.shape)
-                 print("Data1 shape:", blue.shape)
-                 print("Data2 shape:", green.shape)
-                 print("Data3 shape:", red.shape)
-           
-                 #newRGBImage = cv2.merge((red,green,blue))
-                 RGB_Image1 = np.stack((red,green,blue))
-           
-                 # Remove the extra dimension
-                 RGB_Image = np.squeeze(RGB_Image1)
-           
-                 # Normalize the data for RGB scaling (0 to 1)
-                 def normalize(data):
-                     return (data - np.min(data)) / (np.max(data) - np.min(data))
-           
-                 luminance = normalize(lum)
-                 red = normalize(red)
-                 green = normalize(green)
-                 blue = normalize(blue)
-           
-                 # Combine the channels into an RGB array while maintaining float64 precision
-                 rgb_array = np.zeros((luminance.shape[0], luminance.shape[1], 3), dtype=np.float64)
-                 rgb_array[ :, :, 2] = red * luminance  # R channel with luminance
-                 rgb_array[ :, :, 1] = green * luminance  # G channel with luminance
-                 rgb_array[ :, :, 0] = blue * luminance  # B channel with luminance
-           
-                 # Create a FITS header with NAXIS = 3
-                 header = old_header
-                 header['NAXIS'] = 3
-                 header['NAXIS1'] = RGB_Image.shape[2]
-                 header['NAXIS2'] = RGB_Image.shape[1]
-                 header['NAXIS3'] = RGB_Image.shape[0]
-                 header['FILTER'] = 'Luminance+Red+Green+Blue' 
-           
-                 # Ensure the data type is correct 
-                 newRGB_Image = RGB_Image.astype(np.float64)
-           
-                 print("newRGB_Image shape:", newRGB_Image.shape)
-           
-                 fits.writeto( sysargv4, newRGB_Image, overwrite=True)
-                 # Save the RGB image as a new FITS file with the correct header
-                 hdu = fits.PrimaryHDU(data=newRGB_Image, header=header)
-                 hdu.writeto(sysargv4, overwrite=True)
-           
-                 # Function to read and verify the saved FITS file
-                 def verify_fits(sysargv4):
-                   with fits.open(sysargv4) as hdul:
-                     data = hdul[0].data
-                   return data
-           
-                 # Verify the saved RGB image
-                 verified_image = verify_fits(sysargv4)
-                 print("Verified image shape:", verified_image.shape)
+      class FitsCombiner(QWidget):
+          def __init__(self):
+              super().__init__()
+              self.setWindowTitle("FITS LRGB Combine")
+              self._build_ui()
+
+          def _build_ui(self):
+              layout = QVBoxLayout()
+
+              # Create rows for the 4 inputs + 1 output
+              self.paths = {}
+              for label_text, key, mode in [
+                  ("Luminance FITS:", "lum", "open"),
+                  ("Blue FITS:     ", "blue", "open"),
+                  ("Green FITS:    ", "green", "open"),
+                  ("Red FITS:      ", "red", "open"),
+                  ("Save As:       ", "output", "save"),
+              ]:
+                  row = QHBoxLayout()
+                  lbl = QLabel(label_text)
+                  edit = QLineEdit()
+                  btn = QPushButton("Browse…")
+                  btn.clicked.connect(lambda _, k=key, m=mode: self._browse(k, m))
+                  row.addWidget(lbl)
+                  row.addWidget(edit, stretch=1)
+                  row.addWidget(btn)
+                  layout.addLayout(row)
+                  self.paths[key] = edit
+
+              # Combine button
+              combine_btn = QPushButton("Combine")
+              combine_btn.clicked.connect(self.combine_fits)
+              combine_btn.setFixedHeight(40)
+              layout.addWidget(combine_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+              self.setLayout(layout)
+              self.resize(600, 250)
+
+          def _browse(self, key, mode):
+              """Open file dialog to select input or output path."""
+              if mode == "open":
+                  path, _ = QFileDialog.getOpenFileName(
+                      self, f"Select {key} file", "", "FITS Files (*.fits *.fit)"
+                  )
+              else:
+                  path, _ = QFileDialog.getSaveFileName(
+                      self, f"Save combined as…", "", "FITS Files (*.fits *.fit)"
+                  )
+              if path:
+                  self.paths[key].setText(path)
+
+          def combine_fits(self):
+              try:
+                  # Read file paths from UI
+                  lum_file    = self.paths["lum"].text().strip()
+                  blue_file   = self.paths["blue"].text().strip()
+                  green_file  = self.paths["green"].text().strip()
+                  red_file    = self.paths["red"].text().strip()
+                  output_file = self.paths["output"].text().strip()
+
+                  # Validate
+                  for key, p in [("Luminance", lum_file), ("Blue", blue_file),
+                                 ("Green", green_file), ("Red", red_file),
+                                 ("Output", output_file)]:
+                      if not p:
+                          raise ValueError(f"{key} path is empty.")
+
+                  # Helper to read FITS data
+                  def read_fits(path):
+                      with fits.open(path) as hdul:
+                          return hdul[0].data.astype(np.float64), hdul[0].header
+
+                  # Load images
+                  lum, header = read_fits(lum_file)
+                  blue, _     = read_fits(blue_file)
+                  green, _    = read_fits(green_file)
+                  red, _      = read_fits(red_file)
+
+                  # Normalize function
+                  def normalize(arr):
+                      return (arr - arr.min()) / (arr.max() - arr.min())
+
+                  lum   = normalize(lum)
+                  blue  = normalize(blue)
+                  green = normalize(green)
+                  red   = normalize(red)
+
+                  # Build RGB cube (z=3, y, x)
+                  rgb_cube = np.zeros((3, lum.shape[0], lum.shape[1]), dtype=np.float64)
+                  rgb_cube[0] = red   * lum  # Red plane
+                  rgb_cube[1] = green * lum  # Green plane
+                  rgb_cube[2] = blue  * lum  # Blue plane
+
+                  # Update header for 3D cube
+                  header['NAXIS']  = 3
+                  header['NAXIS1'] = lum.shape[1]
+                  header['NAXIS2'] = lum.shape[0]
+                  header['NAXIS3'] = 3
+                  header['FILTER'] = 'L+R+G+B'
+
+                  # Write out
+                  hdu = fits.PrimaryHDU(data=rgb_cube, header=header)
+                  hdu.writeto(output_file, overwrite=True)
+
+                  QMessageBox.information(self, "Done", f"Combined saved to:\n{output_file}")
+
+              except Exception as e:
+                  QMessageBox.critical(self, "Error", str(e))
+
 
       if __name__ == "__main__":
-          main()
+          app = QApplication(sys.argv)
+          win = FitsCombiner()
+          win.show()
+          sys.exit(app.exec())
            
   except Exception as e:
       print(f"An error occurred: {e}")
