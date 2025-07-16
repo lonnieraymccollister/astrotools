@@ -4433,7 +4433,7 @@ def autostr():
         """
         # Compute shadow and highlight thresholds from percentiles.
         low = np.percentile(data, lower_percent)
-        high = np.percentile(data, upper_percent)
+        high = np.percentile(data, upper_percent, method='higher')
     
         # Compute the median (midtone) of the image.
         med = np.percentile(data, 50)
@@ -4467,7 +4467,7 @@ def autostr():
                  sysargv3  = input("Enter file name of image to auto_str  -->")
                  sysargv4  = input("Enter file name of output image -->")
                  lower_percent  = 0.5
-                 upper_percent  = 99.5
+                 upper_percent  = 99.999
            
                  with fits.open(sysargv3) as hdul:
                      hdu = hdul[0]
@@ -4915,47 +4915,117 @@ def LocAdapt():
 def WcsOvrlay():
 
   try:
+            
+      class FitsWcsPlotter(QWidget):
+          def __init__(self):
+              super().__init__()
+              self.setWindowTitle("FITS WCS RGB Plotter")
+              self._build_ui()
 
-      def main():
+          def _build_ui(self):
+              layout = QVBoxLayout()
 
-                 sysargv2  = input("Enter fits wcs file name  -->")
-                 sysargv3  = input("Enter Title of plot -->")
-           
-                 # Load the color FITS file
-                 fits_path = sysargv2
-                 hdul = fits.open(fits_path)
-           
-                 # Assuming the color FITS file has three axes for R, G, and B channels in a single HDU
-                 image_data = hdul[0].data
-                 wcs = WCS(hdul[0].header, naxis=2)
-           
-                 # Extract the R, G, and B channels
-                 red_data = image_data[0]
-                 green_data = image_data[1]
-                 blue_data = image_data[2]
-           
-                 # Normalize the data to the range [0, 1]
-                 red_data = red_data / np.max(red_data)
-                 green_data = green_data / np.max(green_data)
-                 blue_data = blue_data / np.max(blue_data)
-           
-                 # Create an RGB image
-                 rgb_image = np.stack((red_data, green_data, blue_data), axis=-1)
-           
-                 # Create a plot with world coordinates
-                 plt.figure(figsize=(10, 10))
-                 ax = plt.subplot(projection=wcs)
-                 ax.imshow(rgb_image, origin='lower')
-                 ax.set_xlabel('Right Ascension')
-                 ax.set_ylabel('Declination')
-                 ax.coords.grid(True, color='white', ls='dotted')
-                 plt.title( sysargv3 )  # Add the title here
-                 # Display the plot
-                 plt.show()
+              # Row 1: FITS input
+              row1 = QHBoxLayout()
+              lbl1 = QLabel("FITS WCS File:")
+              self.fits_edit = QLineEdit()
+              btn1 = QPushButton("Browse…")
+              btn1.clicked.connect(self._browse_fits)
+              row1.addWidget(lbl1)
+              row1.addWidget(self.fits_edit, stretch=1)
+              row1.addWidget(btn1)
+              layout.addLayout(row1)
+
+              # Row 2: Plot title
+              row2 = QHBoxLayout()
+              lbl2 = QLabel("Plot Title:")
+              self.title_edit = QLineEdit()
+              row2.addWidget(lbl2)
+              row2.addWidget(self.title_edit, stretch=1)
+              layout.addLayout(row2)
+
+              # Row 3: Output filename
+              row3 = QHBoxLayout()
+              lbl3 = QLabel("Save Plot As:")
+              self.out_edit = QLineEdit()
+              btn3 = QPushButton("Browse…")
+              btn3.clicked.connect(self._browse_output)
+              row3.addWidget(lbl3)
+              row3.addWidget(self.out_edit, stretch=1)
+              row3.addWidget(btn3)
+              layout.addLayout(row3)
+
+              # Plot button
+              plot_btn = QPushButton("Plot & Save")
+              plot_btn.clicked.connect(self._plot_and_save)
+              plot_btn.setFixedHeight(36)
+              layout.addWidget(plot_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+              self.setLayout(layout)
+              self.resize(600, 180)
+
+          def _browse_fits(self):
+              path, _ = QFileDialog.getOpenFileName(
+                  self, "Select FITS WCS File", "", "FITS Files (*.fits *.fit)"
+              )
+              if path:
+                  self.fits_edit.setText(path)
+
+          def _browse_output(self):
+              path, _ = QFileDialog.getSaveFileName(
+                  self, "Save Plot As…", "", "PNG Image (*.png);;JPEG Image (*.jpg)"
+              )
+              if path:
+                  self.out_edit.setText(path)
+
+          def _plot_and_save(self):
+              try:
+                  fits_path = self.fits_edit.text().strip()
+                  title     = self.title_edit.text().strip()
+                  out_path  = self.out_edit.text().strip()
+
+                  if not fits_path:
+                      raise ValueError("Please select a FITS WCS file.")
+                  if not title:
+                      raise ValueError("Please enter a plot title.")
+                  if not out_path:
+                      raise ValueError("Please choose an output filename.")
+
+                  # Load FITS and WCS
+                  hdul = fits.open(fits_path)
+                  data = hdul[0].data
+                  wcs  = WCS(hdul[0].header, naxis=2)
+
+                  # Extract RGB channels
+                  red   = data[0] / np.max(data[0])
+                  green = data[1] / np.max(data[1])
+                  blue  = data[2] / np.max(data[2])
+                  rgb   = np.stack((red, green, blue), axis=-1)
+
+                  # Plot with world coordinates
+                  plt.figure(figsize=(8, 8))
+                  ax = plt.subplot(projection=wcs)
+                  ax.imshow(rgb, origin='lower')
+                  ax.set_xlabel("Right Ascension")
+                  ax.set_ylabel("Declination")
+                  ax.coords.grid(True, color="white", ls="dotted")
+                  plt.title(title)
+
+                  # Save then show
+                  plt.savefig(out_path, dpi=150, bbox_inches="tight")
+                  plt.show()
+
+                  QMessageBox.information(self, "Success", f"Plot saved to:\n{out_path}")
+
+              except Exception as e:
+                  QMessageBox.critical(self, "Error", str(e))
+
 
       if __name__ == "__main__":
-          main()
-
+          app = QApplication(sys.argv)
+          window = FitsWcsPlotter()
+          window.show()
+          sys.exit(app.exec())
 
   except Exception as e:
       print(f"An error occurred: {e}")

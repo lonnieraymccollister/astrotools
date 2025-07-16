@@ -4433,7 +4433,7 @@ def autostr():
         """
         # Compute shadow and highlight thresholds from percentiles.
         low = np.percentile(data, lower_percent)
-        high = np.percentile(data, upper_percent)
+        high = np.percentile(data, upper_percent, method='higher')
     
         # Compute the median (midtone) of the image.
         med = np.percentile(data, 50)
@@ -4467,7 +4467,7 @@ def autostr():
                  sysargv3  = input("Enter file name of image to auto_str  -->")
                  sysargv4  = input("Enter file name of output image -->")
                  lower_percent  = 0.5
-                 upper_percent  = 99.5
+                 upper_percent  = 99.999
            
                  with fits.open(sysargv3) as hdul:
                      hdu = hdul[0]
@@ -4916,157 +4916,121 @@ def WcsOvrlay():
 
   try:
 
-      def main():
+      class FitsWcsPlotter(QWidget):
+          def __init__(self):
+              super().__init__()
+              self.setWindowTitle("FITS WCS RGB Plotter")
+              self._build_ui()
 
-                 sysargv2  = input("Enter fits wcs file name  -->")
-                 sysargv3  = input("Enter Title of plot -->")
-           
-                 # Load the color FITS file
-                 fits_path = sysargv2
-                 hdul = fits.open(fits_path)
-           
-                 # Assuming the color FITS file has three axes for R, G, and B channels in a single HDU
-                 image_data = hdul[0].data
-                 wcs = WCS(hdul[0].header, naxis=2)
-           
-                 # Extract the R, G, and B channels
-                 red_data = image_data[0]
-                 green_data = image_data[1]
-                 blue_data = image_data[2]
-           
-                 # Normalize the data to the range [0, 1]
-                 red_data = red_data / np.max(red_data)
-                 green_data = green_data / np.max(green_data)
-                 blue_data = blue_data / np.max(blue_data)
-           
-                 # Create an RGB image
-                 rgb_image = np.stack((red_data, green_data, blue_data), axis=-1)
-           
-                 # Create a plot with world coordinates
-                 plt.figure(figsize=(10, 10))
-                 ax = plt.subplot(projection=wcs)
-                 ax.imshow(rgb_image, origin='lower')
-                 ax.set_xlabel('Right Ascension')
-                 ax.set_ylabel('Declination')
-                 ax.coords.grid(True, color='white', ls='dotted')
-                 plt.title( sysargv3 )  # Add the title here
-                 # Display the plot
-                 plt.show()
+          def _build_ui(self):
+              layout = QVBoxLayout()
+
+              # Row 1: FITS input
+              row1 = QHBoxLayout()
+              lbl1 = QLabel("FITS WCS File:")
+              self.fits_edit = QLineEdit()
+              btn1 = QPushButton("Browse…")
+              btn1.clicked.connect(self._browse_fits)
+              row1.addWidget(lbl1)
+              row1.addWidget(self.fits_edit, stretch=1)
+              row1.addWidget(btn1)
+              layout.addLayout(row1)
+
+              # Row 2: Plot title
+              row2 = QHBoxLayout()
+              lbl2 = QLabel("Plot Title:")
+              self.title_edit = QLineEdit()
+              row2.addWidget(lbl2)
+              row2.addWidget(self.title_edit, stretch=1)
+              layout.addLayout(row2)
+
+              # Row 3: Output filename
+              row3 = QHBoxLayout()
+              lbl3 = QLabel("Save Plot As:")
+              self.out_edit = QLineEdit()
+              btn3 = QPushButton("Browse…")
+              btn3.clicked.connect(self._browse_output)
+              row3.addWidget(lbl3)
+              row3.addWidget(self.out_edit, stretch=1)
+              row3.addWidget(btn3)
+              layout.addLayout(row3)
+
+              # Plot button
+              plot_btn = QPushButton("Plot & Save")
+              plot_btn.clicked.connect(self._plot_and_save)
+              plot_btn.setFixedHeight(36)
+              layout.addWidget(plot_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+              self.setLayout(layout)
+              self.resize(600, 180)
+
+          def _browse_fits(self):
+              path, _ = QFileDialog.getOpenFileName(
+                  self, "Select FITS WCS File", "", "FITS Files (*.fits *.fit)"
+              )
+              if path:
+                  self.fits_edit.setText(path)
+
+          def _browse_output(self):
+              path, _ = QFileDialog.getSaveFileName(
+                  self, "Save Plot As…", "", "PNG Image (*.png);;JPEG Image (*.jpg)"
+              )
+              if path:
+                  self.out_edit.setText(path)
+
+          def _plot_and_save(self):
+              try:
+                  fits_path = self.fits_edit.text().strip()
+                  title     = self.title_edit.text().strip()
+                  out_path  = self.out_edit.text().strip()
+
+                  if not fits_path:
+                      raise ValueError("Please select a FITS WCS file.")
+                  if not title:
+                      raise ValueError("Please enter a plot title.")
+                  if not out_path:
+                      raise ValueError("Please choose an output filename.")
+
+                  # Load FITS and WCS
+                  hdul = fits.open(fits_path)
+                  data = hdul[0].data
+                  wcs  = WCS(hdul[0].header, naxis=2)
+
+                  # Extract RGB channels
+                  red   = data[0] / np.max(data[0])
+                  green = data[1] / np.max(data[1])
+                  blue  = data[2] / np.max(data[2])
+                  rgb   = np.stack((red, green, blue), axis=-1)
+
+                  # Plot with world coordinates
+                  plt.figure(figsize=(8, 8))
+                  ax = plt.subplot(projection=wcs)
+                  ax.imshow(rgb, origin='lower')
+                  ax.set_xlabel("Right Ascension")
+                  ax.set_ylabel("Declination")
+                  ax.coords.grid(True, color="white", ls="dotted")
+                  plt.title(title)
+
+                  # Save then show
+                  plt.savefig(out_path, dpi=150, bbox_inches="tight")
+                  plt.show()
+
+                  QMessageBox.information(self, "Success", f"Plot saved to:\n{out_path}")
+
+              except Exception as e:
+                  QMessageBox.critical(self, "Error", str(e))
 
       if __name__ == "__main__":
-          main()
-
+          app = QApplication(sys.argv)
+          window = FitsWcsPlotter()
+          window.show()
+          sys.exit(app.exec())
 
   except Exception as e:
       print(f"An error occurred: {e}")
       print("Returning to the Main Menue...")
       return sysargv1
       menue()
-
-  return sysargv1
-  menue()
-      
-def Stacking():
-                  
-               def AlignImgsByDir():
-                   class AlignImagesForm(QWidget):
-                       def __init__(self):
-                           super().__init__()
-                           self.setWindowTitle("Batch Align Images (glob mode)")
-                           self.resize(500, 150)
-
-                           # Input directory chooser
-                           self.in_dir_le = QLineEdit()
-                           btn_in_dir = QPushButton("Browse Input Dir…")
-                           btn_in_dir.clicked.connect(self._browse_input_dir)
-                           h1 = QHBoxLayout()
-                           h1.addWidget(QLabel("Input folder:"))
-                           h1.addWidget(self.in_dir_le)
-                           h1.addWidget(btn_in_dir)
-
-                           # Output directory chooser
-                           self.out_dir_le = QLineEdit()
-                           btn_out_dir = QPushButton("Browse Output Dir…")
-                           btn_out_dir.clicked.connect(self._browse_output_dir)
-                           h2 = QHBoxLayout()
-                           h2.addWidget(QLabel("Output folder:"))
-                           h2.addWidget(self.out_dir_le)
-                           h2.addWidget(btn_out_dir)
-
-                           # Align button
-                           self.align_button = QPushButton("Align All FITS")
-                           self.align_button.clicked.connect(self._on_align)
-
-                           layout = QVBoxLayout(self)
-                           layout.addLayout(h1)
-                           layout.addLayout(h2)
-                           layout.addWidget(self.align_button, alignment=Qt.AlignmentFlag.AlignRight)
-
-                       def _browse_input_dir(self):
-                           d = QFileDialog.getExistingDirectory(self, "Select input folder with FITS")
-                           if d:
-                               self.in_dir_le.setText(d)
-
-                       def _browse_output_dir(self):
-                           d = QFileDialog.getExistingDirectory(self, "Select output folder")
-                           if d:
-                               self.out_dir_le.setText(d)
-
-                       def _on_align(self):
-                           in_dir  = self.in_dir_le.text().strip()
-                           out_dir = self.out_dir_le.text().strip()
-
-                           if not in_dir or not out_dir:
-                               QMessageBox.warning(self, "Missing", "Please select both folders.")
-                               return
-
-                           # ----- glob all .fits in input dir -----
-                           pattern = os.path.join(in_dir, "*.fit*")
-                           inputs = sorted(glob.glob(pattern))
-                           if not inputs:
-                               QMessageBox.critical(self, "No FIT*", f"No .fit* files found in {in_dir}")
-                               return
-
-                           # ----- auto-generate outputs in out_dir -----
-                           outputs = [
-                               os.path.join(out_dir, "aligned_" + os.path.basename(fn))
-                               for fn in inputs
-                           ]
-                           try:
-                               # load all data+hdr
-                               dw = []
-                               for fn in inputs:
-                                   with fits.open(fn) as hd:
-                                       dw.append((hd[0].data.astype(np.float64), hd[0].header))
-
-                               # compute common WCS & shape
-                               wcs_out, shape_out = find_optimal_celestial_wcs(dw)
-
-                               # reproject & save each
-                               for (data, hdr), outfn in zip(dw, outputs):
-                                   arr, _ = reproject_interp((data, hdr), wcs_out, shape_out=shape_out)
-                                   hdu = fits.PrimaryHDU(arr, header=wcs_out.to_header())
-                                   hdu.writeto(outfn, overwrite=True)
-               
-                               QMessageBox.information(
-                                   self, "Done", f"Aligned {len(inputs)} images to:\n{out_dir}"
-                               )
-                           except Exception as e:
-                               QMessageBox.critical(self, "Error", str(e))
-
-                   app = QApplication(sys.argv)
-                   w = AlignImagesForm()
-                   w.show()
-                   app.exec()
-
-               if __name__ == "__main__":
-                   try:
-                       AlignImgsByDir()
-                   except Exception as e:
-                       print("Fatal error in AlignImgs():", e)
-                       # fall back to main menu, etc.
-                       return sysargv1
-                       menue()
 
 def combinelrgb():
 
