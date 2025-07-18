@@ -5032,6 +5032,108 @@ def WcsOvrlay():
       return sysargv1
       menue()
 
+def Stacking():
+                  
+               def AlignImgsByDir():
+                   class AlignImagesForm(QWidget):
+                       def __init__(self):
+                           super().__init__()
+                           self.setWindowTitle("Batch Align Images (glob mode)")
+                           self.resize(500, 150)
+
+                           # Input directory chooser
+                           self.in_dir_le = QLineEdit()
+                           btn_in_dir = QPushButton("Browse Input Dir…")
+                           btn_in_dir.clicked.connect(self._browse_input_dir)
+                           h1 = QHBoxLayout()
+                           h1.addWidget(QLabel("Input folder:"))
+                           h1.addWidget(self.in_dir_le)
+                           h1.addWidget(btn_in_dir)
+
+                           # Output directory chooser
+                           self.out_dir_le = QLineEdit()
+                           btn_out_dir = QPushButton("Browse Output Dir…")
+                           btn_out_dir.clicked.connect(self._browse_output_dir)
+                           h2 = QHBoxLayout()
+                           h2.addWidget(QLabel("Output folder:"))
+                           h2.addWidget(self.out_dir_le)
+                           h2.addWidget(btn_out_dir)
+
+                           # Align button
+                           self.align_button = QPushButton("Align All FITS")
+                           self.align_button.clicked.connect(self._on_align)
+
+                           layout = QVBoxLayout(self)
+                           layout.addLayout(h1)
+                           layout.addLayout(h2)
+                           layout.addWidget(self.align_button, alignment=Qt.AlignmentFlag.AlignRight)
+
+                       def _browse_input_dir(self):
+                           d = QFileDialog.getExistingDirectory(self, "Select input folder with FITS")
+                           if d:
+                               self.in_dir_le.setText(d)
+
+                       def _browse_output_dir(self):
+                           d = QFileDialog.getExistingDirectory(self, "Select output folder")
+                           if d:
+                               self.out_dir_le.setText(d)
+
+                       def _on_align(self):
+                           in_dir  = self.in_dir_le.text().strip()
+                           out_dir = self.out_dir_le.text().strip()
+
+                           if not in_dir or not out_dir:
+                               QMessageBox.warning(self, "Missing", "Please select both folders.")
+                               return
+
+                           # ----- glob all .fits in input dir -----
+                           pattern = os.path.join(in_dir, "*.fit*")
+                           inputs = sorted(glob.glob(pattern))
+                           if not inputs:
+                               QMessageBox.critical(self, "No FIT*", f"No .fit* files found in {in_dir}")
+                               return
+
+                           # ----- auto-generate outputs in out_dir -----
+                           outputs = [
+                               os.path.join(out_dir, "aligned_" + os.path.basename(fn))
+                               for fn in inputs
+                           ]
+                           try:
+                               # load all data+hdr
+                               dw = []
+                               for fn in inputs:
+                                   with fits.open(fn) as hd:
+                                       dw.append((hd[0].data.astype(np.float64), hd[0].header))
+
+                               # compute common WCS & shape
+                               wcs_out, shape_out = find_optimal_celestial_wcs(dw)
+
+                               # reproject & save each
+                               for (data, hdr), outfn in zip(dw, outputs):
+                                   arr, _ = reproject_interp((data, hdr), wcs_out, shape_out=shape_out)
+                                   hdu = fits.PrimaryHDU(arr, header=wcs_out.to_header())
+                                   hdu.writeto(outfn, overwrite=True)
+               
+                               QMessageBox.information(
+                                   self, "Done", f"Aligned {len(inputs)} images to:\n{out_dir}"
+                               )
+                           except Exception as e:
+                               QMessageBox.critical(self, "Error", str(e))
+
+                   app = QApplication(sys.argv)
+                   w = AlignImagesForm()
+                   w.show()
+                   app.exec()
+
+               if __name__ == "__main__":
+                   try:
+                       AlignImgsByDir()
+                   except Exception as e:
+                       print("Fatal error in AlignImgs():", e)
+                       # fall back to main menu, etc.
+                       return sysargv1
+                       menue()
+
 def combinelrgb():
 
   try:
