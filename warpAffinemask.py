@@ -1026,59 +1026,114 @@ def min2images():
 
 def splittricolor():
     
-  try:
-
-      def main():
-
-                 input_dir = input("Directory with FITS to split → ").strip() or "."
-                 pattern   = input("Filename pattern [*.fit] → ").strip() or "*.fit"
-
-                 # Function to read FITS file and return data
-                 def read_fits(file):
-                     hdul = fits.open(file)
-                     header = hdul[0].header
-                     if 'A_ORDER' not in header:
-                         header['A_ORDER'] = (0, 'dummy SIP order - no distortion')
-                         header['B_ORDER'] = (0, 'dummy SIP order - no distortion')
-                     data = hdul[0].data
-                     hdul.close()
-                     return data, header
-         
-                 files = glob.glob(os.path.join(input_dir, pattern))
-                 if not files:
-                     print(f"No FITS found: {input_dir}/{pattern}")
-                     return
-
-                 for fn in files:
-                     with fits.open(fn) as hdul:
-
-
-                         image_data = hdul[0].data
-
-                         # Read the image data from the FITS file
-                         image_data, header = read_fits(fn)
-                         image_data = image_data.astype(np.float32)
-            
-                         # Split the color image into its individual channels
-                         #b, g, r = cv2.split(image_data)
-                         b, g, r = image_data[2, :, :], image_data[1, :, :], image_data[0, :, :]       
-           
-                         # Save each channel as a separate file
-                         fits.writeto(f'{fn}_b.fits', b.astype(np.float32), header, overwrite=True)
-                         fits.writeto(f'{fn}_g.fits', g.astype(np.float32), header, overwrite=True)
-                         fits.writeto(f'{fn}_r.fits', r.astype(np.float32), header, overwrite=True)
-           
-      if __name__ == "__main__":
-          main()
-
-  except Exception as e:
-      print(f"An error occurred: {e}")
-      print("Returning to the Main Menue...")
-      return sysargv1
-      menue()
-
-  return sysargv1
-  menue()
+  def read_fits(file_path):
+      """Read a FITS, add dummy SIP orders if missing, return data & header."""
+      hdul   = fits.open(file_path)
+      header = hdul[0].header
+      # Ensure there are SIP keywords
+      if 'A_ORDER' not in header:
+          header['A_ORDER'] = (0, 'dummy SIP order - no distortion')
+          header['B_ORDER'] = (0, 'dummy SIP order - no distortion')
+      data = hdul[0].data
+      hdul.close()
+      return data, header
+      
+  class FitsSplitter(QWidget):
+      def __init__(self):
+          super().__init__()
+          self.setWindowTitle("FITS Color‐Channel Splitter")
+          self._build_ui()
+      
+      def _build_ui(self):
+          layout = QVBoxLayout()
+  
+          # Row 1: Input Directory
+          row_dir = QHBoxLayout()
+          lbl_dir = QLabel("Input Directory:")
+          self.dir_edit = QLineEdit()
+          btn_dir = QPushButton("Browse…")
+          btn_dir.clicked.connect(self._browse_dir)
+          row_dir.addWidget(lbl_dir)
+          row_dir.addWidget(self.dir_edit, stretch=1)
+          row_dir.addWidget(btn_dir)
+          layout.addLayout(row_dir)
+      
+          # Row 2: Filename Pattern
+          row_pat = QHBoxLayout()
+          lbl_pat = QLabel("Filename Pattern:")
+          self.pat_edit = QLineEdit("*.fit")
+          row_pat.addWidget(lbl_pat)
+          row_pat.addWidget(self.pat_edit, stretch=1)
+          layout.addLayout(row_pat)
+      
+          # Split Button
+          btn_split = QPushButton("Split Channels")
+          btn_split.clicked.connect(self._split_channels)
+          btn_split.setFixedHeight(36)
+          layout.addWidget(btn_split, alignment=Qt.AlignmentFlag.AlignCenter)
+      
+          self.setLayout(layout)
+          self.resize(600, 140)
+      
+      def _browse_dir(self):
+          """Open a dialog to select an existing directory."""
+          path = QFileDialog.getExistingDirectory(
+              self, "Select Input Directory", "", QFileDialog.Option.ShowDirsOnly
+          )
+          if path:
+              self.dir_edit.setText(path)
+  
+      def _split_channels(self):
+          """Find files, split channels, and save into subfolders blue/green/red."""
+          input_dir = self.dir_edit.text().strip() or "."
+          pattern   = self.pat_edit.text().strip() or "*.fit"
+  
+          # Gather matching FITS files
+          files = glob.glob(os.path.join(input_dir, pattern))
+          if not files:
+              QMessageBox.warning(
+                  self, "No Files Found",
+                  f"No FITS files matching:\n{input_dir}\\{pattern}"
+              )
+              return
+   
+         # Create subdirectories
+          for sub in ("blue", "green", "red"):
+              os.makedirs(os.path.join(input_dir, sub), exist_ok=True)
+  
+          # Process each FITS cube
+          for fn in files:
+              data, header = read_fits(fn)
+              data = data.astype(np.float32)
+  
+              # Split RGB planes (assumes shape [3, y, x])
+              b_plane = data[2, ...]
+              g_plane = data[1, ...]
+              r_plane = data[0, ...]
+  
+              base = os.path.splitext(os.path.basename(fn))[0]
+              mapping = [
+                  (b_plane, "b", "blue"),
+                  (g_plane, "g", "green"),
+                  (r_plane, "r", "red"),
+              ]
+  
+              for arr, suffix, folder in mapping:
+                  out_path = os.path.join(
+                      input_dir, folder, f"{base}_{suffix}.fits"
+                  )
+                  fits.writeto(out_path, arr, header, overwrite=True)
+  
+          QMessageBox.information(
+              self, "Done",
+              f"Split {len(files)} file(s) into blue/, green/, red/ subdirs."
+          )
+  
+  if __name__ == "__main__":
+      app = QApplication(sys.argv)
+      splitter = FitsSplitter()
+      splitter.show()
+      sys.exit(app.exec())  
 
 def combinetricolor():
 
@@ -6888,7 +6943,7 @@ def AlignImgs():
 
 def menue(sysargv1):
 #  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< Split tricolor \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< DirSpltAllRgb \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
 
   return sysargv1
 
