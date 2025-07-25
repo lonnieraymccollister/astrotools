@@ -1134,7 +1134,12 @@ def splittricolor():
       app = QApplication(sys.argv)
       splitter = FitsSplitter()
       splitter.show()
-      sys.exit(app.exec())  
+      app.exec() 
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
 
 def combinetricolor():
 
@@ -2072,13 +2077,16 @@ def DynamicRescale16():
                          input_file_name = input("Enter the input FITS file name--> ")
                          fits_file = input_file_name
                          image, header = load_fits(fits_file)
-                         tiles = split_image(image)
+                         tile_size = (600, 600)
+                         output_dir = input("Enter the output_dir name(tiles)--> ")
+                         tiles = split_image(image, tile_size, output_dir)
                          print("Image split into tiles:")
                          for t in tiles:
                              print("  ", t)
                
                      elif sysargv7 == '02':
                          # Processing mode: Collect processing parameters once.
+                         output_dir = input("Enter the output_dir name(tiles)--> ")
                          width_of_square = input("Enter the width of square (e.g., 5): ")
                          bin_value = input("Enter the bin value (e.g., 25): ")
                          gamma_value = float(input("Enter gamma (e.g., 0.3981) for 1 magnitude: "))
@@ -2087,24 +2095,26 @@ def DynamicRescale16():
                          resize_div = int(1)       # corresponds to sysargv2a = 1 in the original code.
                    
                          # Get list of tiles from the "tiles" directory.
-                         tiles = sorted([os.path.join("tiles", f) for f in os.listdir("tiles") if f.endswith(".fits")])
+                         tiles = sorted([os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(".fits")])
                          for tile_file in tiles:
                              process_tile(tile_file, width_of_square, bin_value,
                                           gamma_value, resize_factor, resize_div)
                
                      elif sysargv7 == '03':
                          # Reassemble mode.
+                         output_dir = input("Enter the output_dir name(tiles)--> ")
                          input_file_name = input("Enter the input FITS file name--> ")
                          fits_file = input_file_name
                          image, header = load_fits(fits_file)
                          # Select only those processed tile files.
-                         tiles = sorted([os.path.join("tiles", f) for f in os.listdir("tiles") if f.endswith("_binned_gamma_corrected_drs.fits")])
+                         tiles = sorted([os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith("_binned_gamma_corrected_drs.fits")])
                          final_image = reassemble_image(tiles, image.shape)
-                         fits.writeto("output.fits", final_image, header, overwrite=True)
+                         filename = "output_" + output_dir + ".fits"
+                         fits.writeto(filename, final_image, header, overwrite=True)
                          # Optional: Cleanup processed tile files.
                          for tile_file in tiles:
                              os.remove(tile_file)
-                         print("Processing complete. Final image saved as 'output.fits'.")
+                         print("Processing complete. Final image saved as output_" + output_dir + ".fits "+" .")
                
                      else:
                          print("Invalid option entered.")
@@ -4518,7 +4528,7 @@ def autostr():
         return stretched, low, med, high, gamma
 
       def main():
-
+                        
                  sysargv3  = input("Enter file name of image to auto_str  -->")
                  sysargv4  = input("Enter file name of output image -->")
                  lower_percent  = 0.5
@@ -4552,6 +4562,7 @@ def autostr():
                  hdu_new.writeto(sysargv4, overwrite=True)
                
                  print(f"Stretched FITS image has been saved to: {sysargv4}")
+
            
       if __name__ == "__main__":
           main()
@@ -4564,6 +4575,7 @@ def autostr():
 
   return sysargv1
   menue()
+
 
 def LocAdapt():
 
