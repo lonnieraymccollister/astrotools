@@ -698,7 +698,7 @@ def resize():
            
                    # Normalize the image data to the range [0, 65535]
                    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data)) * 65535
-                   image_data = image_data.astype(np.uint16)
+                   image_data = image_data.astype(np.float32)
            
                    # Convert the image to BGR format (OpenCV uses BGR by default)
                    image_bgr = cv2.cvtColor(image_data, cv2.COLOR_RGB2BGR)
@@ -708,7 +708,7 @@ def resize():
                    # Save or display the result
                    image_rgb = np.transpose(img, (2, 0, 1))
            
-                   image_data = image_rgb.astype(np.float64)
+                   image_data = image_rgb.astype(np.float32)
                    data_range = np.max(image_data) - np.min(image_data)
                    if data_range == 0:
                      normalized_data = np.zeros_like(image_data)  # or handle differently
@@ -6953,9 +6953,84 @@ def AlignImgs():
   return sysargv1
   menue()
 
+def Stacker():
+                        
+  try:
+                           
+      def get_fits_files(input_dir):
+          pattern = os.path.join(input_dir, "*.fits")
+          files = sorted(glob.glob(pattern))
+          if not files:
+              raise FileNotFoundError(f"No FITS files found in {input_dir}")
+          return files
+
+      def reproject_all_to_ref(files):
+          # Use first file as reference
+          ref_hdr = fits.getheader(files[0], ext=0)
+          ref_wcs = WCS(ref_hdr)
+          ny, nx = ref_hdr["NAXIS2"], ref_hdr["NAXIS1"]
+
+          cube = []
+          for fn in files:
+              with fits.open(fn) as hdul:
+                  data = hdul[0].data.astype(np.float64)
+                  wcs_in = WCS(hdul[0].header)
+              reprojected, _ = reproject_interp((data, wcs_in),
+                                                ref_wcs,
+                                                shape_out=(ny, nx))
+              cube.append(reprojected)
+          return np.stack(cube, axis=0), ref_hdr
+
+      def compute_average(cube):
+          # Pixel-wise mean, ignore NaNs
+          return np.nanmean(cube, axis=0)
+
+      def save_as_float32(data64, header, output_file):
+          # Convert to float32 and update header
+          data32 = data64.astype(np.float32)
+          hdr = header.copy()
+          hdr["BITPIX"] = -32
+          hdu = fits.PrimaryHDU(data=data32, header=hdr)
+          hdu.writeto(output_file, overwrite=True)
+          print(f"Saved average-stack as float32 to '{output_file}'")
+
+      def display_image(data, header):
+          plt.figure(figsize=(8, 6))
+          ax = plt.subplot(projection=WCS(header))
+          im = ax.imshow(data, origin="lower", cmap="gray")
+          plt.colorbar(im, ax=ax, orientation="vertical", label="Flux")
+          plt.title("Average-Stacked Image (WCS matched to first FITS)")
+          plt.xlabel("RA")
+          plt.ylabel("Dec")
+          plt.tight_layout()
+          plt.show()
+
+      def main():
+          input_dir = input("Enter the directory containing FITS files --> ").strip()
+          output_file = input("Enter the output FITS filename     --> ").strip()
+
+          files = get_fits_files(input_dir)
+          cube, ref_hdr = reproject_all_to_ref(files)
+          avg_image = compute_average(cube)
+          save_as_float32(avg_image, ref_hdr, output_file)
+          display_image(avg_image, ref_hdr)
+
+      if __name__ == "__main__":
+          main()
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
+
+
 def menue(sysargv1):
 #  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< DirSpltAllRgb \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs  \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< DirSpltAllRgb \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs \n>>56<< Stacker \n>>1313<< Exit --> ")
 
   return sysargv1
 
@@ -7150,6 +7225,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '55':
     AlignImgs()
+
+  if sysargv1 == '56':
+    Stacker()
 
   if sysargv1 == '1313':
     sys.exit()
