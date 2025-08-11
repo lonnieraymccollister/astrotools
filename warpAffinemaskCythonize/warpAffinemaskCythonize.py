@@ -7225,11 +7225,11 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
     Stacker()
 
   if sysargv1 == '57':
-    # main_script.py
-    with open("analyze_fits_roundness_trails.py", "r") as f:
-      code = f.read()
-    exec(code)
-    menue(sysargv1)
+      # read+exec with utf-8
+      with open("analyze_fits_roundness_trails.py", "r", encoding="utf-8") as f:
+          code = f.read()
+      exec(code, globals(), locals())
+      menue(sysargv1)
 
   if sysargv1 == '1313':
     sys.exit()
