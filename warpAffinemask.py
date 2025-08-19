@@ -6810,7 +6810,7 @@ def AlignImgs():
       
               # Dropdown to pick 2–6 images
               self.count_combo = QComboBox()
-              self.count_combo.addItems(["02","03","04","05","06","07","08"])
+              self.count_combo.addItems(["02","03","04","05","06","07","08","09","10","11","12","13"])
               self.count_combo.currentTextChanged.connect(self._update_fields)
       
               # Groups for inputs/outputs
