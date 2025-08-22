@@ -2,7 +2,7 @@
 # import required libraries
 import fnmatch
 from PIL import Image
-import cv2, sys, os, shutil, ffmpeg, tifffile
+import cv2, sys, os, shutil, ffmpeg, tifffile, copy
 import numpy as np
 import matplotlib
 import math
@@ -6794,35 +6794,56 @@ def ImageFilters():
 
 def AlignImgs():
 
-  try:
-                           
+  # tile dimensions – tune to your RAM/I/O balance
+  CHUNK_Y = 1024
+  CHUNK_X = 1024
+  
+  def process_chunk(chunk):
+      """
+      Example per‐chunk routine: simple min-max normalization.
+      Swap this out for bias subtraction, filtering, stats, etc.
+      """
+      # Pre-check for an all-NaN slice and skip or fill it yourself
+      #
+      if np.all(np.isnan(chunk)):
+          mn = 0.0   # e.g. 0 or a user-defined background
+      else:
+          mn = np.nanmin(chunk)
+  
+  
+      mn = np.nanmin(chunk)
+      mx = np.nanmax(chunk)
+      if mx > mn:
+          return (chunk - mn) / (mx - mn)
+      return chunk
+  
+  def AlignImgs():
       class AlignImagesForm(QWidget):
           def __init__(self):
               super().__init__()
               self.setWindowTitle("Align images")
               self.resize(600, 400)
-      
-              # Dropdown to pick 2–6 images
+  
+              # choose how many images (2–13)
               self.count_combo = QComboBox()
-              self.count_combo.addItems(["02","03","04","05","06","07","08","09","10","11","12","13"])
+              self.count_combo.addItems([f"{i:02d}" for i in range(2,14)])
               self.count_combo.currentTextChanged.connect(self._update_fields)
-      
-              # Groups for inputs/outputs
+  
+              # input / output groups + layouts
               self.input_group  = QGroupBox("Reference FITS files")
               self.output_group = QGroupBox("Aligned FITS files")
               self.input_form   = QFormLayout()
               self.output_form  = QFormLayout()
               self.input_group.setLayout(self.input_form)
               self.output_group.setLayout(self.output_form)
-      
-              # ----- KEY CHANGE #1 & #2 -----
-              # Keep parallel lists of labels & container‐widgets
+  
+              # keep parallel lists so we can show/hide rows
               self.in_labels      = []
               self.in_containers  = []
               self.out_labels     = []
               self.out_containers = []
-      
-              for i in range(8):
+  
+              for i in range(13):
                   # build Input row
                   lab_in = QLabel(f"Image {i+1}:")
                   edit_in = QLineEdit()
@@ -6834,7 +6855,7 @@ def AlignImgs():
                   container_in = QWidget()
                   container_in.setLayout(hbox_in)
                   self.input_form.addRow(lab_in, container_in)
-      
+  
                   # build Output row
                   lab_out = QLabel(f"Aligned {i+1}:")
                   edit_out = QLineEdit()
@@ -6846,51 +6867,50 @@ def AlignImgs():
                   container_out = QWidget()
                   container_out.setLayout(hbox_out)
                   self.output_form.addRow(lab_out, container_out)
-      
+  
                   # store references
                   self.in_labels.append(lab_in)
                   self.in_containers.append(container_in)
                   self.out_labels.append(lab_out)
                   self.out_containers.append(container_out)
-      
+  
               # Align button
               self.align_button = QPushButton("Align")
               self.align_button.clicked.connect(self._on_align)
-      
+  
               # Layout assembly
               top = QHBoxLayout()
               top.addWidget(QLabel("Number of images:"))
               top.addWidget(self.count_combo)
               top.addStretch()
-      
+  
               main = QVBoxLayout(self)
               main.addLayout(top)
               main.addWidget(self.input_group)
               main.addWidget(self.output_group)
               main.addStretch()
               main.addWidget(self.align_button, alignment=Qt.AlignmentFlag.AlignRight)
-      
+  
               # hide all but the first N rows
               self._update_fields(self.count_combo.currentText())
-      
-          # ----- KEY CHANGE #3 -----
+  
           def _update_fields(self, txt):
               n = int(txt)
-              for i in range(8):
+              for i in range(len(self.in_labels)):
                   show = (i < n)
                   self.in_labels[i].setVisible(show)
                   self.in_containers[i].setVisible(show)
                   self.out_labels[i].setVisible(show)
                   self.out_containers[i].setVisible(show)
-      
+  
           def _browse_input(self, idx):
               fn, _ = QFileDialog.getOpenFileName(
-                  self, f"Select reference #{idx+1}", "", "FITS Files (*.fits)"
+              self, f"Select reference #{idx+1}", "", "FITS Files (*.fits)"
               )
               if fn:
                   le = self.in_containers[idx].findChild(QLineEdit)
                   le.setText(fn)
-      
+  
           def _browse_output(self, idx):
               fn, _ = QFileDialog.getSaveFileName(
                   self, f"Save aligned #{idx+1}", "", "FITS Files (*.fits)"
@@ -6898,52 +6918,79 @@ def AlignImgs():
               if fn:
                   le = self.out_containers[idx].findChild(QLineEdit)
                   le.setText(fn)
-      
+  
           def _on_align(self):
               count = int(self.count_combo.currentText())
-              inputs  = [self.in_containers[i].findChild(QLineEdit).text().strip() 
+              inputs  = [self.in_containers[i].findChild(QLineEdit).text().strip()
                          for i in range(count)]
-              outputs = [self.out_containers[i].findChild(QLineEdit).text().strip() 
+              outputs = [self.out_containers[i].findChild(QLineEdit).text().strip()
                          for i in range(count)]
-      
+  
               if any(not p for p in inputs+outputs):
                   QMessageBox.warning(self, "Missing", "Fill in all paths.")
                   return
-      
+  
               try:
-                  # read data & headers
+                  # 1) Read everyone’s data & header (memmap!)
                   dw = []
                   for fn in inputs:
-                      with fits.open(fn) as hd:
-                          dw.append((hd[0].data.astype(np.float64), hd[0].header))
-      
-                  # compute common WCS/shape
+                      hdul = fits.open(fn, memmap=True)
+                      dw.append((hdul[0].data.astype(np.float64), hdul[0].header))
+                      hdul.close()
+  
+                  # 2) Compute common WCS + output shape
                   wcs_out, shape_out = find_optimal_celestial_wcs(dw)
-      
-                  # reproject & save each
-                  for (data, hdr), outfn in zip(dw, outputs):
-                      arr, _ = reproject_interp((data, hdr), wcs_out, shape_out=shape_out)
-                      hdu = fits.PrimaryHDU(arr, header=wcs_out.to_header())
-                      hdu.writeto(outfn, overwrite=True)
-      
+  
+                  # 3) For each input → reproject in tiles → write memmap
+                  for (fn, (data, hdr)), outfn in zip(zip(inputs, dw), outputs):
+                      # prepare an empty memmap’d FITS
+                      primary = fits.PrimaryHDU(data=np.zeros(shape_out, dtype=np.float32),
+                                                header=wcs_out.to_header())
+                      primary.writeto(outfn, overwrite=True)
+                      out_hdul = fits.open(outfn, mode='update', memmap=True)
+                      out_mem  = out_hdul[0].data
+  
+                      # tile over Y/X
+                      ny, nx = shape_out
+                      for y0 in range(0, ny, CHUNK_Y):
+                          y1 = min(y0 + CHUNK_Y, ny)
+                          for x0 in range(0, nx, CHUNK_X):
+                              x1 = min(x0 + CHUNK_X, nx)
+  
+                              # adjust WCS CRPIX so reproject_interp
+                              # only fills [y0:y1, x0:x1]
+                              wcs_tile = copy.deepcopy(wcs_out)
+                              wcs_tile.wcs.crpix[0] -= x0
+                              wcs_tile.wcs.crpix[1] -= y0
+  
+                              # do the reprojection for this tile
+                              arr_tile, _ = reproject_interp(
+                                  (data, hdr),
+                                  wcs_tile,
+                                  shape_out=(y1-y0, x1-x0)
+                              )
+  
+                              # apply your per‐tile tweak
+                              arr_tile = process_chunk(arr_tile)
+  
+                              # write it back
+                              out_mem[y0:y1, x0:x1] = arr_tile
+  
+                      out_hdul.flush()
+                      out_hdul.close()
+  
                   QMessageBox.information(self, "Done", f"Aligned {count} images.")
               except Exception as e:
                   QMessageBox.critical(self, "Error", str(e))
-      
-      def main():
-          app = QApplication(sys.argv)
-          w = AlignImagesForm()
-          w.show()
-          app.exec()
-      
-      if __name__ == "__main__":
-          main()
-      
-  except Exception as e:
-      print(f"An error occurred: {e}")
-      print("Returning to the Main Menue...")
-      return sysargv1
-      menue()
+  
+      # bootstrap Qt
+      app = QApplication(sys.argv)
+      w = AlignImagesForm()
+      w.show()
+      app.exec()
+  
+  if __name__ == "__main__":
+      AlignImgs()    
 
   return sysargv1
   menue()
