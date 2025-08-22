@@ -4380,48 +4380,87 @@ def imgqtr():
   return sysargv1
   menue()
 
+
 def CpyOldHdr():
 
-  try:
+  def print_and_patch_wcs(header, bin_factor):
+      """
+      Update header in place to add both CD-matrix + explicit CDELT/CUNIT.
+      """
+      w = WCS(header)
 
-      def main():
+      # compute new CRPIX, CDELT
+      orig_crpix = w.wcs.crpix.copy()
+      orig_cdelt = w.wcs.cdelt.copy()
+      new_crpix  = (orig_crpix - 0.5) / bin_factor + 0.5
+      new_cdelt  = orig_cdelt * bin_factor
 
-                 sysargv2  = input("Enter file name of image with correct old fitsheader  -->")
-                 sysargv3  = input("Enter file name of image with correct image  -->")
-                 sysargv4  = input("Enter new file name to be updated with old header new image -->")
-           
-                 with fits.open(sysargv2) as old_hdul:
-                     # Access the header of the primary HDU
-                   old_header = old_hdul[0].header
-                   old_data = old_hdul[0].data
-            
-                 file = sysargv3
-              
-                 # Function to read FITS file and return data
-                 def read_fits(file):
-                   with fits.open(file, mode='update') as hdul:#
-                     data = hdul[0].data
-                     # hdul.close()
-                   return data
-           
-                 new_image_data = read_fits(file)
-           
-                 fits.writeto( sysargv4, new_image_data, old_header, overwrite=True)
-                 # Save the RGB image as a new FITS file with the correct header
-                 #hdu = fits.PrimaryHDU(data=new_image_data, header=old_header)
-                 #hdu.writeto(sysargv3, overwrite=True)
+      # print for user
+      print("Original CRPIX:", orig_crpix)
+      print("Binned   CRPIX:", new_crpix)
+      print("Original CDELT:", orig_cdelt)
+      print("Binned   CDELT:", new_cdelt)
 
-      if __name__ == "__main__":
-          main()
-           
-  except Exception as e:
-      print(f"An error occurred: {e}")
-      print("Returning to the Main Menue...")
-      return sysargv1
-      menue()
+      # update WCS object
+      w.wcs.crpix = new_crpix
+      w.wcs.cdelt = new_cdelt
+
+      # build two partial headers
+      hdr_cd    = w.to_header(relax=True)   # CD1_1…CD2_2
+      hdr_cdelt = fits.Header()
+      hdr_cdelt["CDELT1"]  = (new_cdelt[0], "deg/pix")
+      hdr_cdelt["CDELT2"]  = (new_cdelt[1], "deg/pix")
+      hdr_cdelt["CUNIT1"]  = ("deg", "units of CRVAL and CDELT")
+      hdr_cdelt["CUNIT2"]  = ("deg", "units of CRVAL and CDELT")
+      hdr_cdelt["RADESYS"] = (w.wcs.radesys or "ICRS", "frame")
+      hdr_cdelt["EQUINOX"] = (w.wcs.equinox,            "equinox")
+
+      # merge into one header
+      out = header.copy()
+      for k in hdr_cd:
+          out[k] = hdr_cd[k]
+      for k in hdr_cdelt:
+          out[k] = hdr_cdelt[k]
+
+      return out
+
+  def main():
+      try:
+          # 1) prompt for files + bin
+          old_header_file = input("Old-header FITS file: ").strip()
+          new_image_file  = input("New image FITS file: ").strip()
+          output_file     = input("Output FITS file: ").strip()
+          bin_val         = int(input("Binning factor (0 to skip): ").strip())
+
+          # 2) load old header
+          with fits.open(old_header_file) as h:
+              old_header = h[0].header.copy()
+
+          # 3) if bin>0, patch WCS
+          if bin_val > 0:
+              header_to_write = print_and_patch_wcs(old_header, bin_val)
+          else:
+              header_to_write = old_header
+
+          # 4) load new image data
+          with fits.open(new_image_file) as h:
+              new_data = h[0].data
+
+          # 5) write out exactly once
+          fits.writeto(output_file, new_data, header_to_write, overwrite=True)
+          print(f"Success: wrote {output_file}")
+
+      except Exception as e:
+          print(f"Error: {e}")
+          # call your menu or cleanup here if needed
+          # menue()
+
+  if __name__ == "__main__":
+      main()
 
   return sysargv1
   menue()
+
 
 def binimg():
 
