@@ -7108,10 +7108,136 @@ def Stacker():
   return sysargv1
   menue()
 
+def Normalize():
+                        
+  try:
+                               
+      def load_fits(path):
+          """Read a FITS file and return (data, header)."""
+          hdul = fits.open(path)
+          data = hdul[0].data
+          hdr = hdul[0].header
+          hdul.close()
+          return data, hdr
+
+      def show_histogram(data, title="Histogram"):
+          """Display histogram(s) of a 2D or 3D image array."""
+          plt.figure()
+          if data.ndim == 3:
+              # detect channel-first vs. channel-last
+              if data.shape[0] <= 4:
+                  channels = [data[i] for i in range(data.shape[0])]
+              else:
+                  channels = [data[..., i] for i in range(data.shape[2])]
+              for idx, ch in enumerate(channels):
+                  plt.hist(ch.ravel(), bins=256, alpha=0.5, label=f"Ch{idx}")
+              plt.legend()
+          else:
+              plt.hist(data.ravel(), bins=256, color="gray")
+          plt.title(title)
+          plt.xlabel("Pixel value")
+          plt.ylabel("Count")
+          plt.show()
+
+      def normalize(data, old_min, old_max, new_min, new_max):
+          """Linearly rescale data from [old_min,old_max] → [new_min,new_max]."""
+          arr = data.astype(np.float64)
+          scaled = (arr - old_min) / (old_max - old_min)
+          scaled = scaled * (new_max - new_min) + new_min
+          return np.clip(scaled, min(new_min, new_max), max(new_min, new_max))
+
+      def print_image_stats(data, label="Image"):
+          """
+          Print basic statistics for a 2D or 3D NumPy array:
+            • If 2D, prints one set of stats
+            • If 3D, treats as channels and prints stats per channel
+          """
+          def stats(arr):
+              return {
+                  "min":    float(arr.min()),
+                  "max":    float(arr.max()),
+                  "median": float(np.median(arr)),
+                  "mean":   float(arr.mean()),
+                  "std":    float(arr.std())
+              }
+
+          print(f"{label} stats:")
+          if data.ndim == 2:
+              s = stats(data)
+              print(f"  shape: {data.shape}")
+              print(f"  min:    {s['min']:.6g}")
+              print(f"  max:    {s['max']:.6g}")
+              print(f"  median: {s['median']:.6g}")
+              print(f"  mean:   {s['mean']:.6g}")
+              print(f"  std:    {s['std']:.6g}")
+          elif data.ndim == 3:
+              # decide channel‐first vs. channel‐last
+              if data.shape[0] <= 4:
+                  channels = [data[i] for i in range(data.shape[0])]
+                  idxs = range(data.shape[0])
+              else:
+                  channels = [data[..., i] for i in range(data.shape[2])]
+                  idxs = range(data.shape[2])
+
+              for i, ch in zip(idxs, channels):
+                  s = stats(ch)
+                  print(f"  Channel {i}: shape {ch.shape}")
+                  print(f"    min:    {s['min']:.6g}")
+                  print(f"    max:    {s['max']:.6g}")
+                  print(f"    median: {s['median']:.6g}")
+                  print(f"    mean:   {s['mean']:.6g}")
+                  print(f"    std:    {s['std']:.6g}")
+          else:
+              flat = data.ravel()
+              s = stats(flat)
+              print(f"  (ndim={data.ndim}) flattened:")
+              print(f"    min:    {s['min']:.6g}")
+              print(f"    max:    {s['max']:.6g}")
+              print(f"    median: {s['median']:.6g}")
+              print(f"    mean:   {s['mean']:.6g}")
+              print(f"    std:    {s['std']:.6g}")
+          print()
+
+      def main():
+          fits_path = input("Enter path to FITS file: ").strip()
+          data, hdr = load_fits(fits_path)
+
+          # Print stats “as-is”
+          print_image_stats(data, label="Original FITS")
+
+          # Display histogram of the image
+          show_histogram(data, title="Original Image Histogram")
+
+          old_min = float(input("Enter old minimum: ").strip())
+          old_max = float(input("Enter old maximum: ").strip())
+          new_min = float(input("Enter new minimum: ").strip())
+          new_max = float(input("Enter new maximum: ").strip())
+
+          norm_data = normalize(data, old_min, old_max, new_min, new_max)
+
+          out_path = input("Enter output FITS filename: ").strip()
+          fits.writeto(out_path, norm_data.astype(np.float64), hdr, overwrite=True)
+          print(f"Normalized FITS saved to {out_path}")
+
+          # Print stats “as-is”
+          print_image_stats(norm_data, label="Original FITS")
+
+          # Display histogram of the Stretched image
+          show_histogram(norm_data, title="New Image Histogram")
+
+      if __name__ == "__main__":
+          main()
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
 
 def menue(sysargv1):
 #  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< DirSpltAllRgb \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs \n>>56<< Stacker >>57<< FitQc \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< DirSpltAllRgb \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs \n>>56<< Stacker >>57<< FitQc >>58<< Normalize \n>>1313<< Exit --> ")
 
   return sysargv1
 
@@ -7316,6 +7442,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
           code = f.read()
       exec(code, globals(), locals())
       menue(sysargv1)
+
+  if sysargv1 == '58':
+    Normalize()
 
   if sysargv1 == '1313':
     sys.exit()
