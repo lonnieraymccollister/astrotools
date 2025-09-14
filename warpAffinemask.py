@@ -2,7 +2,7 @@
 # import required libraries
 import fnmatch
 from PIL import Image
-import cv2, sys, os, shutil, ffmpeg, tifffile, copy
+import cv2, sys, os, subprocess, shutil, ffmpeg, tifffile, copy
 import numpy as np
 import matplotlib
 import math
@@ -7247,6 +7247,18 @@ def Normalize():
               print(f"    std:    {s['std']:.6g}")
           print()
 
+      def open_in_siril(fits_path):
+          # Ensure 'siril' is on the PATH
+          if shutil.which('siril') is None:
+              print("Error: 'siril' command not found. Install Siril or add it to your PATH.")
+              sys.exit(1)
+
+          try:
+              # This will open Siril's GUI with your FITS file
+              subprocess.run(['siril', fits_path], check=True)
+          except subprocess.CalledProcessError as e:
+              print(f"Failed to launch Siril: {e}")
+
       def main():
           fits_path = input("Enter path to FITS file: ").strip()
           data, hdr = load_fits(fits_path)
@@ -7256,6 +7268,7 @@ def Normalize():
 
           # Display histogram of the image
           show_histogram(data, title="Original Image Histogram")
+          open_in_siril(fits_path)
 
           old_min = float(input("Enter old minimum: ").strip())
           old_max = float(input("Enter old maximum: ").strip())
@@ -7273,6 +7286,7 @@ def Normalize():
 
           # Display histogram of the Stretched image
           show_histogram(norm_data, title="New Image Histogram")
+          open_in_siril(out_path)
 
       if __name__ == "__main__":
           main()
