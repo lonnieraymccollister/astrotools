@@ -19,6 +19,8 @@ from astropy.convolution import Gaussian2DKernel
 from astropy.wcs import WCS
 from astropy.coordinates import Angle
 from astropy.stats import sigma_clipped_stats
+from astropy import units as u
+from astropy.coordinates import SkyCoord
 from photutils.detection import DAOStarFinder
 import mpmath as mp
 import glob
@@ -7248,9 +7250,75 @@ def Normalize():
       return sysargv1
       menue()
 
+def RaDecTwoPtAng():
+
+  try:
+          
+      def separation_and_arc_length(ra1, dec1, ra2, dec2):
+            """
+          Calculate the angular separation between two sky coordinates
+          and the corresponding arc length on a unit sphere.
+
+          Parameters
+          ----------
+           ra1, dec1 : str
+           Right ascension and declination of point 1 (e.g. "12h30m00s", "+45d00m00s").
+          ra2, dec2 : str
+           Right ascension and declination of point 2.
+
+          Returns
+          -------
+          sep_dms : tuple of int
+              (degrees, arcminutes, arcseconds) of the separation angle.
+          arc_length : float
+              Arc length on a sphere of radius 1 (same units as input distance).
+          """
+            # Create SkyCoord objects
+            c1 = SkyCoord(ra1, dec1, unit=(u.hourangle, u.deg))
+            c2 = SkyCoord(ra2, dec2, unit=(u.hourangle, u.deg))
+
+            # Compute separation angle
+            sep = c1.separation(c2).to(u.deg)
+
+            # Break down into degrees, minutes, seconds
+            deg = int(sep.value)
+            arcmin = int((sep.value - deg) * 60)
+            arcsec = (sep.value - deg - arcmin/60) * 3600
+
+            # Arc length on unit sphere = separation in radians * radius (1)
+            arc_length = c1.separation(c2).to(u.rad).value
+
+            return (deg, arcmin, arcsec), arc_length
+
+      if __name__ == "__main__":
+          # Example input
+        sysargv1  = input("Enter Ra1  example   10h21m00s  -->")
+        sysargv2  = input("Enter Dec1 example  +20d30m00s  -->")
+        sysargv3  = input("Enter Ra2  example   11h15m30s  -->")
+        sysargv4  = input("Enter Dec1 example  +22d05m15s  -->")
+
+
+        ra1, dec1 = sysargv1, sysargv2
+        ra2, dec2 = sysargv3, sysargv4
+
+        sep_dms, length_unit = separation_and_arc_length(ra1, dec1, ra2, dec2)
+        print(f"Separation: {sep_dms[0]}° {sep_dms[1]}' {sep_dms[2]:.3f}\"")
+        print(f"Arc length on unit sphere: {length_unit:.6f} (same units as radius)")
+
+  except Exception as e:
+      print(f"An error occurred: {e}")
+      print("Returning to the Main Menue...")
+      return sysargv1
+      menue()
+
+  return sysargv1
+  menue()
+
+
+
 def menue(sysargv1):
 #  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert >>4<< Add2images(fit)  \n>>5<< Split tricolor >>6<< Combine Tricolor >>7<< Create Luminance(2ax) >>8<< Align2img \n>>9<< Plot_16-bit_img to 3d graph(2ax) >>10<< Centroid_Custom_filter(2ax) >>11<< UnsharpMask \n>>12<< FFT-(RGB) >>13<< Img-DeconvClr >>14<< Centroid_Custom_Array_loop(2ax) \n>>15<< Erosion(2ax) >>16<< Dilation(2ax) >>17<< DynamicRescale(2ax) >>18<< GausBlur  \n>>19<< DrCntByFileType >>20<< ImgResize >>21<< JpgCompress >>22<< subtract2images(fit)  \n>>23<< multiply2images >>24<< divide2images >>25<< max2images >>26<< min2images \n>>27<< imgcrop >>28<< imghiststretch >>29<< gif  >>30<< aling2img(2pts) >>31<< Video \n>>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr >>35<< DynReStr(RGB) \n>>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance >>40<< EdgeDetect \n>>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt >>45<< WcsOvrlay \n>>46<< Stacking >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio >>50<< ResRngHp \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters \n>>1313<< Exit --> ")
-  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< DirSpltAllRgb \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs \n>>56<< Stacker >>57<< FitQc >>58<< Normalize \n>>1313<< Exit --> ")
+  sysargv1 = input("Enter \n>>1<< AffineTransform(3pts) >>2<< Mask an image >>3<< Mask Invert  >>9<< Plot_img to 3d (2ax) \n>>10<< Centroid_Custom_filter(2ax) >>5<< DirSpltAllRgb \n>>14<< Centroid_Custom_Array_loop(2ax) >>17<< DynamicRescale(2ax) >>19<< DrCntByFileType \n>>>20<< ImgResize >>21<< JpgCompress >>27<< imgcrop >>28<< imghiststretch >>29<< gif \n>30<< aling2img(2pts) >>31<< Video >>32<< gammaCor >>33<< ImgQtr >>34<< CpyOldHdr \n>>35<< DynReStr(RGB) >>36<< clahe >>37<< pm_vector_line >>38<< hist_match >>39<< distance \n>>40<< EdgeDetect >>41<< Mosaic(4) >>42<< BinImg >>43<< autostr >>44<< LocAdapt \n>>45<< WcsOvrlay >>46<< AlnImgsByDir >>47<< CombineLRGB >>48<< MxdlAstap >>49<< CentRatio \n>>51<< CombBgrAlIm >>52<< PixelMath >>53<< Color >>54<< ImageFilters >>55<< AlignImgs \n>>56<< Stacker >>57<< FitQc >>58<< Normalize  >>59<< RaDec2ptAng\n>>1313<< Exit --> ")
 
   return sysargv1
 
@@ -7458,6 +7526,9 @@ while not sysargv1 == '1313':  # Substitute for a while-True-break loop.
 
   if sysargv1 == '58':
     Normalize()
+
+  if sysargv1 == '59':
+    RaDecTwoPtAng()
 
   if sysargv1 == '1313':
     sys.exit()
