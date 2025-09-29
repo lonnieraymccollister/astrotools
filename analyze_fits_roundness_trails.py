@@ -17,7 +17,7 @@ NSIGMA                = 3.0
 MIN_AREA              = 5
 
 # Trail‐detection tuning
-HOUGH_THRESHOLD       = 175
+HOUGH_THRESHOLD       = 1313
 HOUGH_MIN_LENGTH      = 30
 HOUGH_LINE_GAP        = 10
 
