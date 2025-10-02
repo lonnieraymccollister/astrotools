@@ -2,6 +2,7 @@
 """
 video_gui.py
 PyQt6 GUI to build MP4 and/or GIF from a sequence of image files (glob).
+Added: "Loop GIF forever" checkbox to control GIF looping (loop=0 => infinite).
 """
 
 import sys
@@ -16,7 +17,8 @@ import imageio.v2 as imageio
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QGridLayout, QComboBox, QTextEdit, QMessageBox, QSpinBox
+    QFileDialog, QGridLayout, QComboBox, QTextEdit, QMessageBox, QSpinBox,
+    QCheckBox
 )
 from PyQt6.QtCore import Qt
 
@@ -25,7 +27,7 @@ class VideoBuilderWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Build MP4 / GIF from images")
         self._build_ui()
-        self.resize(820, 360)
+        self.resize(820, 380)
 
     def _build_ui(self):
         central = QWidget()
@@ -66,6 +68,12 @@ class VideoBuilderWindow(QMainWindow):
         grid.addWidget(QLabel("GIF width (px, keep aspect):"), 3, 4)
         self.gif_width = QSpinBox(); self.gif_width.setRange(16,10000); self.gif_width.setValue(800)
         grid.addWidget(self.gif_width, 3, 5)
+
+        # Loop GIF forever checkbox (added)
+        self.loop_gif_chk = QCheckBox("Loop GIF forever")
+        self.loop_gif_chk.setChecked(True)   # default on
+        # Place on next row to avoid grid overflow if necessary
+        grid.addWidget(self.loop_gif_chk, 4, 5)
 
         # FPS
         grid.addWidget(QLabel("Frames per second:"), 4, 0)
@@ -147,7 +155,7 @@ class VideoBuilderWindow(QMainWindow):
             writer.write(img)
         writer.release()
 
-    def _write_gif(self, files, outpath, fps, gif_width):
+    def _write_gif(self, files, outpath, fps, gif_width, loop_forever):
         if not files:
             raise RuntimeError("No input frames to write GIF")
         duration = 1.0 / float(fps)
@@ -167,7 +175,9 @@ class VideoBuilderWindow(QMainWindow):
         if not frames:
             raise RuntimeError("No valid frames found for GIF")
         # imageio will use ffmpeg plugin if available for optimization; write animated gif
-        imageio.mimsave(outpath, frames, duration=duration)
+        # loop_forever True -> loop=0 (infinite), False -> loop=1 (single play)
+        loop_val = 0 if loop_forever else 1
+        imageio.mimsave(outpath, frames, duration=duration, loop=loop_val)
 
     def _on_run(self):
         pattern = self.glob_edit.text().strip()
@@ -196,8 +206,9 @@ class VideoBuilderWindow(QMainWindow):
                 if not gif_path:
                     raise ValueError("GIF filename required")
                 gif_w = int(self.gif_width.value())
-                self._log(f"Writing GIF -> {gif_path} (width={gif_w}px, fps={fps})")
-                self._write_gif(files, gif_path, fps, gif_w)
+                loop_forever = bool(self.loop_gif_chk.isChecked())
+                self._log(f"Writing GIF -> {gif_path} (width={gif_w}px, fps={fps}, loop_forever={loop_forever})")
+                self._write_gif(files, gif_path, fps, gif_w, loop_forever)
                 self._log("GIF written:", gif_path)
 
             QMessageBox.information(self, "Done", "Video/GIF creation completed successfully")
