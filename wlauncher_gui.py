@@ -31,6 +31,7 @@ ACTIONS = {
     "Fits Splitter (spawn)": (sys.executable, "fncts/fits_splitter.py"),
     "Align JPG GUI (spawn)": (sys.executable, "fncts/align_jpg_gui.py"),
     "Plot 3D GUI (spawn)": (sys.executable, "fncts/plot3d_gui.py"),
+    "Rotational Gradient (spawn)": (sys.executable, "fncts/RotationalGradient.py"),
     "Dynamic Rescale (spawn)": (sys.executable, "fncts/dynamic_rescale16_gui_cython.py"),
     "File Count GUI (spawn)": (sys.executable, "fncts/filecount_gui.py"),
     "Resize GUI (spawn)": (sys.executable, "fncts/resize_gui.py"),
