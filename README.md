@@ -1,3 +1,6 @@
+Some code produced by copilot
+
+
 # astrotools  
  Used to view objects like Messier - 87.  Removes symetric light from galaxy etc.  Find the centroid of the star ---> galaxy and crop the object to a square making certain the centroid is in the exact center of the image and the image has an odd number of pixels(H121-W121). 
 step 1
