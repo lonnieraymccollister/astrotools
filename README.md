@@ -1,5 +1,6 @@
----Some code produced by copilot.---
---->wlauncher_gui.py runs functions in fncts directory.  Use requirements file for virtual env. Python 3.12.3 <---
+--->>Some code produced by copilot.<<---
+--->(python wlauncher_gui.py) runs functions in fncts directory.  Use requirements file for virtual env or yml. Python version 3.12.3 <---
+--->Normalize offers to open in Siril<---
 
 # astrotools  
  Used to view objects like Messier - 87.  Removes symetric light from galaxy etc.  Find the centroid of the star ---> galaxy and crop the object to a square making certain the centroid is in the exact center of the image and the image has an odd number of pixels(H121-W121). 
