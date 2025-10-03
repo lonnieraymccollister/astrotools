@@ -1,8 +1,5 @@
-# -- This file is for the program warpAffinemask.py virtual environment.
-# -- pip install -r requirements.txt
-# -- Packages from List‑1 (the pip: block) --
+# pip-installed packages (explicit from the YAML)
 aiofiles==23.2.1
-astropy-healpix==1.0.3
 astroquery==0.4.10
 astroscrappy==1.2.0
 ccdproc==2.4.3
@@ -14,6 +11,7 @@ ffmpy==0.5.0
 gradio==5.9.1
 gradio-client==1.5.2
 huggingface-hub==0.27.0
+imageio-ffmpeg==0.6.0
 iso8601==2.1.0
 markupsafe==2.1.5
 mymodule==1.0.0
@@ -44,13 +42,15 @@ uvicorn==0.34.0
 websockets==14.1
 zarr==3.0.2
 
-# -- Additional packages inferred from List‑2 imports --
-Pillow         # for "from PIL import Image"
-tifffile       # for "import tifffile"
-numpy==2.1.3   # taken from the conda dependency (note: this version looks unconventional)
-matplotlib==3.10.3  # for pyplot and mplot3d toolkits
-astropy==7.1.0       # for fits, convolution, WCS, etc.
-mpmath==1.3.0        # for "import mpmath as mp"
-scikit-image==0.25.2 # for "from skimage.exposure import match_histograms"
-scipy==1.15.2        # for scipy.special, ndimage, and signal modules
-reproject==0.14.1    # for "from reproject import reproject_interp, reproject_exact"
+# additional packages (available on PyPI and present in the conda deps)
+numpy==2.1.3
+pillow==11.2.1
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+matplotlib==3.10.3
+scipy==1.15.2
+pandas==2.2.3
+pytest==8.4.0
+tqdm==4.67.1
+requests==2.32.3
+pillow==11.2.1

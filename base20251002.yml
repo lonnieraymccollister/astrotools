@@ -1,10 +1,10 @@
-name: base
+name: base1
 channels:
-  - astropy
+  - defaults
   - conda-forge
+  - astropy
   - pytorch
   - nvidia
-  - defaults
   - https://repo.anaconda.com/pkgs/main
   - https://repo.anaconda.com/pkgs/r
   - https://repo.anaconda.com/pkgs/msys2
@@ -61,6 +61,7 @@ dependencies:
   - astroid=3.3.10=py312h2e8e312_0
   - astropy=7.1.0=pyhd8ed1ab_0
   - astropy-base=7.1.0=py312hff8de26_0
+  - astropy-healpix=1.0.3=py312h1a27103_2
   - astropy-iers-data=0.2025.6.2.0.38.23=pyhd8ed1ab_0
   - asttokens=3.0.0=pyhd8ed1ab_1
   - async-lru=2.0.5=pyh29332c3_0
@@ -499,6 +500,7 @@ dependencies:
   - pyodbc=5.2.0=py312h275cf98_0
   - pyopenssl=25.1.0=pyhd8ed1ab_0
   - pyparsing=3.2.3=pyhd8ed1ab_1
+  - pyqt=5.15.11=py312he11f4ca_0
   - pyqt5-sip=12.17.0=py312h275cf98_0
   - pyqtwebengine=5.15.11=py312h5f40ce4_0
   - pyside6=6.9.0=py312h520aab8_0
@@ -701,7 +703,6 @@ dependencies:
   - zstd=1.5.7=hbeecb71_2
   - pip:
       - aiofiles==23.2.1
-      - astropy-healpix==1.0.3
       - astroquery==0.4.10
       - astroscrappy==1.2.0
       - ccdproc==2.4.3
@@ -713,6 +714,7 @@ dependencies:
       - gradio==5.9.1
       - gradio-client==1.5.2
       - huggingface-hub==0.27.0
+      - imageio-ffmpeg==0.6.0
       - iso8601==2.1.0
       - markupsafe==2.1.5
       - mymodule==1.0.0
@@ -742,4 +744,4 @@ dependencies:
       - uvicorn==0.34.0
       - websockets==14.1
       - zarr==3.0.2
-prefix: C:\Users\ylmcc\anaconda3
+prefix: C:\Users\ylmcc\anaconda3\envs\base1
