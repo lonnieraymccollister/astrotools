@@ -60,6 +60,7 @@ ACTIONS = {
     "Analyze FITS Roundness & Trails (spawn)": (sys.executable, "analyze_fits_roundness_trails.py"),
     "Normalize GUI (spawn)": (sys.executable, "fncts/normalize_gui.py"),
     "RaDec->2pt Angle GUI (spawn)": (sys.executable, "fncts/radectwoptang_gui.py"),
+    "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
     # Add more mappings as needed
 }
 
