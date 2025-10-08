@@ -61,6 +61,7 @@ ACTIONS = {
     "Normalize GUI (spawn)": (sys.executable, "fncts/normalize_gui.py"),
     "RaDec->2pt Angle GUI (spawn)": (sys.executable, "fncts/radectwoptang_gui.py"),
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
+    "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
     # Add more mappings as needed
 }
 
