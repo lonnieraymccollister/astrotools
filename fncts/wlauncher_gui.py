@@ -62,6 +62,7 @@ ACTIONS = {
     "RaDec->2pt Angle GUI (spawn)": (sys.executable, "fncts/radectwoptang_gui.py"),
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
     "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
+    "plot_hist&normality_gui (spawn)": (sys.executable, "fncts/plot_hist_with_normality_gui.py"),
     # Add more mappings as needed
 }
 
