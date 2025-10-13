@@ -29,9 +29,12 @@ CATALOGS = {
     },
     'gaia': {
         'vizier_id': "I/355/gaiadr3",
-        'cols': ['RA_ICRS', 'DE_ICRS', 'Gmag', 'BPmag', 'RPmag']
+        'cols': ['RA_ICRS', 'DE_ICRS', 'Gmag', 'BPmag', 'RPmag', 'Plx', 'e_Plx', 'RUWE']
     }
 }
+
+# common alternate names for parallax in various catalogs / tables
+PARALLAX_CANDIDATES = ['Plx', 'parallax', 'parallax_value', 'parallax_mean', 'parallax_error']
 
 def query_vizier_nearest(coord, catalog_key, radius_arcsec=3.0, max_retries=3, pause=0.2):
     info = CATALOGS[catalog_key]
@@ -71,16 +74,62 @@ def query_vizier_nearest(coord, catalog_key, radius_arcsec=3.0, max_retries=3, p
 
     row = table[idx]
     out = {'sep_arcsec': sep_best}
-    # map mags
+    # map mags (we will keep missing mags as empty strings later)
     for c in cols[2:]:
         try:
-            val = row[c] if c in row.colnames else None
-            out[c] = float(val) if (val is not None and val != '--') else np.nan
+            if c in row.colnames:
+                val = row[c]
+                # Vizier uses '--' or masked values; treat those as missing
+                if val is None or (isinstance(val, str) and val.strip() in ['', '--']):
+                    out[c] = None
+                else:
+                    # try numeric
+                    try:
+                        out[c] = float(val)
+                    except Exception:
+                        out[c] = str(val)
+            else:
+                out[c] = None
         except Exception:
-            out[c] = np.nan
+            out[c] = None
+
     # canonical cat coords
-    out['cat_ra'] = float(row[cat_ra_col])
-    out['cat_dec'] = float(row[cat_dec_col])
+    try:
+        out['cat_ra'] = float(row[cat_ra_col])
+        out['cat_dec'] = float(row[cat_dec_col])
+    except Exception:
+        # keep empty if cannot parse
+        out['cat_ra'] = None
+        out['cat_dec'] = None
+
+    # Attempt to extract Gaia parallax and parallax_error if present under any common name
+    if catalog_key == 'gaia':
+        plx = None
+        e_plx = None
+        for pname in PARALLAX_CANDIDATES:
+            if pname in row.colnames:
+                try:
+                    val = row[pname]
+                    if val is None or (isinstance(val, str) and val.strip() in ['', '--']):
+                        continue
+                    plx = float(val)
+                    # try to find an associated error column nearby (common name patterns)
+                    # preferred explicit e_Plx, parallax_error, e_parallax
+                    for errname in ['e_' + pname, pname + '_error', 'parallax_error', 'e_parallax']:
+                        if errname in row.colnames:
+                            try:
+                                e_plx = float(row[errname])
+                                break
+                            except Exception:
+                                continue
+                    break
+                except Exception:
+                    continue
+        out['parallax'] = plx
+        out['parallax_error'] = e_plx
+        # RUWE if present in the fetched columns
+        out['ruwe'] = float(row['RUWE']) if 'RUWE' in row.colnames and row['RUWE'] not in (None, '--') else None
+
     return out
 
 def parse_coord_pair(ra_in, dec_in):
@@ -98,6 +147,19 @@ def parse_coord_pair(ra_in, dec_in):
         s = f"{ra_in} {dec_in}"
         # astropy will interpret RA as hourangle if unit specified; try autodetect by not specifying units
         return SkyCoord(s, frame='icrs')
+
+def fmt_empty_or(value, fmt="{:.4f}"):
+    """
+    Format numeric values using fmt; return empty string for None or NaN.
+    Keep strings as-is.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float) and np.isnan(value):
+        return ""
+    if isinstance(value, (int, float)):
+        return fmt.format(value)
+    return str(value)
 
 def main():
     p = argparse.ArgumentParser(description="Query APASS or Gaia and print results to console")
@@ -123,7 +185,7 @@ def main():
     if cat == 'apass':
         mag_labels = ['Bmag','gmag','rmag','imag','Vmag']
     else:
-        mag_labels = ['Gmag','BPmag','RPmag']
+        mag_labels = ['Gmag','BPmag','RPmag','parallax','parallax_error','ruwe']
 
     header = ["input_ra","input_dec","cat_ra","cat_dec","sep_arcsec"] + mag_labels
     print(",".join(header))
@@ -133,7 +195,7 @@ def main():
         dec_in = row['dec'].strip()
         try:
             coord = parse_coord_pair(ra_in, dec_in)
-        except Exception as e:
+        except Exception:
             # parsing failed
             out_vals = [ra_in, dec_in, "", "", "", *([""] * len(mag_labels))]
             print(",".join(map(str, out_vals)))
@@ -142,7 +204,7 @@ def main():
         try:
             res = query_vizier_nearest(coord, cat, radius_arcsec=args.radius,
                                        max_retries=args.max_retries, pause=args.sleep)
-        except Exception as e:
+        except Exception:
             # query failed: print row with error note
             out_vals = [ra_in, dec_in, "QUERY_FAIL", "QUERY_FAIL", ""] + (["ERR"] * len(mag_labels))
             print(",".join(map(str, out_vals)))
@@ -154,21 +216,32 @@ def main():
             print(",".join(map(str, out_vals)))
         else:
             if cat == 'apass':
-                mags = [res.get('Bmag', np.nan), res.get('gmag', np.nan), res.get('rmag', np.nan),
-                        res.get('imag', np.nan), res.get('Vmag', np.nan)]
+                mags = [res.get('Bmag'), res.get('gmag'), res.get('rmag'),
+                        res.get('imag'), res.get('Vmag')]
+                mags_fmt = [fmt_empty_or(m) for m in mags]
             else:
-                mags = [res.get('Gmag', np.nan), res.get('BPmag', np.nan), res.get('RPmag', np.nan)]
-                # pad to same number of columns for consistent printing
-                if len(mags) < len(mag_labels):
-                    mags += [np.nan] * (len(mag_labels) - len(mags))
+                g = res.get('Gmag')
+                bp = res.get('BPmag')
+                rp = res.get('RPmag')
+                plx = res.get('parallax')
+                e_plx = res.get('parallax_error')
+                ruwe = res.get('ruwe')
+                mags_fmt = [
+                    fmt_empty_or(g),
+                    fmt_empty_or(bp),
+                    fmt_empty_or(rp),
+                    fmt_empty_or(plx),
+                    fmt_empty_or(e_plx),
+                    fmt_empty_or(ruwe)
+                ]
 
             out_vals = [
                 ra_in,
                 dec_in,
-                f"{res['cat_ra']:.8f}",
-                f"{res['cat_dec']:.8f}",
-                f"{res['sep_arcsec']:.3f}"
-            ] + [("" if (m is None or (isinstance(m, float) and np.isnan(m))) else f"{m:.4f}") for m in mags]
+                (f"{res['cat_ra']:.8f}" if res.get('cat_ra') is not None else ""),
+                (f"{res['cat_dec']:.8f}" if res.get('cat_dec') is not None else ""),
+                (f"{res['sep_arcsec']:.3f}" if res.get('sep_arcsec') is not None else "")
+            ] + mags_fmt
 
             print(",".join(map(str, out_vals)))
         time.sleep(args.sleep)
