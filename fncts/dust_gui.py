@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use("Agg")
+
 #!/usr/bin/env python3
 import sys
 import os
@@ -34,6 +37,8 @@ try:
 except Exception:
     DAOStarFinder = None
 
+import matplotlib
+matplotlib.use("Agg")
 from PyQt6 import QtWidgets, QtCore, QtGui
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
@@ -282,7 +287,7 @@ class BatchWorker(QtCore.QThread):
         positions_y = np.array(phot_g['y'])
         flux_r, _ = circular_aperture_sums_fast(rch, positions_x, positions_y, self.params.get('aperture', 4.0))
         flux_b, _ = circular_aperture_sums_fast(bch, positions_x, positions_y, self.params.get('aperture', 4.0))
-        flux_g = np.array(phot_g['aperture_sum'])
+        flux_g, _ = circular_aperture_sums_fast(gch, positions_x, positions_y, self.params.get('aperture', 4.0))
         rg, gb, mags = compute_color_indices_from_fluxes(flux_r, flux_g, flux_b, zp=self.params.get('zp', 25.0))
         orig_path = str(Path(path).resolve())
         rows = []
@@ -493,7 +498,7 @@ class DustGui(QtWidgets.QWidget):
         positions_y = np.array(phot_g['y'])
         flux_r, _ = circular_aperture_sums_fast(rch, positions_x, positions_y, self.aperture_spin.value())
         flux_b, _ = circular_aperture_sums_fast(bch, positions_x, positions_y, self.aperture_spin.value())
-        flux_g = np.array(phot_g['aperture_sum'])
+        flux_g, _ = circular_aperture_sums_fast(gch, positions_x, positions_y, self.aperture_spin.value())
         rg, gb, mags = compute_color_indices_from_fluxes(flux_r, flux_g, flux_b, zp=self.zp_spin.value())
         # estimate sky rms from channel using sigma_clipped_stats on a binned background
         _, med_r, std_r = sigma_clipped_stats(rch, sigma=3.0)

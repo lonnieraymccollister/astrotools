@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+The system uses some copilot code plus adition code.
 launcher_gui.py
 PyQt6 GUI replacement for your text-based menu. Choose an action from a dropdown,
 enter any required strings in the boxes below, and run the action. Actions that
