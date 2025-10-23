@@ -64,6 +64,7 @@ ACTIONS = {
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
     "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
     "plot_hist&normality_gui (spawn)": (sys.executable, "fncts/plot_hist_with_normality_gui.py"),
+    "FitssAllStarXyWcsLkUp (spawn)": (sys.executable, "fncts/FitssAllStarXyWcsLkUp.py"),
     # Add more mappings as needed
 }
 
