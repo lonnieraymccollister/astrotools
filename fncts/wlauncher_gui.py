@@ -64,7 +64,9 @@ ACTIONS = {
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
     "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
     "plot_hist&normality_gui (spawn)": (sys.executable, "fncts/plot_hist_with_normality_gui.py"),
-    "FitssAllStarXyWcsLkUp (spawn)": (sys.executable, "fncts/FitssAllStarXyWcsLkUp.py"),
+    "ecolor_vs_distance_gui (spawn)": (sys.executable, "fncts/ecolor_vs_distance_gui.py"),
+    "ebv_map_gui (spawn)": (sys.executable, "fncts/ebv_map_gui.py"),
+    "rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
     # Add more mappings as needed
 }
 
