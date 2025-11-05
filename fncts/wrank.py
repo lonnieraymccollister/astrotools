@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys
 import numpy as np
 from astropy.io import fits
@@ -7,6 +8,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QSlider
 )
 from PyQt6.QtCore import Qt
+from pathlib import Path
 
 # --- rank filter helpers (same as earlier) ---
 def circular_footprint(radius):
@@ -18,7 +20,9 @@ def rank_filter_image(img, radius=3.0, percentile=50.0):
     img = img.astype(np.float64)
     nan_mask = np.isnan(img)
     if nan_mask.any():
-        fill_val = np.nanmin(img) if np.isfinite(np.nanmin(img)) else 0.0
+        # fill NaNs with a finite minimum so rank filter can operate
+        finite_min = np.nanmin(img)
+        fill_val = finite_min if np.isfinite(finite_min) else 0.0
         tmp = img.copy()
         tmp[nan_mask] = fill_val
         img_work = tmp
@@ -26,8 +30,12 @@ def rank_filter_image(img, radius=3.0, percentile=50.0):
         img_work = img
 
     fp = circular_footprint(radius)
-    N = fp.sum()
-    order = int(round((percentile/100.0) * (N - 1)))
+    N = int(fp.sum())
+    if N <= 0:
+        raise ValueError("Footprint size is zero; check radius value.")
+    # compute order and clamp to valid range
+    order = int(round((percentile / 100.0) * (N - 1)))
+    order = max(0, min(N - 1, order))
     filtered = ndimage.rank_filter(img_work, rank=order, footprint=fp, mode='mirror')
     if nan_mask.any():
         filtered[nan_mask] = np.nan
@@ -41,6 +49,9 @@ def rank_filter_fits(inpath, outpath, radius=3.0, percentile=50.0, weight=0.6):
         data = hdul[0].data
         header = hdul[0].header.copy()
 
+    if data is None:
+        raise ValueError("Input FITS contains no primary data array.")
+
     if data.ndim == 2:
         filtered = rank_filter_image(data, radius=radius, percentile=percentile)
         out = combine_with_weight(data.astype(np.float64), filtered, weight=weight)
@@ -53,7 +64,7 @@ def rank_filter_fits(inpath, outpath, radius=3.0, percentile=50.0, weight=0.6):
     else:
         raise ValueError("Unsupported data dimensionality: %d" % data.ndim)
 
-    header['HISTORY'] = f"Rank filter radius={radius}, pct={percentile}, weight={weight}"
+    header.add_history(f"Rank filter radius={radius}, pct={percentile}, weight={weight}")
     fits.writeto(outpath, out, header=header, overwrite=True)
     return out
 
@@ -94,14 +105,14 @@ class RankFilterWindow(QMainWindow):
         # radius
         rrow = QHBoxLayout()
         rrow.addWidget(QLabel("Radius (px):"))
-        self.radius_edit = QLineEdit("3.0")
+        self.radius_edit = QLineEdit("8.0")
         rrow.addWidget(self.radius_edit)
         v.addLayout(rrow)
 
         # percentile
         prow = QHBoxLayout()
         prow.addWidget(QLabel("Percentile (0-100):"))
-        self.percentile_edit = QLineEdit("50")
+        self.percentile_edit = QLineEdit("10")
         prow.addWidget(self.percentile_edit)
         v.addLayout(prow)
 
@@ -119,21 +130,26 @@ class RankFilterWindow(QMainWindow):
         v.addLayout(wrow)
 
         # Run button
-        btn_run = QPushButton("Run Rank Filter")
-        btn_run.clicked.connect(self._run_filter)
-        v.addWidget(btn_run)
+        self.btn_run = QPushButton("Run Rank Filter")
+        self.btn_run.clicked.connect(self._run_filter)
+        v.addWidget(self.btn_run)
 
         w.setLayout(v)
         self.setCentralWidget(w)
 
+        # initialize weight edit from slider value
+        self._sync_weight_edit()
+
     def _choose_input(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select input FITS", filter="FITS Files (*.fits);;All Files (*)")
+        start = str(Path.cwd())
+        path, _ = QFileDialog.getOpenFileName(self, "Select input FITS", start, "FITS Files (*.fits);;All Files (*)")
         if path:
             self._inpath = path
             self.in_label.setText(path)
 
     def _choose_output(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save filtered FITS as", filter="FITS Files (*.fits)")
+        start = str(Path.cwd())
+        path, _ = QFileDialog.getSaveFileName(self, "Save filtered FITS as", start, "FITS Files (*.fits)")
         if path:
             self._outpath = path
             self.out_label.setText(path)
@@ -161,6 +177,8 @@ class RankFilterWindow(QMainWindow):
             radius = float(self.radius_edit.text())
             percentile = float(self.percentile_edit.text())
             weight = float(self.weight_edit.text())
+            if radius <= 0:
+                raise ValueError("Radius must be > 0")
             if not (0.0 <= percentile <= 100.0):
                 raise ValueError("Percentile must be 0..100")
             if not (0.0 <= weight <= 1.0):
@@ -169,14 +187,18 @@ class RankFilterWindow(QMainWindow):
             QMessageBox.critical(self, "Parameter error", str(e))
             return
 
+        # disable UI while running to prevent re-entrancy
+        self.btn_run.setEnabled(False)
         try:
             rank_filter_fits(self._inpath, self._outpath, radius=radius, percentile=percentile, weight=weight)
             QMessageBox.information(self, "Done", f"Filtered FITS written to:\n{self._outpath}")
         except Exception as e:
             QMessageBox.critical(self, "Processing error", str(e))
+        finally:
+            self.btn_run.setEnabled(True)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     win = RankFilterWindow()
     win.show()
-    
+    sys.exit(app.exec())
