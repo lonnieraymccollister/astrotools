@@ -65,6 +65,7 @@ ACTIONS = {
     "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
     "plot_hist&normality_gui (spawn)": (sys.executable, "fncts/plot_hist_with_normality_gui.py"),
     "ecolor_vs_distance_gui (spawn)": (sys.executable, "fncts/ecolor_vs_distance_gui.py"),
+    "ecolor_vs_distance_pyvista.py (spawn)": (sys.executable, "fncts/ecolor_vs_distance_pyvista.py"),
     "ebv_map_gui (spawn)": (sys.executable, "fncts/ebv_map_gui.py"),
     "rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
     # Add more mappings as needed
