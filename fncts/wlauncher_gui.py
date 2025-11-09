@@ -64,6 +64,7 @@ ACTIONS = {
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
     "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
     "classify sptype GUI (spawn)": (sys.executable, "fncts/classify_sptype_gui.py"),
+    "spectral_percent GUI (spawn)": (sys.executable, "fncts/spectral_percent_gui.py"),
     "plot_hist&normality_gui (spawn)": (sys.executable, "fncts/plot_hist_with_normality_gui.py"),
     "ecolor_vs_distance_gui (spawn)": (sys.executable, "fncts/ecolor_vs_distance_gui.py"),
     "ecolor_vs_distance_pyvista.py (spawn)": (sys.executable, "fncts/ecolor_vs_distance_pyvista.py"),
