@@ -3,6 +3,8 @@
 ebv_map_gui.py
 
 PyQt6 GUI for interpolating scattered E(B-V)/E(color) sightlines to a 2D map with contours.
+This version adds an optional Label column and a Show labels checkbox: non-blank labels
+are drawn next to their stars only when the checkbox is enabled.
 """
 
 import sys
@@ -88,9 +90,23 @@ def map_worker(params, signals: WorkerSignals):
                         grid_sm, levels=levels, colors="white", linewidths=0.8)
         ax.clabel(cs, inline=1, fontsize=8, fmt="%.3f")
 
-        # overlay input points (option)
+        # overlay input points (option) — with optional labels
         if params["plot_points"]:
             ax.scatter(ra, dec, s=params["point_size"], c="k", alpha=0.4, label="sightlines")
+            # annotate labels if requested and enabled
+            label_col = params.get("label_col", "")
+            show_labels = bool(params.get("show_labels", True))
+            if show_labels and label_col and label_col in df.columns:
+                labels = df[label_col].astype(str).fillna("").values
+                # offset scale (fraction of extent)
+                dx_frac = 0.005
+                dy_frac = 0.005
+                dx = (ra_max - ra_min) * dx_frac if ra_max > ra_min else dx_frac
+                dy = (dec_max - dec_min) * dy_frac if dec_max > dec_min else dy_frac
+                for xi, yi, lab in zip(ra, dec, labels):
+                    if str(lab).strip() != "":
+                        ax.text(xi + dx, yi + dy, str(lab), fontsize=7, color="white",
+                                bbox=dict(facecolor='black', alpha=0.5, pad=1, edgecolor='none'))
             ax.legend(loc="upper right")
 
         ax.set_xlabel("RA (deg)")
@@ -138,6 +154,18 @@ class EbvMapGui(QWidget):
         grid.addWidget(QLabel("E(color) column:"), row, 0)
         self.ebv_edit = QLineEdit("color_G-B")
         grid.addWidget(self.ebv_edit, row, 1)
+
+        # Label column (new)
+        grid.addWidget(QLabel("Label column (optional):"), row, 2)
+        self.label_edit = QLineEdit("label")
+        grid.addWidget(self.label_edit, row, 3)
+        row += 1
+
+        grid.addWidget(QLabel("Show labels:"), row, 0)
+        self.show_labels_chk = QCheckBox()
+        self.show_labels_chk.setChecked(True)
+        grid.addWidget(self.show_labels_chk, row, 1)
+
         grid.addWidget(QLabel("Interpolation:"), row, 2)
         self.interp_edit = QLineEdit("linear")
         grid.addWidget(self.interp_edit, row, 3)
@@ -265,7 +293,7 @@ class EbvMapGui(QWidget):
                 item = QTableWidgetItem(str(df.iloc[ri, ci]))
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.preview_table.setItem(ri, ci, item)
-        self.append_log(f"Loaded preview ({len(df)} rows). Click a header cell to autofill RA/Dec/E(column).")
+        self.append_log(f"Loaded preview ({len(df)} rows). Click a header cell to autofill RA/Dec/E(column/Label).")
         # connect header clicks
         self.preview_table.horizontalHeader().sectionClicked.connect(self.header_clicked)
 
@@ -281,6 +309,9 @@ class EbvMapGui(QWidget):
         resp = QMessageBox.question(self, "Map column", f"Set '{header}' as E(color) column?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if resp == QMessageBox.StandardButton.Yes:
             self.ebv_edit.setText(header); self.append_log(f"E(color) column set to {header}"); return
+        resp = QMessageBox.question(self, "Map column", f"Set '{header}' as Label column?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if resp == QMessageBox.StandardButton.Yes:
+            self.label_edit.setText(header); self.append_log(f"Label column set to {header}"); return
 
     def run(self):
         csv_path = self.csv_edit.text().strip()
@@ -296,6 +327,8 @@ class EbvMapGui(QWidget):
             "ra_col": self.ra_edit.text().strip(),
             "dec_col": self.dec_edit.text().strip(),
             "ebv_col": self.ebv_edit.text().strip(),
+            "label_col": self.label_edit.text().strip(),
+            "show_labels": self.show_labels_chk.isChecked(),
             "nside": self.nside_spin.value(),
             "interp_method": self.interp_edit.text().strip(),
             "smooth_sigma": self.smooth_spin.value(),
