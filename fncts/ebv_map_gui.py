@@ -11,6 +11,8 @@ Behavior:
  - A spinbox controls the number of ticks used on both axes.
  - Two major plot lines are drawn at each axis extent.
  - Optional Label column and Show labels checkbox remain.
+ - Place a highlighted star marker at a user-specified RA/Dec (degrees) and optional label.
+ - New: checkbox to treat the marker RA/Dec entries as sexagesimal (RA: H:M:S, Dec: D:M:S)
 """
 import sys
 import threading
@@ -39,9 +41,7 @@ class WorkerSignals(QObject):
 
 def _format_ra_hm_ticks(ticks_deg):
     sc = SkyCoord(ra=ticks_deg * u.deg, dec=np.zeros_like(ticks_deg) * u.deg, frame="icrs")
-    # precision=0 gives no seconds, result like "21:01:36" -> we'll strip seconds after
     hms = [sc.ra.to_string(unit=u.hour, sep=":", precision=0, pad=True) for _ in ticks_deg]
-    # convert "HH:MM:SS" -> "HH:MM"
     return [s.rsplit(":", 1)[0] for s in hms]
 
 def _format_ra_hms_ticks(ticks_deg):
@@ -118,6 +118,38 @@ def map_worker(params, signals: WorkerSignals):
                                 bbox=dict(facecolor='black', alpha=0.5, pad=1, edgecolor='none'))
             ax.legend(loc="upper right")
 
+        # optional placed marker (user-specified RA/Dec)
+        if params.get("place_marker", False):
+            mr = params.get("marker_ra", "").strip()
+            md = params.get("marker_dec", "").strip()
+            if mr != "" and md != "":
+                try:
+                    if params.get("marker_sexagesimal", False):
+                        # parse RA as hours:minutes:seconds and Dec as degrees:minutes:seconds
+                        try:
+                            sc = SkyCoord(ra=mr, dec=md, frame="icrs")
+                        except Exception:
+                            sc = SkyCoord(mr, md, unit=(u.hourangle, u.deg), frame="icrs")
+                        mra = sc.ra.deg
+                        mdec = sc.dec.deg
+                    else:
+                        mra = float(mr)
+                        mdec = float(md)
+
+                    ax.scatter([mra], [mdec], s=max(80, params.get("point_size", 8) * 6),
+                               marker="*", c="yellow", edgecolors="black", linewidths=0.6, zorder=10)
+                    mlabel = params.get("marker_label", "").strip()
+                    if mlabel != "":
+                        dx = (ra_max - ra_min) * 0.01 if ra_max > ra_min else 0.01
+                        dy = (dec_max - dec_min) * 0.01 if dec_max > dec_min else 0.01
+                        ax.text(mra + dx, mdec + dy, mlabel, fontsize=9, color="yellow",
+                                bbox=dict(facecolor='black', alpha=0.6, pad=1, edgecolor='none'), zorder=11)
+                    signals.status.emit(f"Placed marker at RA={mra:.6f} deg, Dec={mdec:.6f} deg")
+                except ValueError:
+                    signals.status.emit("Invalid numeric marker RA/Dec (must be numeric degrees). Marker not placed.")
+                except Exception as e:
+                    signals.status.emit(f"Failed parsing sexagesimal marker coordinates: {e}. Marker not placed.")
+
         # two major plot lines per axis (at extents)
         ax.axvline(ra_min, color="cyan", linewidth=1.4, alpha=0.9)
         ax.axvline(ra_max, color="cyan", linewidth=1.4, alpha=0.9)
@@ -151,7 +183,6 @@ def map_worker(params, signals: WorkerSignals):
                 ax_top.set_xticklabels(hm_labels, rotation=0, fontsize=8)
                 ax_top.set_xlabel("RA (H:M)")
         except Exception:
-            # fallback short formatting: HH:MM or HH:MM:SS without astropy
             def deg_to_hm(d):
                 hours = (d / 15.0) % 24.0
                 h = int(hours)
@@ -192,7 +223,7 @@ class EbvMapGui(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("E(B-V) Map — GUI")
-        self.setMinimumSize(950, 760)
+        self.setMinimumSize(950, 780)
         self._build_ui()
 
     def _build_ui(self):
@@ -247,6 +278,32 @@ class EbvMapGui(QWidget):
         grid.addWidget(QLabel("Interpolation:"), row, 2)
         self.interp_edit = QLineEdit("linear")
         grid.addWidget(self.interp_edit, row, 3)
+        row += 1
+
+        # Place marker UI
+        grid.addWidget(QLabel("Place star marker:"), row, 0)
+        self.place_marker_chk = QCheckBox()
+        self.place_marker_chk.setChecked(False)
+        grid.addWidget(self.place_marker_chk, row, 1)
+
+        grid.addWidget(QLabel("Marker RA (deg or H:M:S):"), row, 2)
+        self.marker_ra_edit = QLineEdit("")   # user types RA in decimal degrees or H:M:S
+        grid.addWidget(self.marker_ra_edit, row, 3)
+        row += 1
+
+        grid.addWidget(QLabel("Marker Dec (deg or D:M:S):"), row, 0)
+        self.marker_dec_edit = QLineEdit("")  # user types Dec in decimal degrees or D:M:S
+        grid.addWidget(self.marker_dec_edit, row, 1)
+
+        grid.addWidget(QLabel("Marker coords are sexagesimal?"), row, 2)
+        self.marker_sex_chk = QCheckBox()
+        self.marker_sex_chk.setChecked(False)   # default: decimal degrees
+        grid.addWidget(self.marker_sex_chk, row, 3)
+        row += 1
+
+        grid.addWidget(QLabel("Marker label (optional):"), row, 0)
+        self.marker_label_edit = QLineEdit("")
+        grid.addWidget(self.marker_label_edit, row, 1)
         row += 1
 
         grid.addWidget(QLabel("Grid resolution (nside):"), row, 0)
@@ -407,6 +464,11 @@ class EbvMapGui(QWidget):
             "show_labels": self.show_labels_chk.isChecked(),
             "use_hms": self.hms_chk.isChecked(),
             "n_ticks": self.nticks_spin.value(),
+            "place_marker": self.place_marker_chk.isChecked(),
+            "marker_ra": self.marker_ra_edit.text().strip(),
+            "marker_dec": self.marker_dec_edit.text().strip(),
+            "marker_label": self.marker_label_edit.text().strip(),
+            "marker_sexagesimal": self.marker_sex_chk.isChecked(),
             "nside": self.nside_spin.value(),
             "interp_method": self.interp_edit.text().strip(),
             "smooth_sigma": self.smooth_spin.value(),
