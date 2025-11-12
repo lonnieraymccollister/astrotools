@@ -3,10 +3,15 @@
 ebv_map_gui.py
 
 PyQt6 GUI for interpolating scattered E(B-V)/E(color) sightlines to a 2D map with contours.
-This version adds an optional Label column and a Show labels checkbox: non-blank labels
-are drawn next to their stars only when the checkbox is enabled.
-"""
 
+Behavior:
+ - Bottom x-axis shows decimal degrees.
+ - Top x-axis shows RA in H:M by default (no seconds).
+ - A checkbox enables H:M:S (seconds) when checked.
+ - A spinbox controls the number of ticks used on both axes.
+ - Two major plot lines are drawn at each axis extent.
+ - Optional Label column and Show labels checkbox remain.
+"""
 import sys
 import threading
 from pathlib import Path
@@ -17,10 +22,12 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
 from scipy.ndimage import gaussian_filter
 from astropy.visualization import ImageNormalize, PercentileInterval, LinearStretch
+from astropy.coordinates import SkyCoord
+import astropy.units as u
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QGridLayout, QLabel, QLineEdit, QPushButton, QFileDialog,
-    QTextEdit, QProgressBar, QSpinBox, QDoubleSpinBox, QCheckBox, QHBoxLayout, QVBoxLayout,
+    QTextEdit, QProgressBar, QSpinBox, QDoubleSpinBox, QCheckBox, QVBoxLayout,
     QTableWidget, QTableWidgetItem, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
@@ -29,6 +36,17 @@ from PyQt6.QtCore import Qt, pyqtSignal, QObject
 class WorkerSignals(QObject):
     status = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
+
+def _format_ra_hm_ticks(ticks_deg):
+    sc = SkyCoord(ra=ticks_deg * u.deg, dec=np.zeros_like(ticks_deg) * u.deg, frame="icrs")
+    # precision=0 gives no seconds, result like "21:01:36" -> we'll strip seconds after
+    hms = [sc.ra.to_string(unit=u.hour, sep=":", precision=0, pad=True) for _ in ticks_deg]
+    # convert "HH:MM:SS" -> "HH:MM"
+    return [s.rsplit(":", 1)[0] for s in hms]
+
+def _format_ra_hms_ticks(ticks_deg):
+    sc = SkyCoord(ra=ticks_deg * u.deg, dec=np.zeros_like(ticks_deg) * u.deg, frame="icrs")
+    return [sc.ra.to_string(unit=u.hour, sep=":", precision=0, pad=True) for _ in ticks_deg]
 
 def map_worker(params, signals: WorkerSignals):
     try:
@@ -51,26 +69,20 @@ def map_worker(params, signals: WorkerSignals):
         signals.status.emit(f"Building grid {nside} x {nside} ...")
         ra_min, ra_max = ra.min(), ra.max()
         dec_min, dec_max = dec.min(), dec.max()
-        grid_ra = np.linspace(ra_min, ra_max, nside)
-        grid_dec = np.linspace(dec_max, dec_min, nside)  # descending for image
-        RAg, DECg = np.meshgrid(grid_ra, grid_dec)
+        RAg, DECg = np.meshgrid(np.linspace(ra_min, ra_max, nside),
+                                np.linspace(dec_max, dec_min, nside))  # descending for image
 
         signals.status.emit("Interpolating scattered data onto grid...")
         points = np.vstack([ra, dec]).T
         grid_ebv = griddata(points, ebv, (RAg, DECg), method=params["interp_method"])
         if np.any(np.isnan(grid_ebv)):
-            # fill NaNs with nearest neighbor
             grid_near = griddata(points, ebv, (RAg, DECg), method="nearest")
             mask = np.isnan(grid_ebv)
             grid_ebv[mask] = grid_near[mask]
 
         # smoothing
         sigma = float(params["smooth_sigma"])
-        if sigma > 0:
-            signals.status.emit(f"Smoothing (sigma={sigma})...")
-            grid_sm = gaussian_filter(grid_ebv, sigma=sigma)
-        else:
-            grid_sm = grid_ebv
+        grid_sm = gaussian_filter(grid_ebv, sigma=sigma) if sigma > 0 else grid_ebv
 
         # plotting
         signals.status.emit("Rendering figure...")
@@ -81,7 +93,7 @@ def map_worker(params, signals: WorkerSignals):
         cbar = plt.colorbar(im, ax=ax, pad=0.02)
         cbar.set_label(params.get("cbar_label", "E(B-V) (mag)"))
 
-        # contours: percentiles to actual values
+        # contours
         pmin = np.nanpercentile(grid_sm, params["contour_lo_pct"])
         pmax = np.nanpercentile(grid_sm, params["contour_hi_pct"])
         levels = np.linspace(pmin, pmax, params["ncontours"])
@@ -90,15 +102,12 @@ def map_worker(params, signals: WorkerSignals):
                         grid_sm, levels=levels, colors="white", linewidths=0.8)
         ax.clabel(cs, inline=1, fontsize=8, fmt="%.3f")
 
-        # overlay input points (option) — with optional labels
+        # overlay input points + labels
         if params["plot_points"]:
             ax.scatter(ra, dec, s=params["point_size"], c="k", alpha=0.4, label="sightlines")
-            # annotate labels if requested and enabled
             label_col = params.get("label_col", "")
-            show_labels = bool(params.get("show_labels", True))
-            if show_labels and label_col and label_col in df.columns:
+            if params["show_labels"] and label_col and label_col in df.columns:
                 labels = df[label_col].astype(str).fillna("").values
-                # offset scale (fraction of extent)
                 dx_frac = 0.005
                 dy_frac = 0.005
                 dx = (ra_max - ra_min) * dx_frac if ra_max > ra_min else dx_frac
@@ -109,9 +118,65 @@ def map_worker(params, signals: WorkerSignals):
                                 bbox=dict(facecolor='black', alpha=0.5, pad=1, edgecolor='none'))
             ax.legend(loc="upper right")
 
+        # two major plot lines per axis (at extents)
+        ax.axvline(ra_min, color="cyan", linewidth=1.4, alpha=0.9)
+        ax.axvline(ra_max, color="cyan", linewidth=1.4, alpha=0.9)
+        ax.axhline(dec_min, color="cyan", linewidth=1.4, alpha=0.9)
+        ax.axhline(dec_max, color="cyan", linewidth=1.4, alpha=0.9)
+
+        # choose number of ticks (user-controlled)
+        n_ticks = int(params.get("n_ticks", 4))
+        if n_ticks < 2:
+            n_ticks = 2
+        xticks = np.linspace(ra_min, ra_max, n_ticks)
+
+        # Bottom axis: decimal degrees
+        ax.set_xticks(xticks)
+        deg_labels = [f"{x:.3f}" for x in xticks]
+        ax.set_xticklabels(deg_labels, rotation=0, fontsize=8)
         ax.set_xlabel("RA (deg)")
+
+        # Top axis: H:M (default) or H:M:S if checkbox selected
+        ax_top = ax.twiny()
+        ax_top.set_xlim(ax.get_xlim())
+        ax_top.set_xticks(xticks)
+        use_hms = bool(params.get("use_hms", False))
+        try:
+            if use_hms:
+                hms_labels = _format_ra_hms_ticks(xticks)  # H:M:S
+                ax_top.set_xticklabels(hms_labels, rotation=0, fontsize=8)
+                ax_top.set_xlabel("RA (H:M:S)")
+            else:
+                hm_labels = _format_ra_hm_ticks(xticks)  # H:M (no seconds)
+                ax_top.set_xticklabels(hm_labels, rotation=0, fontsize=8)
+                ax_top.set_xlabel("RA (H:M)")
+        except Exception:
+            # fallback short formatting: HH:MM or HH:MM:SS without astropy
+            def deg_to_hm(d):
+                hours = (d / 15.0) % 24.0
+                h = int(hours)
+                m = int((hours - h) * 60.0)
+                return f"{h:02d}:{m:02d}"
+            def deg_to_hms(d):
+                hours = (d / 15.0) % 24.0
+                h = int(hours)
+                m = int((hours - h) * 60.0)
+                s = int(((hours - h) * 60.0 - m) * 60.0)
+                return f"{h:02d}:{m:02d}:{s:02d}"
+            if use_hms:
+                ax_top.set_xticklabels([deg_to_hms(x) for x in xticks], rotation=0, fontsize=8)
+                ax_top.set_xlabel("RA (H:M:S)")
+            else:
+                ax_top.set_xticklabels([deg_to_hm(x) for x in xticks], rotation=0, fontsize=8)
+                ax_top.set_xlabel("RA (H:M)")
+
+        ax_top.xaxis.set_ticks_position('top')
+        ax_top.xaxis.set_label_position('top')
+        ax_top.tick_params(axis='x', which='major', pad=6)
+
         ax.set_ylabel("Dec (deg)")
         ax.set_title(params.get("title", "Interpolated E(B-V) (scattered sightlines)"))
+        ax.grid(which='major', color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
         plt.tight_layout()
 
         outpath = Path(params["outfig"])
@@ -127,7 +192,7 @@ class EbvMapGui(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("E(B-V) Map — GUI")
-        self.setMinimumSize(900, 700)
+        self.setMinimumSize(950, 760)
         self._build_ui()
 
     def _build_ui(self):
@@ -143,10 +208,10 @@ class EbvMapGui(QWidget):
         grid.addWidget(btn_csv, row, 4)
         row += 1
 
-        grid.addWidget(QLabel("RA column:"), row, 0)
+        grid.addWidget(QLabel("RA column (deg):"), row, 0)
         self.ra_edit = QLineEdit("ra_deg")
         grid.addWidget(self.ra_edit, row, 1)
-        grid.addWidget(QLabel("Dec column:"), row, 2)
+        grid.addWidget(QLabel("Dec column (deg):"), row, 2)
         self.dec_edit = QLineEdit("dec_deg")
         grid.addWidget(self.dec_edit, row, 3)
         row += 1
@@ -155,7 +220,7 @@ class EbvMapGui(QWidget):
         self.ebv_edit = QLineEdit("color_G-B")
         grid.addWidget(self.ebv_edit, row, 1)
 
-        # Label column (new)
+        # Label column (optional)
         grid.addWidget(QLabel("Label column (optional):"), row, 2)
         self.label_edit = QLineEdit("label")
         grid.addWidget(self.label_edit, row, 3)
@@ -165,6 +230,19 @@ class EbvMapGui(QWidget):
         self.show_labels_chk = QCheckBox()
         self.show_labels_chk.setChecked(True)
         grid.addWidget(self.show_labels_chk, row, 1)
+
+        # H:M:S checkbox and tick count
+        grid.addWidget(QLabel("Show seconds in top RA?"), row, 2)
+        self.hms_chk = QCheckBox()
+        self.hms_chk.setChecked(False)  # default H:M (no seconds)
+        grid.addWidget(self.hms_chk, row, 3)
+        row += 1
+
+        grid.addWidget(QLabel("Number of ticks (top & bottom):"), row, 0)
+        self.nticks_spin = QSpinBox()
+        self.nticks_spin.setRange(2, 12)
+        self.nticks_spin.setValue(4)
+        grid.addWidget(self.nticks_spin, row, 1)
 
         grid.addWidget(QLabel("Interpolation:"), row, 2)
         self.interp_edit = QLineEdit("linear")
@@ -294,12 +372,10 @@ class EbvMapGui(QWidget):
                 item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.preview_table.setItem(ri, ci, item)
         self.append_log(f"Loaded preview ({len(df)} rows). Click a header cell to autofill RA/Dec/E(column/Label).")
-        # connect header clicks
         self.preview_table.horizontalHeader().sectionClicked.connect(self.header_clicked)
 
     def header_clicked(self, index):
         header = self.preview_table.horizontalHeaderItem(index).text()
-        # ask user where to map the header
         resp = QMessageBox.question(self, "Map column", f"Set '{header}' as RA column?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if resp == QMessageBox.StandardButton.Yes:
             self.ra_edit.setText(header); self.append_log(f"RA column set to {header}"); return
@@ -329,6 +405,8 @@ class EbvMapGui(QWidget):
             "ebv_col": self.ebv_edit.text().strip(),
             "label_col": self.label_edit.text().strip(),
             "show_labels": self.show_labels_chk.isChecked(),
+            "use_hms": self.hms_chk.isChecked(),
+            "n_ticks": self.nticks_spin.value(),
             "nside": self.nside_spin.value(),
             "interp_method": self.interp_edit.text().strip(),
             "smooth_sigma": self.smooth_spin.value(),
