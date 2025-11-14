@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 clahe_gui.py
+
 PyQt6 GUI to apply CLAHE to color images or 3-plane FITS (RGB) and save result.
+
+Change:
+ - FITS output is now 32-bit float (float32) channel-first (C, Y, X), scaled 0..1 so Siril can read it.
 """
 import sys
 import os
@@ -271,32 +275,39 @@ class ClaheWindow(QMainWindow):
                     pass
                 else:
                     raise ValueError("Unsupported FITS shape for CLAHE; expected (3,H,W) or (H,W,3) or (H,W)")
-                # map to uint16 for CLAHE application
-                u16 = normalize_to_uint16(arr)
-                # OpenCV CLAHE expects single-channel 8/16-bit. Process per-channel.
+
+                # Map original data to uint16 scale for CLAHE processing, but remember to produce float32 output.
+                # We'll normalize the CLAHE result to 0..1 (float32) for Siril compatibility.
+                u16 = normalize_to_uint16(arr)  # H,W,C uint16 in 0..65535
+
+                # Ensure per-channel processing
                 if u16.ndim == 3:
                     channels = [u16[..., c].astype(np.uint16) for c in range(u16.shape[2])]
                 else:
                     channels = [u16.astype(np.uint16)]
+
                 clahe_channels = []
                 for ch in channels:
-                    # convert to 8-bit if needed for apply: OpenCV apply supports 8-bit; but also supports 16-bit in newer builds
-                    if ch.dtype != np.uint8:
-                        ch8 = (ch / 256).astype(np.uint8)
-                        c_out8 = clahe.apply(ch8)
-                        # scale back to 16-bit range
-                        c_back = (c_out8.astype(np.uint16) * 256)
-                    else:
-                        c_out8 = clahe.apply(ch)
-                        c_back = c_out8.astype(np.uint16)
+                    # apply CLAHE on 8-bit by downscaling to 8-bit, then scale back to 0..65535 range
+                    ch8 = (ch / 256).astype(np.uint8)
+                    c_out8 = clahe.apply(ch8)
+                    c_back = (c_out8.astype(np.uint16) * 257)  # use 257 to map 0..255 -> 0..65535 (approximately)
                     clahe_channels.append(c_back)
-                merged = np.stack(clahe_channels, axis=-1)  # H,W,3
-                # convert back to original numeric scale approximately: write as float32 scaled 0..1 times original max if desired.
-                # To preserve simplicity, save merged as uint16 channel-last -> convert to channel-first as many FITS workflows expect
-                out_arr = np.transpose(merged, (2,0,1))  # (C,Y,X)
-                # write FITS
+
+                merged = np.stack(clahe_channels, axis=-1)  # H,W,3 uint16 in 0..65535
+
+                # Convert merged uint16 to float32 normalized to 0..1 for Siril
+                merged_float = merged.astype(np.float32) / 65535.0  # H,W,3 float32 in 0..1
+
+                # Convert to channel-first (C, Y, X) which many FITS pipelines (and Siril) accept
+                out_arr = np.transpose(merged_float, (2, 0, 1)).astype(np.float32)  # (C, Y, X)
+
+                # Ensure header is appropriate: set BITPIX to -32 for float32
+                if hdr is None:
+                    hdr = fits.Header()
+                # write FITS as float32 primary
                 write_fits_image(outpath, out_arr, header=hdr)
-                self._log(f"Wrote FITS (CLAHE) to {outpath} shape={out_arr.shape} dtype={out_arr.dtype}")
+                self._log(f"Wrote FITS (CLAHE float32 0..1) to {outpath} shape={out_arr.shape} dtype={out_arr.dtype}")
             else:
                 # image file path: loaded is already uint8/uint16 RGB or gray in self.loaded
                 img = self.loaded
