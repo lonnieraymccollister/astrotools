@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
 pixelmath.py
-Standalone PyQt6 GUI for pixel-wise arithmetic on FITS images (Add, Subtract, Multiply, Divide, Max, Min).
-Usage: python pixelmath.py
-"""
 
+Standalone PyQt6 GUI for pixel-wise arithmetic on FITS images (Add, Subtract, Multiply, Divide, Max, Min).
+
+Changes:
+ - Improved FITS handling for 3-plane RGB preferred files:
+     * Accepts both (3, Y, X) and (Y, X, 3) input layouts.
+     * Performs arithmetic per-pixel and per-channel for 3-channel images.
+     * Preserves/updates the primary header and writes the result with the same channel layout
+       as the first input (if first input was channel-first (3,Y,X) the output keeps that).
+ - Safer numeric handling (float64 arithmetic) and clearer error messages.
+"""
 import sys
 import os
 from pathlib import Path
 
 import numpy as np
-import cv2
 from astropy.io import fits
 
 from PyQt6.QtWidgets import (
@@ -18,6 +24,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QFileDialog, QComboBox, QMessageBox
 )
 from PyQt6.QtCore import Qt
+
 
 class PixelMathWindow(QMainWindow):
     def __init__(self):
@@ -61,7 +68,7 @@ class PixelMathWindow(QMainWindow):
         layout.addWidget(self.outputBrowseButton, 3, 2)
 
         # Row 4: Brightness adjustment
-        layout.addWidget(QLabel("Image1 Brightness Adjustment:"), 4, 0)
+        layout.addWidget(QLabel("Brightness Adjustment (add):"), 4, 0)
         self.brightnessLineEdit = QLineEdit("0")
         layout.addWidget(self.brightnessLineEdit, 4, 1, 1, 2)
 
@@ -91,7 +98,7 @@ class PixelMathWindow(QMainWindow):
         layout.addWidget(self.statusLabel, 8, 0, 1, 4)
 
         # Set minimum size
-        self.setMinimumSize(640, 240)
+        self.setMinimumSize(720, 320)
 
     # File dialogs
     def browseFirstImage(self):
@@ -148,6 +155,53 @@ class PixelMathWindow(QMainWindow):
             "img2_scale": img2_num / img2_denom
         }
 
+    # utility: load fits primary and normalize orientation
+    def _load_fits_preserve_header(self, path):
+        """
+        Load primary HDU data and header.
+        Return (data_array, header, layout_info)
+        layout_info: dict with keys:
+            'orig_shape' - original data shape
+            'channel_first' - True if input was (3, Y, X)
+        The returned data_array will be float64 and in shape:
+            - (Y, X) for single-plane
+            - (Y, X, 3) for three-channel
+        """
+        with fits.open(path, memmap=False) as hdul:
+            data = hdul[0].data
+            header = hdul[0].header
+
+        if data is None:
+            raise ValueError("FITS contains no primary data")
+
+        arr = np.array(data)  # keep as-is for detection
+        layout_info = {"orig_shape": arr.shape, "channel_first": False}
+
+        # common cases:
+        # (3, Y, X) -> transpose to (Y, X, 3)
+        # (Y, X, 3) -> keep
+        # (Y, X) -> expand to (Y, X, 1) or keep as 2D
+        if arr.ndim == 3 and arr.shape[0] == 3:
+            # channel-first
+            arr = np.transpose(arr, (1, 2, 0))
+            layout_info["channel_first"] = True
+        elif arr.ndim == 3 and arr.shape[2] == 3:
+            layout_info["channel_first"] = False
+        elif arr.ndim == 2:
+            # single plane -> leave as 2D
+            pass
+        else:
+            # Unexpected but attempt to handle: if small first dimension equals 3, transpose
+            if arr.ndim == 3 and arr.shape[0] == 3:
+                arr = np.transpose(arr, (1, 2, 0))
+                layout_info["channel_first"] = True
+            else:
+                raise ValueError(f"Unsupported FITS data shape: {arr.shape}")
+
+        # cast to float64 for arithmetic safety
+        arr = arr.astype(np.float64, copy=False)
+        return arr, header, layout_info
+
     # Compute operation
     def computeOperation(self):
         self.statusLabel.setText("")  # clear
@@ -157,29 +211,29 @@ class PixelMathWindow(QMainWindow):
 
         op = self.operationComboBox.currentText()
         try:
-            # Open FITS
-            with fits.open(inputs["first_file"]) as hdul1, fits.open(inputs["second_file"]) as hdul2:
-                data1 = hdul1[0].data
-                header1 = hdul1[0].header
-                data2 = hdul2[0].data
+            im1, hdr1, info1 = self._load_fits_preserve_header(inputs["first_file"])
+            im2, hdr2, info2 = self._load_fits_preserve_header(inputs["second_file"])
+        except Exception as e:
+            self.statusLabel.setText(f"Error loading FITS: {e}")
+            return
 
-            if data1 is None or data2 is None:
-                self.statusLabel.setText("Error: One of the FITS files contains no data.")
+        # Check dimension compatibility after orientation normalization:
+        if im1.shape != im2.shape:
+            # allow single-plane vs 3-channel mismatch only if one can be broadcast: expand single plane to 3 channels
+            if im1.ndim == 2 and im2.ndim == 3 and im2.shape[2] == 3:
+                im1 = np.stack([im1] * 3, axis=-1)
+            elif im2.ndim == 2 and im1.ndim == 3 and im1.shape[2] == 3:
+                im2 = np.stack([im2] * 3, axis=-1)
+            else:
+                self.statusLabel.setText(f"Error: Input images do not have the same dimensions ({im1.shape} vs {im2.shape}).")
                 return
 
-            # Convert to float64 for safe arithmetic
-            im1 = data1.astype(np.float64) * inputs["img1_scale"]
-            im2 = data2.astype(np.float64) * inputs["img2_scale"]
+        # perform scaling
+        im1 = im1 * inputs["img1_scale"]
+        im2 = im2 * inputs["img2_scale"]
 
-            # Dimension checks
-            if im1.shape != im2.shape:
-                self.statusLabel.setText("Error: Input images do not have the same dimensions.")
-                return
-            if im1.ndim not in (2, 3):
-                self.statusLabel.setText("Error: Unsupported image dimensionality (expect 2D mono or 3D color).")
-                return
-
-            # Perform selected op
+        # Arithmetic (float64)
+        try:
             if op == "Add":
                 result_image = im1 + im2 + inputs["brightness"]
             elif op == "Subtract":
@@ -187,7 +241,7 @@ class PixelMathWindow(QMainWindow):
             elif op == "Multiply":
                 result_image = im1 * im2 + inputs["brightness"]
             elif op == "Divide":
-                # safe divide: where im2==0 -> set to 0 (or choose alternative)
+                # safe divide
                 result_image = np.divide(im1, im2, out=np.zeros_like(im1), where=im2 != 0) + inputs["brightness"]
             elif op == "Max":
                 result_image = np.maximum(im1, im2) + inputs["brightness"]
@@ -196,13 +250,44 @@ class PixelMathWindow(QMainWindow):
             else:
                 self.statusLabel.setText("Unknown operation selected.")
                 return
+        except Exception as e:
+            self.statusLabel.setText(f"Arithmetic error: {e}")
+            return
 
-            # Write result with original header where possible
-            hdu = fits.PrimaryHDU(result_image.astype(np.float64), header=header1)
+        # Decide output layout: preserve first input's original layout (channel-first or channel-last)
+        out_header = hdr1.copy() if hdr1 is not None else fits.Header()
+        # If first input was channel-first originally, transpose result back to (C, Y, X)
+        if info1.get("channel_first", False):
+            # result_image is (Y, X, C) or (Y, X) -> convert to (C, Y, X)
+            if result_image.ndim == 3 and result_image.shape[2] == 3:
+                out_arr = np.transpose(result_image, (2, 0, 1))
+            elif result_image.ndim == 2:
+                out_arr = result_image[np.newaxis, :, :]
+            else:
+                # unexpected shape - write as-is
+                out_arr = result_image
+        else:
+            # keep as (Y, X, C) or (Y, X)
+            out_arr = result_image
+
+        # Ensure output dtype is float64 for precision (user can downcast later if desired)
+        out_arr = out_arr.astype(np.float64, copy=False)
+
+        # Update header BITPIX if present: FITS writer will set BITPIX based on data dtype,
+        # but if we want to be explicit set to -64 for float64
+        try:
+            out_header['BITPIX'] = -64
+        except Exception:
+            pass
+
+        # Write result
+        try:
+            # create PrimaryHDU and preserve header keywords
+            hdu = fits.PrimaryHDU(data=out_arr, header=out_header)
             hdu.writeto(inputs["output_file"], overwrite=True)
             self.statusLabel.setText("Operation completed; output saved successfully.")
         except Exception as e:
-            self.statusLabel.setText(f"An error occurred: {e}")
+            self.statusLabel.setText(f"Failed writing output FITS: {e}")
 
 def main():
     app = QApplication(sys.argv)
@@ -210,7 +295,6 @@ def main():
     window.show()
     sys.exit(app.exec())
 
+
 if __name__ == "__main__":
     main()
-    win = PixelMathWindow()
-    win.show()

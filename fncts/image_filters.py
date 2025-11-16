@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
 image_filters.py
-PyQt6 GUI to run a set of FITS image filters (Unsharp, RL deconv, FFT high-pass, morphology, Gaussian, HpMore, LocAdapt).
-This is a cleaned, runnable version of your code.
-"""
 
+PyQt6 GUI to run a set of FITS image filters (Unsharp, RL deconv, FFT high-pass, morphology, Gaussian, HpMore, LocAdapt).
+
+Enhancement:
+ - Robust handling of 3-plane RGB FITS preferred:
+     * Accepts and normalizes input layouts (primary HDU data in either (3, Y, X) or (Y, X, 3) or (Y, X)).
+     * Returns/uses arrays in canonical (Y, X, C) form for processing.
+     * Preserves original header and original channel layout on write (will restore (3, Y, X) if input was channel-first).
+ - Safer numeric casts and clearer error messages.
+"""
 import sys
 import os
 from pathlib import Path
@@ -23,6 +29,82 @@ from PyQt6.QtWidgets import (
     QStackedWidget
 )
 from PyQt6.QtCore import Qt
+
+# ----------------------------
+# Helpers for FITS color handling
+# ----------------------------
+def load_fits_rgb(path):
+    """
+    Load primary HDU and return tuple (arr_yxc, header, layout_info)
+    - arr_yxc is a numpy array in shape (Y, X) or (Y, X, 3)
+    - header is the primary header
+    - layout_info is dict with 'orig_shape' and 'channel_first' boolean indicating if original was (3, Y, X)
+    """
+    with fits.open(path, memmap=False) as hdul:
+        data = hdul[0].data
+        hdr = hdul[0].header
+
+    if data is None:
+        raise ValueError("FITS primary HDU has no data")
+
+    arr = np.array(data)  # keep original shape
+    layout_info = {"orig_shape": arr.shape, "channel_first": False}
+
+    # Normalize to (Y, X, C) if needed
+    if arr.ndim == 3:
+        # common case: (3, Y, X) -> transpose to (Y, X, 3)
+        if arr.shape[0] == 3:
+            arr = np.transpose(arr, (1, 2, 0))
+            layout_info["channel_first"] = True
+        # already (Y, X, 3)
+        elif arr.shape[2] == 3:
+            layout_info["channel_first"] = False
+        else:
+            # other 3D layouts are unexpected; try to handle if first dim == 3
+            if arr.shape[0] == 3:
+                arr = np.transpose(arr, (1, 2, 0))
+                layout_info["channel_first"] = True
+            else:
+                raise ValueError(f"Unsupported 3D FITS shape: {arr.shape}")
+    elif arr.ndim == 2:
+        # single plane -> expand to (Y, X, 3) by duplication for convenience
+        arr = np.stack([arr, arr, arr], axis=-1)
+        layout_info["channel_first"] = False
+    else:
+        raise ValueError(f"Unsupported FITS dimensionality: {arr.shape}")
+
+    # Ensure float64 for processing
+    arr = arr.astype(np.float64, copy=False)
+    return arr, hdr, layout_info
+
+def write_fits_preserve_layout(path, arr_yxc, header, layout_info):
+    """
+    Write arr_yxc back to FITS preserving original layout.
+    If original layout was channel_first, transpose to (3, Y, X) before writing.
+    Otherwise write as (Y, X, 3) or (Y, X) depending on arr_yxc shape.
+    """
+    out = np.array(arr_yxc, copy=False)
+    if layout_info.get("channel_first", False):
+        # expect arr_yxc shape (Y, X, C) -> transpose to (C, Y, X)
+        if out.ndim == 3 and out.shape[2] == 3:
+            out_write = np.transpose(out, (2, 0, 1))
+        elif out.ndim == 2:
+            out_write = out[np.newaxis, :, :]
+        else:
+            out_write = out
+    else:
+        out_write = out
+
+    # If header exists, copy and try to update BITPIX depending on dtype
+    hdr = header.copy() if header is not None else fits.Header()
+    # astropy will set BITPIX based on dtype; but set explicitly for floats
+    try:
+        if np.issubdtype(out_write.dtype, np.floating):
+            hdr['BITPIX'] = -64 if out_write.dtype == np.float64 else -32
+    except Exception:
+        pass
+
+    fits.writeto(path, out_write, hdr, overwrite=True)
 
 # ----------------------------
 # Main Window Definition
@@ -319,24 +401,21 @@ class ImageFiltersWindow(QMainWindow):
         if not inp or not outp:
             self.statusLabel.setText("Provide input and output files.")
             return
-        hdul = fits.open(inp)
-        header = hdul[0].header
-        data = hdul[0].data.astype(np.float64)
-        hdul.close()
-        if data.ndim == 2:
-            blurred = cv2.GaussianBlur(data, (0, 0), 2.0)
-            result = cv2.addWeighted(data, 2.0, blurred, -1.0, 0)
-        elif data.ndim == 3:
+        arr, header, info = load_fits_rgb(inp)
+        if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
+            blurred = cv2.GaussianBlur(arr.astype(np.float32), (0, 0), 2.0)
+            result = cv2.addWeighted(arr.astype(np.float32), 2.0, blurred, -1.0, 0.0)
+        elif arr.ndim == 3 and arr.shape[2] == 3:
             res_channels = []
-            for c in range(data.shape[2]):
-                channel = data[:, :, c]
+            for c in range(3):
+                channel = arr[:, :, c].astype(np.float32)
                 blurred = cv2.GaussianBlur(channel, (0, 0), 2.0)
-                res_channels.append(cv2.addWeighted(channel, 2.0, blurred, -1.0, 0))
+                res_channels.append(cv2.addWeighted(channel, 2.0, blurred, -1.0, 0.0))
             result = np.stack(res_channels, axis=2)
         else:
             self.statusLabel.setText("Unsupported dimensions for Unsharp Mask.")
             return
-        fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
         self.statusLabel.setText("Unsharp Mask saved to " + outp)
 
     def runLrDeconv(self):
@@ -345,15 +424,13 @@ class ImageFiltersWindow(QMainWindow):
         iters = int(self.lrIter.text().strip())
         psf_mode = self.lrPsfMode.currentText()
 
-        hdul = fits.open(inp)
-        header = hdul[0].header
-        image = hdul[0].data.astype(np.float64)
-        hdul.close()
+        arr, header, info = load_fits_rgb(inp)
 
         from astropy.convolution import convolve_fft
+
         def richardson_lucy(im, psf, iterations):
             im = im.astype(np.float64)
-            im_est = im.copy()
+            im_est = np.maximum(im.copy(), 1e-12)
             psf_mirror = psf[::-1, ::-1]
             for i in range(iterations):
                 conv_est = convolve_fft(im_est, psf, normalize_kernel=True)
@@ -363,34 +440,37 @@ class ImageFiltersWindow(QMainWindow):
                 im_est *= correction
             return im_est
 
+        # Build PSF
         if psf_mode == "Analytical":
             sigma = 2.0
             ks = 25
-            ax = np.linspace(-(ks-1)/2., (ks-1)/2., ks)
+            ax = np.linspace(-(ks - 1) / 2., (ks - 1) / 2., ks)
             xx, yy = np.meshgrid(ax, ax)
-            psf = np.exp(-(xx**2 + yy**2) / (2. * sigma**2))
+            psf = np.exp(-(xx ** 2 + yy ** 2) / (2.0 * sigma ** 2))
             psf /= psf.sum()
         else:
             x = float(self.lrPsfX.text().strip())
             y = float(self.lrPsfY.text().strip())
             size = int(self.lrPsfSize.text().strip())
-            cutout = Cutout2D(image, (x, y), size)
+            # Work on first channel to extract psf region
+            base_image = arr[:, :, 0] if arr.ndim == 3 else arr
+            cutout = Cutout2D(base_image, (x, y), size)
             psf = cutout.data.copy()
             psf -= np.median(psf)
             psf[psf < 0] = 0
             if psf.sum() != 0:
                 psf /= psf.sum()
 
-        if image.ndim == 2:
-            deconv = richardson_lucy(image, psf, iters)
-        elif image.ndim == 3:
-            deconv_channels = [richardson_lucy(image[:,:,c], psf, iters) for c in range(image.shape[2])]
+        if arr.ndim == 2:
+            deconv = richardson_lucy(arr, psf, iters)
+        elif arr.ndim == 3 and arr.shape[2] == 3:
+            deconv_channels = [richardson_lucy(arr[:, :, c], psf, iters) for c in range(3)]
             deconv = np.stack(deconv_channels, axis=2)
         else:
             self.statusLabel.setText("Unsupported dimensions for LrDeconv.")
             return
 
-        fits.writeto(outp, deconv.astype(np.float64), header, overwrite=True)
+        write_fits_preserve_layout(outp, deconv.astype(np.float64), header, info)
         self.statusLabel.setText("LrDeconv saved to " + outp)
 
     def runFFT(self):
@@ -401,19 +481,15 @@ class ImageFiltersWindow(QMainWindow):
         denom = float(self.fftDenom.text().strip())
         radius = int(self.fftRadius.text().strip())
         cutoff2 = float(self.fftSecondCutoff.text().strip())
-        hdul = fits.open(inp)
-        header = hdul[0].header
-        data = hdul[0].data.astype(np.float64)
-        hdul.close()
 
-        if data.ndim == 3:
-            if data.shape[0] != 3 and data.shape[-1] == 3:
-                data = np.transpose(data, (2, 0, 1))
-        else:
+        data, header, info = load_fits_rgb(inp)
+
+        if data.ndim != 3 or data.shape[2] != 3:
             self.statusLabel.setText("FFT requires a 3-channel image.")
             return
 
-        b, g, r = data[0], data[1], data[2]
+        # Work channel-first for FFT processing convenience: convert to (C,Y,X)
+        b, g, r = data[:, :, 0], data[:, :, 1], data[:, :, 2]
 
         def high_pass_filter(im, cutoff_frac, weight_frac):
             fft = np.fft.fft2(im)
@@ -422,7 +498,7 @@ class ImageFiltersWindow(QMainWindow):
             crow, ccol = rows // 2, cols // 2
             rad = int(cutoff_frac * min(rows, cols))
             mask = np.ones((rows, cols), np.float32)
-            mask[max(0, crow-rad):min(rows, crow+rad), max(0, ccol-rad):min(cols, ccol+rad)] = 0
+            mask[max(0, crow - rad):min(rows, crow + rad), max(0, ccol - rad):min(cols, ccol + rad)] = 0
             fft_shift_filtered = fft_shift * mask
             fft_inverse = np.fft.ifftshift(fft_shift_filtered)
             im_filt = np.abs(np.fft.ifft2(fft_inverse))
@@ -430,23 +506,23 @@ class ImageFiltersWindow(QMainWindow):
             return im_weighted
 
         def feather_image(im, radius_px, distance):
-            r_px = max(1, radius_px | 1)  # ensure odd
+            radius_px = max(1, int(radius_px) | 1)
             im_blur = cv2.GaussianBlur(im, (radius_px, radius_px), 0) if radius_px > 1 else im
             mask = np.full(im.shape, 255, dtype=np.uint8)
-            k = max(1, int(distance)*2+1)
+            k = max(1, int(distance) * 2 + 1)
             mask_blur = cv2.GaussianBlur(mask, (k, k), 0)
             return (im_blur * (mask_blur / 255.0)).astype(im.dtype)
 
         def process_channel(ch):
-            ch_norm = np.interp(ch, (ch.min(), ch.max()), (0, 1)).astype(np.float32)
-            filtered = high_pass_filter(ch_norm, cutoff/denom, weight/denom)
+            ch_norm = np.interp(ch, (np.nanmin(ch), np.nanmax(ch)), (0, 1)).astype(np.float32)
+            filtered = high_pass_filter(ch_norm, cutoff / denom, weight / denom)
             return feather_image(filtered, radius, int(cutoff2))
 
         b_proc = process_channel(b)
         g_proc = process_channel(g)
         r_proc = process_channel(r)
-        processed = np.stack([b_proc, g_proc, r_proc], axis=0)
-        fits.writeto(outp, processed.astype(np.float64), header, overwrite=True)
+        processed = np.stack([b_proc, g_proc, r_proc], axis=2)
+        write_fits_preserve_layout(outp, processed.astype(np.float64), header, info)
         self.statusLabel.setText("FFT saved to " + outp)
 
     def runErosion(self):
@@ -454,24 +530,21 @@ class ImageFiltersWindow(QMainWindow):
         outp = self.erOutput.text().strip()
         iters = int(self.erIter.text().strip())
         ksize = int(self.erKernel.text().strip())
-        hdul = fits.open(inp)
-        header = hdul[0].header
-        data = hdul[0].data.astype(np.float64)
-        hdul.close()
-        if data.ndim == 3:
+        data, header, info = load_fits_rgb(inp)
+        if data.ndim == 3 and data.shape[2] == 3:
             res_channels = []
-            for c in range(data.shape[2]):
-                channel = data[:, :, c]
+            for c in range(3):
+                channel = data[:, :, c].astype(np.float32)
                 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
                 res_channels.append(cv2.erode(channel, kernel, iterations=iters))
             result = np.stack(res_channels, axis=2)
         elif data.ndim == 2:
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
-            result = cv2.erode(data, kernel, iterations=iters)
+            result = cv2.erode(data.astype(np.float32), kernel, iterations=iters)
         else:
             self.statusLabel.setText("Unsupported dimensions in erosion.")
             return
-        fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
         self.statusLabel.setText("Erosion saved to " + outp)
 
     def runDilation(self):
@@ -479,67 +552,59 @@ class ImageFiltersWindow(QMainWindow):
         outp = self.diOutput.text().strip()
         iters = int(self.diIter.text().strip())
         ksize = int(self.diKernel.text().strip())
-        hdul = fits.open(inp)
-        header = hdul[0].header
-        data = hdul[0].data.astype(np.float64)
-        hdul.close()
-        if data.ndim == 3:
+        data, header, info = load_fits_rgb(inp)
+        if data.ndim == 3 and data.shape[2] == 3:
             res_channels = []
-            for c in range(data.shape[2]):
-                channel = data[:, :, c]
+            for c in range(3):
+                channel = data[:, :, c].astype(np.float32)
                 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
                 res_channels.append(cv2.dilate(channel, kernel, iterations=iters))
             result = np.stack(res_channels, axis=2)
         elif data.ndim == 2:
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
-            result = cv2.dilate(data, kernel, iterations=iters)
+            result = cv2.dilate(data.astype(np.float32), kernel, iterations=iters)
         else:
             self.statusLabel.setText("Unsupported dimensions in dilation.")
             return
-        fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
         self.statusLabel.setText("Dilation saved to " + outp)
 
     def runGaussian(self):
         inp = self.gaInput.text().strip()
         outp = self.gaOutput.text().strip()
         sigma = float(self.gaSigma.text().strip())
-        hdul = fits.open(inp)
-        header = hdul[0].header
-        data = hdul[0].data.astype(np.float64)
-        hdul.close()
-        if data.ndim == 3:
+        data, header, info = load_fits_rgb(inp)
+        if data.ndim == 3 and data.shape[2] == 3:
             res_channels = []
-            for c in range(data.shape[2]):
+            for c in range(3):
                 channel = data[:, :, c]
-                norm = np.interp(channel, (channel.min(), channel.max()), (0, 1)).astype(np.float32)
-                res_channels.append(cv2.GaussianBlur(norm, (0,0), sigmaX=sigma, sigmaY=sigma))
+                norm = np.interp(channel, (np.nanmin(channel), np.nanmax(channel)), (0, 1)).astype(np.float32)
+                res_channels.append(cv2.GaussianBlur(norm, (0, 0), sigmaX=sigma, sigmaY=sigma))
             result = np.stack(res_channels, axis=2)
         elif data.ndim == 2:
-            norm = np.interp(data, (data.min(), data.max()), (0, 1)).astype(np.float32)
-            result = cv2.GaussianBlur(norm, (0,0), sigmaX=sigma, sigmaY=sigma)
+            norm = np.interp(data, (np.nanmin(data), np.nanmax(data)), (0, 1)).astype(np.float32)
+            result = cv2.GaussianBlur(norm, (0, 0), sigmaX=sigma, sigmaY=sigma)
         else:
             self.statusLabel.setText("Unsupported dimensions in Gaussian.")
             return
-        fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
         self.statusLabel.setText("Gaussian blur saved to " + outp)
 
     def runHpMore(self):
         inp = self.hpInput.text().strip()
         outp = self.hpOutput.text().strip()
-        hdul = fits.open(inp)
-        data = hdul[0].data.astype(np.float64)
-        hdul.close()
-        if data.ndim == 3:
-            if data.shape[-1] == 3:
-                data = np.transpose(data, (2, 0, 1))
-            elif data.shape[0] == 3:
-                pass
-            else:
-                self.statusLabel.setText("Unexpected color image shape in HpMore.")
-                return
+        data, header, info = load_fits_rgb(inp)
+        # For HpMore we want channel-first internal processing (C, Y, X)
+        if data.ndim == 3 and data.shape[2] == 3:
+            # convert to (C, Y, X)
+            data_cf = np.transpose(data, (2, 0, 1))
+        elif data.ndim == 3 and data.shape[0] == 3:
+            # perhaps already channel-first - convert to (C, Y, X) by identity
+            data_cf = np.array(data)
         else:
             self.statusLabel.setText("Input FITS is not a 3-channel image in HpMore.")
             return
+
         hp_kernel_5x5 = np.array([
             [-1, -1, -1, -1, -1],
             [-1,  1,  2,  1, -1],
@@ -547,16 +612,22 @@ class ImageFiltersWindow(QMainWindow):
             [-1,  1,  2,  1, -1],
             [-1, -1, -1, -1, -1]
         ], dtype=float)
-        filtered_channels = np.empty_like(data)
-        for i in range(data.shape[0]):
-            channel = data[i]
+        filtered_channels = np.empty_like(data_cf)
+        for i in range(data_cf.shape[0]):
+            channel = data_cf[i]
             highpass = convolve2d(channel, hp_kernel_5x5, mode='same', boundary='symm')
             threshold = np.percentile(channel, 70)
             mask = channel > threshold
             filtered_channel = channel.copy()
             filtered_channel[mask] = channel[mask] + highpass[mask]
             filtered_channels[i] = filtered_channel
-        fits.writeto(outp, filtered_channels.astype(np.float64), overwrite=True)
+        # write filtered_channels as channel-first or restore layout from original info
+        # If original was channel-first we can write filtered_channels directly; otherwise transpose back
+        if info.get("channel_first", False):
+            out_arr = filtered_channels
+        else:
+            out_arr = np.transpose(filtered_channels, (1, 2, 0))
+        write_fits_preserve_layout(outp, out_arr.astype(np.float64), header, info)
         self.statusLabel.setText("HpMore saved to " + outp)
 
     def runLocAdapt(self):
@@ -565,12 +636,11 @@ class ImageFiltersWindow(QMainWindow):
         neigh = int(self.laNeigh.text().strip())
         target_std = float(self.laContrast.text().strip())
         feather_dist = float(self.laFeather.text().strip())
-        hdul = fits.open(inp)
-        header = hdul[0].header
-        data = hdul[0].data.astype(float)
-        hdul.close()
-        if data.ndim == 3 and data.shape[0] == 3:
-            channel = data[0]
+        data, header, info = load_fits_rgb(inp)
+
+        # Choose channel to compute local adapt (use first channel)
+        if data.ndim == 3 and data.shape[2] == 3:
+            channel = data[:, :, 0]
         elif data.ndim == 2:
             channel = data
         else:
@@ -585,7 +655,7 @@ class ImageFiltersWindow(QMainWindow):
 
         def compute_optimum_feather_distance(image, neighborhood_size, factor=1.0):
             adjusted_size = max(1, neighborhood_size - 1)
-            kernel = np.ones((adjusted_size, adjusted_size), dtype=np.float32) / (adjusted_size*adjusted_size)
+            kernel = np.ones((adjusted_size, adjusted_size), dtype=np.float32) / (adjusted_size * adjusted_size)
             local_mean = nd_convolve(image, kernel, mode='reflect')
             local_mean_sq = nd_convolve(image**2, kernel, mode='reflect')
             local_std = np.sqrt(np.abs(local_mean_sq - local_mean**2))
@@ -608,12 +678,15 @@ class ImageFiltersWindow(QMainWindow):
         opt_feather = compute_optimum_feather_distance(channel, neigh, feather_dist)
         fd = max(1e-9, opt_feather / 100.0)
         enhanced = contrast_filter(channel, neigh, contrast_factor, fd)
-        if data.ndim == 3 and data.shape[0] == 3:
-            data[0] = enhanced
-            result = data
+
+        if data.ndim == 3 and data.shape[2] == 3:
+            new_data = np.array(data)
+            new_data[:, :, 0] = enhanced
+            result = new_data
         else:
             result = enhanced
-        fits.writeto(outp, result.astype(np.float64), header, overwrite=True)
+
+        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
         self.statusLabel.setText("LocAdapt saved to " + outp)
 
 # Main
