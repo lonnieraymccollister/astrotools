@@ -6,7 +6,7 @@ Reads input CSV with 'ra','dec' (deg or sexagesimal strings), queries APASS or G
 and prints results to the console (one line per input position).
 
 Usage:
-  python fetch_catalog_mags_console.py input.csv --catalog apass --radius 5.0
+  python J:\work\zwork\fncts\apConsole.py J:\work\zwork\astk_BgrRcPsBePcc_test.csv --catalog gaia --radius 5.0 > J:\work\zwork\astk_BgrRcPsBePcc_testout.csv
 """
 import argparse
 import time
