@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
-fetch_catalog_mags_console.py
+Query APASS or Gaia for positions in an input CSV and print results.
 
-Reads input CSV with 'ra','dec' (deg or sexagesimal strings), queries APASS or Gaia,
-and prints results to the console (one line per input position).
+Input CSV must contain columns 'ra' and 'dec' (decimal degrees or sexagesimal strings).
 
-Usage:
-  python J:\work\zwork\fncts\apConsole.py J:\work\zwork\astk_BgrRcPsBePcc_test.csv --catalog gaia --radius 5.0 > J:\work\zwork\astk_BgrRcPsBePcc_testout.csv
+Examples:
+  # write to stdout (pipe or redirect in shell)
+  python J:/work/zwork/fncts/apConsole.py J:/work/zwork/astk.csv --catalog gaia --radius 5.0 > J:/work/zwork/out.csv
+
+  # write directly to a file using --output
+  python J:/work/zwork/fncts/apConsole.py J:/work/zwork/astk.csv --catalog gaia --radius 5.0 --output J:/work/zwork/out.csv
 """
 import argparse
 import time
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -35,6 +39,7 @@ CATALOGS = {
 
 # common alternate names for parallax in various catalogs / tables
 PARALLAX_CANDIDATES = ['Plx', 'parallax', 'parallax_value', 'parallax_mean', 'parallax_error']
+
 
 def query_vizier_nearest(coord, catalog_key, radius_arcsec=3.0, max_retries=3, pause=0.2):
     info = CATALOGS[catalog_key]
@@ -74,16 +79,14 @@ def query_vizier_nearest(coord, catalog_key, radius_arcsec=3.0, max_retries=3, p
 
     row = table[idx]
     out = {'sep_arcsec': sep_best}
-    # map mags (we will keep missing mags as empty strings later)
+    # map mags (we will keep missing mags as None)
     for c in cols[2:]:
         try:
             if c in row.colnames:
                 val = row[c]
-                # Vizier uses '--' or masked values; treat those as missing
                 if val is None or (isinstance(val, str) and val.strip() in ['', '--']):
                     out[c] = None
                 else:
-                    # try numeric
                     try:
                         out[c] = float(val)
                     except Exception:
@@ -98,7 +101,6 @@ def query_vizier_nearest(coord, catalog_key, radius_arcsec=3.0, max_retries=3, p
         out['cat_ra'] = float(row[cat_ra_col])
         out['cat_dec'] = float(row[cat_dec_col])
     except Exception:
-        # keep empty if cannot parse
         out['cat_ra'] = None
         out['cat_dec'] = None
 
@@ -114,7 +116,6 @@ def query_vizier_nearest(coord, catalog_key, radius_arcsec=3.0, max_retries=3, p
                         continue
                     plx = float(val)
                     # try to find an associated error column nearby (common name patterns)
-                    # preferred explicit e_Plx, parallax_error, e_parallax
                     for errname in ['e_' + pname, pname + '_error', 'parallax_error', 'e_parallax']:
                         if errname in row.colnames:
                             try:
@@ -127,10 +128,10 @@ def query_vizier_nearest(coord, catalog_key, radius_arcsec=3.0, max_retries=3, p
                     continue
         out['parallax'] = plx
         out['parallax_error'] = e_plx
-        # RUWE if present in the fetched columns
         out['ruwe'] = float(row['RUWE']) if 'RUWE' in row.colnames and row['RUWE'] not in (None, '--') else None
 
     return out
+
 
 def parse_coord_pair(ra_in, dec_in):
     """
@@ -145,8 +146,8 @@ def parse_coord_pair(ra_in, dec_in):
     except Exception:
         # try to parse as sexagesimal string pair
         s = f"{ra_in} {dec_in}"
-        # astropy will interpret RA as hourangle if unit specified; try autodetect by not specifying units
         return SkyCoord(s, frame='icrs')
+
 
 def fmt_empty_or(value, fmt="{:.4f}"):
     """
@@ -161,91 +162,133 @@ def fmt_empty_or(value, fmt="{:.4f}"):
         return fmt.format(value)
     return str(value)
 
-def main():
+
+def build_output_lines(results, catalog):
+    """Convert list of result dicts into CSV lines (strings)."""
+    if catalog == 'apass':
+        mag_labels = ['Bmag', 'gmag', 'rmag', 'imag', 'Vmag']
+    else:
+        mag_labels = ['Gmag', 'BPmag', 'RPmag', 'parallax', 'parallax_error', 'ruwe']
+
+    header = ["input_ra", "input_dec", "cat_ra", "cat_dec", "sep_arcsec"] + mag_labels
+    lines = [",".join(header)]
+
+    for item in results:
+        if item is None:
+            # parser failure or query fail already encoded as dict in main; keep blank line
+            continue
+        ra_in = item.get('input_ra', '')
+        dec_in = item.get('input_dec', '')
+        cat_ra = (f"{item.get('cat_ra'):.8f}" if item.get('cat_ra') is not None else "")
+        cat_dec = (f"{item.get('cat_dec'):.8f}" if item.get('cat_dec') is not None else "")
+        sep = (f"{item.get('sep_arcsec'):.3f}" if item.get('sep_arcsec') is not None else "")
+
+        if catalog == 'apass':
+            mags = [item.get('Bmag'), item.get('gmag'), item.get('rmag'), item.get('imag'), item.get('Vmag')]
+            mags_fmt = [fmt_empty_or(m) for m in mags]
+        else:
+            g = item.get('Gmag')
+            bp = item.get('BPmag')
+            rp = item.get('RPmag')
+            plx = item.get('parallax')
+            e_plx = item.get('parallax_error')
+            ruwe = item.get('ruwe')
+            mags_fmt = [fmt_empty_or(g), fmt_empty_or(bp), fmt_empty_or(rp),
+                        fmt_empty_or(plx), fmt_empty_or(e_plx), fmt_empty_or(ruwe)]
+
+        row = [ra_in, dec_in, cat_ra, cat_dec, sep] + mags_fmt
+        lines.append(",".join(map(str, row)))
+    return lines
+
+
+def main(argv=None):
     p = argparse.ArgumentParser(description="Query APASS or Gaia and print results to console")
     p.add_argument("input_csv", help="CSV with columns 'ra' and 'dec' (degrees or sexagesimal strings)")
-    p.add_argument("--catalog", choices=['apass','gaia'], default='apass')
+    p.add_argument("--catalog", choices=['apass', 'gaia'], default='apass')
     p.add_argument("--radius", type=float, default=3.0, help="cone search radius in arcsec")
     p.add_argument("--sleep", type=float, default=0.08, help="sleep between queries (s)")
     p.add_argument("--max-retries", type=int, default=3)
-    args = p.parse_args()
+    p.add_argument("--output", "-o", help="Optional output CSV path (writes file instead of stdout)")
+    args = p.parse_args(argv)
 
     inp = Path(args.input_csv)
     if not inp.exists():
         raise SystemExit(f"Input CSV not found: {inp}")
 
-    df = pd.read_csv(inp, dtype=str)  # read as strings to support mixed formats
+    try:
+        df = pd.read_csv(inp, dtype=str)  # read as strings to support mixed formats
+    except Exception as e:
+        raise SystemExit(f"Failed to read CSV {inp}: {e}")
+
     if 'ra' not in df.columns or 'dec' not in df.columns:
         raise SystemExit("Input CSV must contain 'ra' and 'dec' columns")
 
-    cat = args.catalog
-    cols = CATALOGS[cat]['cols']
+    catalog = args.catalog
+    results = []
 
-    # Print header
-    if cat == 'apass':
-        mag_labels = ['Bmag','gmag','rmag','imag','Vmag']
-    else:
-        mag_labels = ['Gmag','BPmag','RPmag','parallax','parallax_error','ruwe']
-
-    header = ["input_ra","input_dec","cat_ra","cat_dec","sep_arcsec"] + mag_labels
-    print(",".join(header))
-
-    for i, row in tqdm(df.iterrows(), total=len(df), desc="Querying"):
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Querying", unit="pos"):
         ra_in = row['ra'].strip()
         dec_in = row['dec'].strip()
+        entry = {'input_ra': ra_in, 'input_dec': dec_in}
         try:
             coord = parse_coord_pair(ra_in, dec_in)
         except Exception:
-            # parsing failed
-            out_vals = [ra_in, dec_in, "", "", "", *([""] * len(mag_labels))]
-            print(",".join(map(str, out_vals)))
+            # parsing failed -> write empty metrics for this row later
+            # preserve input coords and produce blank fields
+            entry.update({'cat_ra': None, 'cat_dec': None, 'sep_arcsec': None})
+            # mag keys consistent with build_output_lines expectations
+            if catalog == 'apass':
+                for k in ['Bmag', 'gmag', 'rmag', 'imag', 'Vmag']:
+                    entry[k] = None
+            else:
+                for k in ['Gmag', 'BPmag', 'RPmag', 'parallax', 'parallax_error', 'ruwe']:
+                    entry[k] = None
+            results.append(entry)
             continue
 
         try:
-            res = query_vizier_nearest(coord, cat, radius_arcsec=args.radius,
+            res = query_vizier_nearest(coord, catalog, radius_arcsec=args.radius,
                                        max_retries=args.max_retries, pause=args.sleep)
         except Exception:
-            # query failed: print row with error note
-            out_vals = [ra_in, dec_in, "QUERY_FAIL", "QUERY_FAIL", ""] + (["ERR"] * len(mag_labels))
-            print(",".join(map(str, out_vals)))
+            # query failed: encode failure in the entry
+            entry.update({'cat_ra': "QUERY_FAIL", 'cat_dec': "QUERY_FAIL", 'sep_arcsec': None})
+            if catalog == 'apass':
+                for k in ['Bmag', 'gmag', 'rmag', 'imag', 'Vmag']:
+                    entry[k] = "ERR"
+            else:
+                for k in ['Gmag', 'BPmag', 'RPmag', 'parallax', 'parallax_error', 'ruwe']:
+                    entry[k] = "ERR"
+            results.append(entry)
             time.sleep(args.sleep)
             continue
 
         if res is None:
-            out_vals = [ra_in, dec_in, "", "", ""] + ([""] * len(mag_labels))
-            print(",".join(map(str, out_vals)))
-        else:
-            if cat == 'apass':
-                mags = [res.get('Bmag'), res.get('gmag'), res.get('rmag'),
-                        res.get('imag'), res.get('Vmag')]
-                mags_fmt = [fmt_empty_or(m) for m in mags]
+            # no match found
+            entry.update({'cat_ra': None, 'cat_dec': None, 'sep_arcsec': None})
+            if catalog == 'apass':
+                for k in ['Bmag', 'gmag', 'rmag', 'imag', 'Vmag']:
+                    entry[k] = None
             else:
-                g = res.get('Gmag')
-                bp = res.get('BPmag')
-                rp = res.get('RPmag')
-                plx = res.get('parallax')
-                e_plx = res.get('parallax_error')
-                ruwe = res.get('ruwe')
-                mags_fmt = [
-                    fmt_empty_or(g),
-                    fmt_empty_or(bp),
-                    fmt_empty_or(rp),
-                    fmt_empty_or(plx),
-                    fmt_empty_or(e_plx),
-                    fmt_empty_or(ruwe)
-                ]
-
-            out_vals = [
-                ra_in,
-                dec_in,
-                (f"{res['cat_ra']:.8f}" if res.get('cat_ra') is not None else ""),
-                (f"{res['cat_dec']:.8f}" if res.get('cat_dec') is not None else ""),
-                (f"{res['sep_arcsec']:.3f}" if res.get('sep_arcsec') is not None else "")
-            ] + mags_fmt
-
-            print(",".join(map(str, out_vals)))
+                for k in ['Gmag', 'BPmag', 'RPmag', 'parallax', 'parallax_error', 'ruwe']:
+                    entry[k] = None
+        else:
+            # Merge res dict into entry
+            entry.update(res)
+        results.append(entry)
         time.sleep(args.sleep)
 
+    lines = build_output_lines(results, catalog)
+
+    if args.output:
+        outp = Path(args.output)
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        with outp.open("w", newline="") as fh:
+            fh.write("\n".join(lines))
+        print(f"Wrote {len(lines)-1} results to {outp}", file=sys.stderr)
+    else:
+        # print to stdout
+        sys.stdout.write("\n".join(lines) + "\n")
+
+
 if __name__ == "__main__":
-    from tqdm import tqdm
     main()
