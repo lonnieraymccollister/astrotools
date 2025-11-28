@@ -2,7 +2,8 @@
 """
 fits_wcs_plotter_gui.py
 PyQt6 GUI to load a 3-plane FITS cube (RGB), preview it with WCS axes and basic stretch,
-and save the plotted figure to an image file.
+and save the plotted figure to an image file. Added "Max pixel dimension" control so the
+saved image can be up to N pixels on its longest side (e.g., 5000).
 """
 import sys
 import traceback
@@ -14,7 +15,8 @@ from astropy.wcs import WCS
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QGridLayout, QComboBox, QTextEdit, QMessageBox, QDoubleSpinBox
+    QFileDialog, QGridLayout, QComboBox, QTextEdit, QMessageBox, QDoubleSpinBox,
+    QSpinBox
 )
 from PyQt6.QtCore import Qt
 
@@ -167,25 +169,33 @@ class FitsWcsPlotterWindow(QMainWindow):
         self.param_spin.setValue(1.0)
         grid.addWidget(self.param_spin, 3, 3)
 
-        # Row 4: Buttons
+        # Row 4: Max pixel dimension control (new)
+        grid.addWidget(QLabel("Max pixel dimension (px):"), 4, 0)
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(100, 20000)
+        self.size_spin.setSingleStep(100)
+        self.size_spin.setValue(5000)  # default to 5000 as requested
+        grid.addWidget(self.size_spin, 4, 1)
+
+        # Row 5: Buttons
         self.load_btn = QPushButton("Load FITS & Preview")
         self.load_btn.clicked.connect(self._load_and_preview)
-        grid.addWidget(self.load_btn, 4, 0, 1, 2)
+        grid.addWidget(self.load_btn, 5, 0, 1, 2)
 
         self.plot_btn = QPushButton("Plot & Save")
         self.plot_btn.clicked.connect(self._plot_and_save)
-        grid.addWidget(self.plot_btn, 4, 2, 1, 2)
+        grid.addWidget(self.plot_btn, 5, 2, 1, 2)
 
         # Canvas (large)
         self.canvas = WcsCanvas(figsize=(6,6), dpi=110)
-        grid.addWidget(self.canvas, 5, 0, 1, 5)
+        grid.addWidget(self.canvas, 6, 0, 1, 5)
 
         # Log area
-        grid.addWidget(QLabel("Log:"), 6, 0)
+        grid.addWidget(QLabel("Log:"), 7, 0)
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFixedHeight(120)
-        grid.addWidget(self.log, 7, 0, 1, 5)
+        grid.addWidget(self.log, 8, 0, 1, 5)
 
     def _log(self, *args):
         self.log.append(" ".join(str(a) for a in args))
@@ -243,9 +253,22 @@ class FitsWcsPlotterWindow(QMainWindow):
             rgb01 = stretch_rgb(self.rgb, mode=mode, param=param)
             # re-plot to canvas before saving (ensures current settings)
             self.canvas.plot_rgb_with_wcs(rgb01, self.header, title=title)
-            self.canvas.save_figure(outpath, dpi=150)
-            self._log(f"Saved plot to {outpath}")
-            QMessageBox.information(self, "Saved", f"Plot saved to:\n{outpath}")
+
+            # Determine DPI so the longest side equals the requested pixel dimension
+            max_pixels = int(self.size_spin.value())
+            # figure size in inches
+            fig_inches = self.canvas.fig.get_size_inches()
+            max_inches = max(fig_inches[0], fig_inches[1])
+            # avoid division by zero
+            if max_inches <= 0:
+                dpi = 150
+            else:
+                dpi = max(1, int(round(max_pixels / max_inches)))
+
+            # Save with computed DPI
+            self.canvas.save_figure(outpath, dpi=dpi)
+            self._log(f"Saved plot to {outpath} (dpi={dpi}, max_pixels={max_pixels})")
+            QMessageBox.information(self, "Saved", f"Plot saved to:\n{outpath}\nRequested max dimension: {max_pixels} px\nUsed DPI: {dpi}")
         except Exception as e:
             tb = traceback.format_exc()
             QMessageBox.critical(self, "Save error", f"{e}\n\n{tb}")
