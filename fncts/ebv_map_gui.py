@@ -13,6 +13,7 @@ Behavior:
  - Optional Label column and Show labels checkbox remain.
  - Place a highlighted star marker at a user-specified RA/Dec (degrees) and optional label.
  - New: checkbox to treat the marker RA/Dec entries as sexagesimal (RA: H:M:S, Dec: D:M:S)
+ - New: checkbox to mirror (flip) the X axis (RA) and checkbox to mirror the Y axis (Dec)
 """
 import sys
 import threading
@@ -156,6 +157,14 @@ def map_worker(params, signals: WorkerSignals):
         ax.axhline(dec_min, color="cyan", linewidth=1.4, alpha=0.9)
         ax.axhline(dec_max, color="cyan", linewidth=1.4, alpha=0.9)
 
+        # Apply axis mirroring if requested (do this before creating the top RA axis)
+        if params.get("mirror_x", False):
+            ax.invert_xaxis()
+            signals.status.emit("Mirrored X axis (RA flipped).")
+        if params.get("mirror_y", False):
+            ax.invert_yaxis()
+            signals.status.emit("Mirrored Y axis (Dec flipped).")
+
         # choose number of ticks (user-controlled)
         n_ticks = int(params.get("n_ticks", 4))
         if n_ticks < 2:
@@ -267,6 +276,19 @@ class EbvMapGui(QWidget):
         self.hms_chk = QCheckBox()
         self.hms_chk.setChecked(False)  # default H:M (no seconds)
         grid.addWidget(self.hms_chk, row, 3)
+        row += 1
+
+        # Mirror axis checkboxes (new)
+        grid.addWidget(QLabel("Mirror X axis (flip RA):"), row, 2)
+        self.mirror_x_chk = QCheckBox()
+        self.mirror_x_chk.setChecked(False)
+        grid.addWidget(self.mirror_x_chk, row, 3)
+        row += 1
+
+        grid.addWidget(QLabel("Mirror Y axis (flip Dec):"), row, 2)
+        self.mirror_y_chk = QCheckBox()
+        self.mirror_y_chk.setChecked(False)
+        grid.addWidget(self.mirror_y_chk, row, 3)
         row += 1
 
         grid.addWidget(QLabel("Number of ticks (top & bottom):"), row, 0)
@@ -482,7 +504,10 @@ class EbvMapGui(QWidget):
             "outfig": self.out_edit.text().strip(),
             "title": "Interpolated E(B-V) (scattered sightlines)",
             "dpi": 200,
-            "cbar_label": "E(B-V) (mag)"
+            "cbar_label": "E(B-V) (mag)",
+            # new mirror flags
+            "mirror_x": self.mirror_x_chk.isChecked(),
+            "mirror_y": self.mirror_y_chk.isChecked()
         }
 
         self.run_btn.setEnabled(False)
