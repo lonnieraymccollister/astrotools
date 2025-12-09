@@ -18,32 +18,62 @@ from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+# ---------- utility ----------
+def _safe_float_for_header(x, fallback=0.0):
+    """
+    Convert x to a Python float and ensure it is finite.
+    If not finite or conversion fails, return fallback.
+    """
+    try:
+        xf = float(x)
+    except Exception:
+        return float(fallback)
+    if not np.isfinite(xf):
+        return float(fallback)
+    return xf
+
 # ---------- stretch logic ----------
-def smh_stretch(data, lower_percent=0.5, upper_percent=99.5):
+def smh_stretch(data, lower_percent=0.5, upper_percent=99.5, mid_override=None):
     """
     Perform SMH-style histogram stretch on numeric array.
+    If mid_override is provided (numeric), use that as the midtone value (clipped to [low, high]).
     Returns (stretched in [0,1], low, med, high, gamma).
     """
     arr = np.asarray(data)
-    finite = np.isfinite(arr)
-    if not finite.any():
+    finite_mask = np.isfinite(arr)
+    if not finite_mask.any():
         raise ValueError("No finite pixels in input data")
 
-    # percentiles (use numpy.percentile; method argument removed for compatibility)
-    low = np.percentile(arr[finite], lower_percent)
-    high = np.percentile(arr[finite], upper_percent)
-    med = np.percentile(arr[finite], 50.0)
-    med = np.clip(med, low, high)
+    # percentiles
+    low = np.percentile(arr[finite_mask], lower_percent)
+    high = np.percentile(arr[finite_mask], upper_percent)
 
+    # handle degenerate case
     if high == low:
         gamma = 1.0
-        stretched = np.clip((arr - low), 0, 1) * 0.0
+        # produce zeros array in [0,1]
+        stretched = np.zeros_like(arr, dtype=np.float64)
+        med = low
         return stretched, low, med, high, gamma
 
+    # choose median or override
+    if mid_override is None:
+        med = np.percentile(arr[finite_mask], 50.0)
+    else:
+        med = float(mid_override)
+
+    # clip midtone to [low, high]
+    med = np.clip(med, low, high)
+
+    # compute gamma robustly
     m = (med - low) / (high - low)
     if m <= 0:
         m = 0.001
-    gamma = np.log(0.5) / np.log(m)
+    # guard against log domain errors
+    try:
+        gamma = np.log(0.5) / np.log(m)
+    except Exception:
+        gamma = 1.0
 
     normalized = (arr - low) / (high - low)
     normalized = np.clip(normalized, 0.0, 1.0)
@@ -123,38 +153,56 @@ class AutoStrWindow(QMainWindow):
         self.upper_spin.setValue(99.999)
         grid.addWidget(self.upper_spin, 2, 3)
 
+        # New: custom midtone checkbox and entry
+        self.custom_mid_chk = QCheckBox("Use custom midtone value")
+        self.custom_mid_chk.setChecked(False)
+        grid.addWidget(self.custom_mid_chk, 3, 0, 1, 2)
+
+        self.mid_spin = QDoubleSpinBox()
+        self.mid_spin.setDecimals(6)
+        # Allow a wide range; user should enter a value in the data units
+        self.mid_spin.setRange(-1e12, 1e12)
+        self.mid_spin.setSingleStep(0.1)
+        self.mid_spin.setValue(0.0)
+        self.mid_spin.setEnabled(False)
+        grid.addWidget(QLabel("Midtone value:"), 3, 2)
+        grid.addWidget(self.mid_spin, 3, 3)
+
+        # Use toggled which passes a boolean and is less error prone
+        self.custom_mid_chk.toggled.connect(self.mid_spin.setEnabled)
+
         self.keep_header_chk = QCheckBox("Preserve original header (add STRETCH keys)")
         self.keep_header_chk.setChecked(True)
-        grid.addWidget(self.keep_header_chk, 3, 0, 1, 3)
+        grid.addWidget(self.keep_header_chk, 4, 0, 1, 3)
 
         self.preview_btn = QPushButton("Load & Preview Histogram")
         self.preview_btn.clicked.connect(self._load_and_preview)
-        grid.addWidget(self.preview_btn, 3, 3)
+        grid.addWidget(self.preview_btn, 4, 3)
 
         self.run_btn = QPushButton("Run Stretch & Save")
         self.run_btn.clicked.connect(self._run_stretch)
-        grid.addWidget(self.run_btn, 4, 0)
+        grid.addWidget(self.run_btn, 5, 0)
 
         self.clear_btn = QPushButton("Clear Log")
         self.clear_btn.clicked.connect(lambda: self.log.clear())
-        grid.addWidget(self.clear_btn, 4, 1)
+        grid.addWidget(self.clear_btn, 5, 1)
 
         # Results text
-        grid.addWidget(QLabel("Computed parameters:"), 5, 0)
+        grid.addWidget(QLabel("Computed parameters:"), 6, 0)
         self.params_box = QTextEdit()
         self.params_box.setReadOnly(True)
         self.params_box.setFixedHeight(120)
-        grid.addWidget(self.params_box, 6, 0, 1, 5)
+        grid.addWidget(self.params_box, 7, 0, 1, 5)
 
         # Histogram canvas
         self.canvas = HistCanvas(width=8, height=3)
-        grid.addWidget(self.canvas, 7, 0, 4, 5)
+        grid.addWidget(self.canvas, 8, 0, 4, 5)
 
         # Log
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFixedHeight(80)
-        grid.addWidget(self.log, 11, 0, 1, 5)
+        grid.addWidget(self.log, 12, 0, 1, 5)
 
     def _log(self, *args):
         self.log.append(" ".join(str(a) for a in args))
@@ -189,8 +237,20 @@ class AutoStrWindow(QMainWindow):
             self.data = np.asarray(data).astype(np.float64)
             self.header = header
             self._log(f"Loaded {path} shape={self.data.shape} dtype={self.data.dtype}")
+
+            # compute median of finite pixels and populate mid_spin so user sees a sensible default
+            finite_vals = self.data[np.isfinite(self.data)]
+            if finite_vals.size > 0:
+                med = float(np.median(finite_vals))
+                # set mid_spin value but do not enable it unless checkbox is checked
+                try:
+                    self.mid_spin.setValue(med)
+                except Exception:
+                    # ignore if value out of spinbox range
+                    pass
+
             self.canvas.plot_hist(self.data, bins=256, title="Input histogram")
-            self.params_box.setPlainText("") 
+            self.params_box.setPlainText("")
         except Exception as e:
             tb = traceback.format_exc()
             QMessageBox.critical(self, "Load error", f"{e}\n\n{tb}")
@@ -206,16 +266,37 @@ class AutoStrWindow(QMainWindow):
             if not (0.0 <= lower < upper <= 100.0):
                 raise ValueError("Percentiles must satisfy 0 <= lower < upper <= 100")
 
-            stretched, low, med, high, gamma = smh_stretch(self.data, lower, upper)
-            # Prepare header
+            mid_override = None
+            custom_mid_used = False
+            if self.custom_mid_chk.isChecked():
+                mid_override = float(self.mid_spin.value())
+                if not np.isfinite(mid_override):
+                    raise ValueError("Midtone must be a finite number")
+                custom_mid_used = True
+
+            stretched, low, med, high, gamma = smh_stretch(self.data, lower, upper, mid_override=mid_override)
+
+            # sanitize header values
+            safe_low = _safe_float_for_header(low)
+            safe_med = _safe_float_for_header(med)
+            safe_high = _safe_float_for_header(high)
+            safe_gamma = _safe_float_for_header(gamma)
+            safe_lower_pct = _safe_float_for_header(lower)
+            safe_upper_pct = _safe_float_for_header(upper)
+
             out_header = self.header.copy() if (self.header is not None and self.keep_header_chk.isChecked()) else fits.Header()
             out_header['STRETCH'] = ('SMH', 'Shadows/Midtones/Highlights histogram stretch')
-            out_header['LOWPCT'] = (lower, 'Lower percentile for shadow threshold')
-            out_header['HIGPCT'] = (upper, 'Upper percentile for highlight threshold')
-            out_header['SHADOW'] = (float(low), 'Shadow threshold value')
-            out_header['MIDTONE'] = (float(med), 'Midtone (median) value')
-            out_header['HIGHLT'] = (float(high), 'Highlight threshold value')
-            out_header['GAMMA'] = (float(gamma), 'Gamma value used')
+            out_header['LOWPCT']  = (safe_lower_pct, 'Lower percentile for shadow threshold')
+            out_header['HIGPCT']  = (safe_upper_pct, 'Upper percentile for highlight threshold')
+            out_header['SHADOW']  = (safe_low, 'Shadow threshold value')
+            out_header['MIDTONE'] = (safe_med, 'Midtone (median or override) value')
+            out_header['HIGHLT']  = (safe_high, 'Highlight threshold value')
+            out_header['GAMMA']   = (safe_gamma, 'Gamma value used')
+            # store boolean as integer 0/1
+            out_header['MIDOVR'] = (1 if custom_mid_used else 0, 'Custom midtone used?')
+            if custom_mid_used:
+                safe_midval = _safe_float_for_header(mid_override)
+                out_header['MIDVAL'] = (safe_midval, 'User-specified midtone value')
 
             outpath = self.output_edit.text().strip()
             if not outpath:
@@ -232,6 +313,7 @@ class AutoStrWindow(QMainWindow):
             # Save stretched data as float32 for compactness while preserving dynamic range [0,1]
             fits.writeto(outpath, stretched.astype(np.float32), header=out_header, overwrite=True)
             self._log(f"Wrote stretched FITS: {outpath}")
+
             # update UI with parameters and histogram of stretched result
             params = [
                 f"lower_percent: {lower}",
@@ -239,8 +321,11 @@ class AutoStrWindow(QMainWindow):
                 f"shadow (low): {low}",
                 f"midtone (med): {med}",
                 f"highlight (high): {high}",
-                f"gamma: {gamma}"
+                f"gamma: {gamma}",
+                f"custom_mid_used: {custom_mid_used}"
             ]
+            if custom_mid_used:
+                params.append(f"custom_mid_value: {mid_override}")
             self.params_box.setPlainText("\n".join(params))
             self.canvas.plot_hist(stretched, bins=256, title="Stretched histogram")
             QMessageBox.information(self, "Done", f"Wrote stretched FITS: {outpath}")
