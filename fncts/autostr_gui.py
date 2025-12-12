@@ -3,6 +3,14 @@
 autostr_gui.py
 PyQt6 GUI to perform SMH (shadows/midtones/highlights) automatic stretch on a FITS image.
 Saves a stretched FITS and records parameters in header.
+
+Enhancements:
+ - Add "Clip extremes" option similar to Siril's histogram transform clip button.
+   When enabled, pixels below the clip_low_percentile and above the clip_high_percentile
+   are excluded from percentile and median calculations (they are not removed from the
+   output image; clipping only affects the parameter estimation used for the stretch).
+ - UI: checkbox to enable clipping and two spinboxes to set clip low/high percentiles.
+ - Logging of clipping behavior and values.
 """
 import sys
 import traceback
@@ -33,32 +41,55 @@ def _safe_float_for_header(x, fallback=0.0):
     return xf
 
 # ---------- stretch logic ----------
-def smh_stretch(data, lower_percent=0.5, upper_percent=99.5, mid_override=None):
+def smh_stretch(data, lower_percent=0.5, upper_percent=99.5, mid_override=None,
+                clip_enabled=False, clip_low_pct=0.0, clip_high_pct=0.0):
     """
     Perform SMH-style histogram stretch on numeric array.
     If mid_override is provided (numeric), use that as the midtone value (clipped to [low, high]).
-    Returns (stretched in [0,1], low, med, high, gamma).
+    If clip_enabled is True, pixels below the clip_low_pct percentile and above the
+    (100 - clip_high_pct) percentile are excluded from percentile/median calculations.
+    Returns (stretched in [0,1], low, med, high, gamma, used_mask_info)
+    where used_mask_info is a dict with clipping details for logging.
     """
     arr = np.asarray(data)
     finite_mask = np.isfinite(arr)
     if not finite_mask.any():
         raise ValueError("No finite pixels in input data")
 
-    # percentiles
-    low = np.percentile(arr[finite_mask], lower_percent)
-    high = np.percentile(arr[finite_mask], upper_percent)
+    # Build mask of pixels to use for percentile calculations
+    use_mask = finite_mask.copy()
+
+    clip_info = {"clip_enabled": bool(clip_enabled), "clip_low_pct": float(clip_low_pct),
+                 "clip_high_pct": float(clip_high_pct), "n_total": int(np.count_nonzero(finite_mask)),
+                 "n_used": None}
+
+    if clip_enabled:
+        # compute clip thresholds as percentiles on finite pixels
+        low_clip_val = np.percentile(arr[finite_mask], clip_low_pct) if clip_low_pct > 0 else -np.inf
+        high_clip_val = np.percentile(arr[finite_mask], 100.0 - clip_high_pct) if clip_high_pct > 0 else np.inf
+        # update mask to exclude clipped extremes
+        use_mask &= (arr >= low_clip_val) & (arr <= high_clip_val)
+        clip_info.update({"low_clip_val": float(low_clip_val), "high_clip_val": float(high_clip_val)})
+        if not use_mask.any():
+            # if clipping removed all pixels, fall back to finite_mask
+            use_mask = finite_mask.copy()
+            clip_info["warning"] = "Clipping removed all finite pixels; using all finite pixels instead."
+    clip_info["n_used"] = int(np.count_nonzero(use_mask))
+
+    # percentiles computed on the masked set
+    low = np.percentile(arr[use_mask], lower_percent)
+    high = np.percentile(arr[use_mask], upper_percent)
 
     # handle degenerate case
     if high == low:
         gamma = 1.0
-        # produce zeros array in [0,1]
         stretched = np.zeros_like(arr, dtype=np.float64)
         med = low
-        return stretched, low, med, high, gamma
+        return stretched, low, med, high, gamma, clip_info
 
-    # choose median or override
+    # choose median or override (median computed on masked set)
     if mid_override is None:
-        med = np.percentile(arr[finite_mask], 50.0)
+        med = np.percentile(arr[use_mask], 50.0)
     else:
         med = float(mid_override)
 
@@ -69,7 +100,6 @@ def smh_stretch(data, lower_percent=0.5, upper_percent=99.5, mid_override=None):
     m = (med - low) / (high - low)
     if m <= 0:
         m = 0.001
-    # guard against log domain errors
     try:
         gamma = np.log(0.5) / np.log(m)
     except Exception:
@@ -79,7 +109,7 @@ def smh_stretch(data, lower_percent=0.5, upper_percent=99.5, mid_override=None):
     normalized = np.clip(normalized, 0.0, 1.0)
     stretched = normalized ** gamma
 
-    return stretched, low, med, high, gamma
+    return stretched, low, med, high, gamma, clip_info
 
 # ---------- matplotlib canvas ----------
 class HistCanvas(FigureCanvas):
@@ -175,34 +205,55 @@ class AutoStrWindow(QMainWindow):
         self.keep_header_chk.setChecked(True)
         grid.addWidget(self.keep_header_chk, 4, 0, 1, 3)
 
+        # New: clipping controls (Siril-like clip button behavior)
+        self.clip_chk = QCheckBox("Enable clipping of histogram extremes (affects parameter estimation)")
+        self.clip_chk.setChecked(False)
+        grid.addWidget(self.clip_chk, 5, 0, 1, 4)
+
+        grid.addWidget(QLabel("Clip low percentile (%):"), 6, 0)
+        self.clip_low_spin = QDoubleSpinBox()
+        self.clip_low_spin.setDecimals(6)
+        self.clip_low_spin.setRange(0.0, 49.0)
+        self.clip_low_spin.setSingleStep(0.1)
+        self.clip_low_spin.setValue(0.0)
+        grid.addWidget(self.clip_low_spin, 6, 1)
+
+        grid.addWidget(QLabel("Clip high percentile (%):"), 6, 2)
+        self.clip_high_spin = QDoubleSpinBox()
+        self.clip_high_spin.setDecimals(6)
+        self.clip_high_spin.setRange(0.0, 49.0)
+        self.clip_high_spin.setSingleStep(0.1)
+        self.clip_high_spin.setValue(0.0)
+        grid.addWidget(self.clip_high_spin, 6, 3)
+
         self.preview_btn = QPushButton("Load & Preview Histogram")
         self.preview_btn.clicked.connect(self._load_and_preview)
-        grid.addWidget(self.preview_btn, 4, 3)
+        grid.addWidget(self.preview_btn, 7, 3)
 
         self.run_btn = QPushButton("Run Stretch & Save")
         self.run_btn.clicked.connect(self._run_stretch)
-        grid.addWidget(self.run_btn, 5, 0)
+        grid.addWidget(self.run_btn, 8, 0)
 
         self.clear_btn = QPushButton("Clear Log")
         self.clear_btn.clicked.connect(lambda: self.log.clear())
-        grid.addWidget(self.clear_btn, 5, 1)
+        grid.addWidget(self.clear_btn, 8, 1)
 
         # Results text
-        grid.addWidget(QLabel("Computed parameters:"), 6, 0)
+        grid.addWidget(QLabel("Computed parameters:"), 9, 0)
         self.params_box = QTextEdit()
         self.params_box.setReadOnly(True)
         self.params_box.setFixedHeight(120)
-        grid.addWidget(self.params_box, 7, 0, 1, 5)
+        grid.addWidget(self.params_box, 10, 0, 1, 5)
 
         # Histogram canvas
         self.canvas = HistCanvas(width=8, height=3)
-        grid.addWidget(self.canvas, 8, 0, 4, 5)
+        grid.addWidget(self.canvas, 11, 0, 4, 5)
 
         # Log
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFixedHeight(80)
-        grid.addWidget(self.log, 12, 0, 1, 5)
+        grid.addWidget(self.log, 15, 0, 1, 5)
 
     def _log(self, *args):
         self.log.append(" ".join(str(a) for a in args))
@@ -242,12 +293,23 @@ class AutoStrWindow(QMainWindow):
             finite_vals = self.data[np.isfinite(self.data)]
             if finite_vals.size > 0:
                 med = float(np.median(finite_vals))
-                # set mid_spin value but do not enable it unless checkbox is checked
                 try:
                     self.mid_spin.setValue(med)
                 except Exception:
-                    # ignore if value out of spinbox range
                     pass
+
+            # If clipping is enabled, show clipped histogram overlay in the log
+            if self.clip_chk.isChecked():
+                clip_low = float(self.clip_low_spin.value())
+                clip_high = float(self.clip_high_spin.value())
+                # compute clip thresholds for logging
+                finite = finite_vals
+                if finite.size > 0:
+                    low_clip_val = np.percentile(finite, clip_low) if clip_low > 0 else -np.inf
+                    high_clip_val = np.percentile(finite, 100.0 - clip_high) if clip_high > 0 else np.inf
+                    self._log(f"Clipping enabled: excluding values < {low_clip_val} and > {high_clip_val} for parameter estimation")
+                else:
+                    self._log("Clipping enabled but no finite pixels found")
 
             self.canvas.plot_hist(self.data, bins=256, title="Input histogram")
             self.params_box.setPlainText("")
@@ -274,7 +336,22 @@ class AutoStrWindow(QMainWindow):
                     raise ValueError("Midtone must be a finite number")
                 custom_mid_used = True
 
-            stretched, low, med, high, gamma = smh_stretch(self.data, lower, upper, mid_override=mid_override)
+            # clipping parameters
+            clip_enabled = bool(self.clip_chk.isChecked())
+            clip_low_pct = float(self.clip_low_spin.value())
+            clip_high_pct = float(self.clip_high_spin.value())
+            if clip_low_pct < 0 or clip_high_pct < 0 or (clip_low_pct + clip_high_pct) >= 100.0:
+                raise ValueError("Invalid clipping percentiles; ensure non-negative and sum < 100")
+
+            stretched, low, med, high, gamma, clip_info = smh_stretch(
+                self.data,
+                lower_percent=lower,
+                upper_percent=upper,
+                mid_override=mid_override,
+                clip_enabled=clip_enabled,
+                clip_low_pct=clip_low_pct,
+                clip_high_pct=clip_high_pct
+            )
 
             # sanitize header values
             safe_low = _safe_float_for_header(low)
@@ -292,11 +369,22 @@ class AutoStrWindow(QMainWindow):
             out_header['MIDTONE'] = (safe_med, 'Midtone (median or override) value')
             out_header['HIGHLT']  = (safe_high, 'Highlight threshold value')
             out_header['GAMMA']   = (safe_gamma, 'Gamma value used')
-            # store boolean as integer 0/1
             out_header['MIDOVR'] = (1 if custom_mid_used else 0, 'Custom midtone used?')
             if custom_mid_used:
                 safe_midval = _safe_float_for_header(mid_override)
                 out_header['MIDVAL'] = (safe_midval, 'User-specified midtone value')
+
+            # record clipping parameters in header
+            out_header['CLIPEN'] = (1 if clip_enabled else 0, 'Clipping enabled for parameter estimation')
+            out_header['CLIPLO'] = (float(clip_low_pct), 'Clip low percentile used')
+            out_header['CLIPHI'] = (float(clip_high_pct), 'Clip high percentile used')
+            # if clip_info contains numeric thresholds, store them too
+            if clip_info.get("clip_enabled", False):
+                if "low_clip_val" in clip_info:
+                    out_header['CLIPVLO'] = (_safe_float_for_header(clip_info["low_clip_val"]), 'Clip low value')
+                if "high_clip_val" in clip_info:
+                    out_header['CLIPVHI'] = (_safe_float_for_header(clip_info["high_clip_val"]), 'Clip high value')
+                out_header['CLIPNIN'] = (clip_info.get("n_used", 0), 'Number of pixels used after clipping')
 
             outpath = self.output_edit.text().strip()
             if not outpath:
@@ -326,6 +414,14 @@ class AutoStrWindow(QMainWindow):
             ]
             if custom_mid_used:
                 params.append(f"custom_mid_value: {mid_override}")
+            if clip_enabled:
+                params.append(f"clipping enabled: low_pct={clip_low_pct}, high_pct={clip_high_pct}")
+                if "low_clip_val" in clip_info and "high_clip_val" in clip_info:
+                    params.append(f"clip values: low={clip_info['low_clip_val']}, high={clip_info['high_clip_val']}")
+                params.append(f"pixels used for estimation: {clip_info.get('n_used')} / {clip_info.get('n_total')}")
+                if "warning" in clip_info:
+                    params.append(f"clip warning: {clip_info['warning']}")
+
             self.params_box.setPlainText("\n".join(params))
             self.canvas.plot_hist(stretched, bins=256, title="Stretched histogram")
             QMessageBox.information(self, "Done", f"Wrote stretched FITS: {outpath}")

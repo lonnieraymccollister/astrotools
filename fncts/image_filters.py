@@ -10,6 +10,7 @@ Enhancement:
      * Returns/uses arrays in canonical (Y, X, C) form for processing.
      * Preserves original header and original channel layout on write (will restore (3, Y, X) if input was channel-first).
  - Safer numeric casts and clearer error messages.
+ - Added "moderate sharpening" checkbox to High Pass (HpMore) filter page.
 """
 import sys
 import os
@@ -26,7 +27,7 @@ from scipy.ndimage import convolve as nd_convolve
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QComboBox,
-    QStackedWidget
+    QStackedWidget, QCheckBox
 )
 from PyQt6.QtCore import Qt
 
@@ -105,6 +106,78 @@ def write_fits_preserve_layout(path, arr_yxc, header, layout_info):
         pass
 
     fits.writeto(path, out_write, hdr, overwrite=True)
+
+# ----------------------------
+# Small utility helpers for preview
+# ----------------------------
+def qpix_from_rgb(arr):
+    if arr is None:
+        return None
+    a = np.asarray(arr)
+    if a.ndim == 2:
+        arr8 = np.clip(a, 0, 255).astype(np.uint8)
+        h, w = arr8.shape
+        qimg = QImage(arr8.data, w, h, w, QImage.Format.Format_Grayscale8)
+        return QPixmap.fromImage(qimg)
+    if a.ndim == 3:
+        # expect RGB for preview; if C,Y,X convert first
+        if a.shape[0] == 3:
+            rgb = np.transpose(a, (1,2,0))
+        else:
+            rgb = a
+        # scale floats / large ints -> uint8 for preview
+        if rgb.dtype != np.uint8:
+            b = rgb.astype(np.float64)
+            mn, mx = np.nanmin(b), np.nanmax(b)
+            if mx > mn:
+                b8 = ((b - mn) / (mx - mn) * 255.0).astype(np.uint8)
+            else:
+                b8 = np.zeros_like(b, dtype=np.uint8)
+        else:
+            b8 = rgb
+        if b8.shape[2] >= 3:
+            rgb8 = b8[:, :, :3]
+            h, w, ch = rgb8.shape
+            bytes_per_line = ch * w
+            qimg = QImage(rgb8.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+            return QPixmap.fromImage(qimg)
+    return None
+
+def downsample_for_preview(arr, maxdim=(320,320)):
+    if arr is None:
+        return None
+    if arr.ndim == 3 and arr.shape[0] == 3:
+        img = np.transpose(arr, (1,2,0))
+    else:
+        img = arr
+    h, w = img.shape[:2]
+    mw, mh = maxdim
+    scale = min(1.0, mw / w, mh / h)
+    if scale < 1.0:
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        try:
+            import cv2
+            if img.ndim == 2:
+                disp = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            else:
+                disp = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        except Exception:
+            disp = img
+        return disp
+    return img
+
+def bin_array_blockwise(img, bin_size):
+    # img is 2D numpy array
+    h, w = img.shape
+    nh = h // bin_size
+    nw = w // bin_size
+    # trim edges
+    img_trim = img[:nh*bin_size, :nw*bin_size]
+    if bin_size == 1:
+        return img_trim
+    reshaped = img_trim.reshape(nh, bin_size, nw, bin_size)
+    return reshaped.mean(axis=(1,3))
 
 # ----------------------------
 # Main Window Definition
@@ -324,7 +397,7 @@ class ImageFiltersWindow(QMainWindow):
         layout.addWidget(self.gaSigma, 2, 1)
         return page
 
-    # Page 6: HpMore (High-pass More)
+    # Page 6: HpMore (High-pass More) with moderate checkbox
     def createHpMorePage(self):
         page = QWidget()
         layout = QGridLayout(page)
@@ -334,12 +407,18 @@ class ImageFiltersWindow(QMainWindow):
         btn = QPushButton("Browse")
         btn.clicked.connect(lambda: self.browseFile(self.hpInput))
         layout.addWidget(btn, 0, 2)
+
         layout.addWidget(QLabel("Output FITS File:"), 1, 0)
         self.hpOutput = QLineEdit()
         layout.addWidget(self.hpOutput, 1, 1)
         btn2 = QPushButton("Browse")
         btn2.clicked.connect(lambda: self.browseFile(self.hpOutput, save=True))
         layout.addWidget(btn2, 1, 2)
+
+        # New checkbox for moderate sharpening
+        self.hpModerateChk = QCheckBox("Use moderate sharpening")
+        layout.addWidget(self.hpModerateChk, 2, 0, 1, 3)
+
         return page
 
     # Page 7: LocAdapt
@@ -593,6 +672,10 @@ class ImageFiltersWindow(QMainWindow):
     def runHpMore(self):
         inp = self.hpInput.text().strip()
         outp = self.hpOutput.text().strip()
+        if not inp or not outp:
+            self.statusLabel.setText("Provide input and output files for HpMore.")
+            return
+
         data, header, info = load_fits_rgb(inp)
         # For HpMore we want channel-first internal processing (C, Y, X)
         if data.ndim == 3 and data.shape[2] == 3:
@@ -605,30 +688,46 @@ class ImageFiltersWindow(QMainWindow):
             self.statusLabel.setText("Input FITS is not a 3-channel image in HpMore.")
             return
 
-        hp_kernel_5x5 = np.array([
-            [-1, -1, -1, -1, -1],
-            [-1,  1,  2,  1, -1],
-            [-1,  2,  4,  2, -1],
-            [-1,  1,  2,  1, -1],
-            [-1, -1, -1, -1, -1]
-        ], dtype=float)
+        # Choose kernel strength based on checkbox
+        if getattr(self, "hpModerateChk", None) and self.hpModerateChk.isChecked():
+            # moderate sharpening kernel (3x3 Laplacian-like)
+            hp_kernel = np.array([
+                [0, -1, 0],
+                [-1, 4, -1],
+                [0, -1, 0]
+            ], dtype=float)
+            mode_text = "High Pass (moderate)"
+        else:
+            # stronger 5x5 kernel (existing aggressive kernel)
+            hp_kernel = np.array([
+                [-1, -1, -1, -1, -1],
+                [-1,  1,  2,  1, -1],
+                [-1,  2,  4,  2, -1],
+                [-1,  1,  2,  1, -1],
+                [-1, -1, -1, -1, -1]
+            ], dtype=float)
+            mode_text = "High Pass More (strong)"
+
         filtered_channels = np.empty_like(data_cf)
         for i in range(data_cf.shape[0]):
             channel = data_cf[i]
-            highpass = convolve2d(channel, hp_kernel_5x5, mode='same', boundary='symm')
+            # compute highpass response
+            highpass = convolve2d(channel, hp_kernel, mode='same', boundary='symm')
+            # apply only above threshold to avoid boosting background noise
             threshold = np.percentile(channel, 70)
             mask = channel > threshold
             filtered_channel = channel.copy()
             filtered_channel[mask] = channel[mask] + highpass[mask]
             filtered_channels[i] = filtered_channel
-        # write filtered_channels as channel-first or restore layout from original info
-        # If original was channel-first we can write filtered_channels directly; otherwise transpose back
+
+        # restore layout for writing
         if info.get("channel_first", False):
             out_arr = filtered_channels
         else:
             out_arr = np.transpose(filtered_channels, (1, 2, 0))
+
         write_fits_preserve_layout(outp, out_arr.astype(np.float64), header, info)
-        self.statusLabel.setText("HpMore saved to " + outp)
+        self.statusLabel.setText(f"{mode_text} saved to {outp}")
 
     def runLocAdapt(self):
         inp = self.laInput.text().strip()
@@ -689,11 +788,10 @@ class ImageFiltersWindow(QMainWindow):
         write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
         self.statusLabel.setText("LocAdapt saved to " + outp)
 
-# Main
 def main():
     app = QApplication(sys.argv)
-    window = ImageFiltersWindow()
-    window.show()
+    w = ImageFiltersWindow()
+    w.show()
     sys.exit(app.exec())
 
 if __name__ == "__main__":
