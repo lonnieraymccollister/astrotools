@@ -6,10 +6,20 @@ PyQt6 GUI to apply CLAHE to color images or 3-plane FITS (RGB) and save result.
 
 Change:
  - FITS output is now 32-bit float (float32) channel-first (C, Y, X), scaled 0..1 so Siril can read it.
+ - Added two global checkboxes:
+     * "Check input normalized to [0,1]" (checked by default). If enabled and the input FITS
+       primary data min/max are not approximately 0 and 1, the GUI will launch normalize_gui.py
+       with the input filename and abort the current operation so the user can normalize the file.
+     * "Offer to open result in Siril after save" (checked by default). If enabled, the GUI will
+       attempt to launch the `siril` executable with the saved output path after a successful save.
 """
 import sys
 import os
 import traceback
+import subprocess
+import shutil
+from pathlib import Path
+
 import numpy as np
 import cv2
 import tifffile
@@ -17,7 +27,7 @@ from astropy.io import fits
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QGridLayout, QComboBox, QTextEdit, QMessageBox, QSpinBox, QDoubleSpinBox, QHBoxLayout, QRadioButton, QButtonGroup
+    QFileDialog, QGridLayout, QComboBox, QTextEdit, QMessageBox, QSpinBox, QDoubleSpinBox, QHBoxLayout, QRadioButton, QButtonGroup, QCheckBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QImage
@@ -73,6 +83,53 @@ def normalize_to_uint16(arr):
     out = (scaled * 65535.0).astype(np.uint16)
     return out
 
+# ---------- normalization and Siril helpers ----------
+def _check_normalized_0_1(arr, tol=1e-8):
+    """
+    Return True if arr min is approximately 0 and max approximately 1 within tol.
+    Works for 2D and 3D arrays.
+    """
+    if arr is None:
+        return False
+    a = np.array(arr, dtype=np.float64)
+    if a.size == 0:
+        return False
+    amin = float(np.nanmin(a))
+    amax = float(np.nanmax(a))
+    if np.isnan(amin) or np.isnan(amax):
+        return False
+    return (abs(amin - 0.0) <= tol) and (abs(amax - 1.0) <= tol)
+
+def _launch_normalize_gui(filepath):
+    """
+    Launch normalize_gui.py with the given filepath using the same Python interpreter.
+    Non-blocking. Returns True if launch succeeded, False otherwise.
+    """
+    try:
+        script = Path("normalize_gui.py")
+        if not script.exists():
+            script = Path(__file__).resolve().parent / "normalize_gui.py"
+        if not script.exists():
+            return False
+        subprocess.Popen([sys.executable, str(script), str(filepath)])
+        return True
+    except Exception:
+        return False
+
+def _maybe_launch_siril(output_path):
+    """
+    Try to launch Siril with the output file. Returns (launched: bool, message: str).
+    """
+    try:
+        siril_exe = shutil.which("siril")
+        if siril_exe:
+            subprocess.Popen([siril_exe, str(Path(output_path).resolve())])
+            return True, "Siril launched."
+        else:
+            return False, "Siril executable not found in PATH."
+    except Exception as e:
+        return False, f"Failed to launch Siril: {e}"
+
 # ---------- GUI ----------
 class ClaheWindow(QMainWindow):
     def __init__(self):
@@ -100,53 +157,62 @@ class ClaheWindow(QMainWindow):
         hbox = QHBoxLayout(); hbox.addWidget(self.fits_radio); hbox.addWidget(self.img_radio)
         grid.addLayout(hbox, 0, 1, 1, 4)
 
+        # New global checkboxes: normalization and Siril
+        self.check_normalized = QCheckBox("Check input normalized to [0,1]")
+        self.check_normalized.setChecked(True)
+        grid.addWidget(self.check_normalized, 1, 1, 1, 2)
+
+        self.check_open_siril = QCheckBox("Offer to open result in Siril after save")
+        self.check_open_siril.setChecked(True)
+        grid.addWidget(self.check_open_siril, 1, 3, 1, 2)
+
         # Input file
-        grid.addWidget(QLabel("Input file:"), 1, 0)
+        grid.addWidget(QLabel("Input file:"), 2, 0)
         self.input_edit = QLineEdit()
-        grid.addWidget(self.input_edit, 1, 1, 1, 3)
+        grid.addWidget(self.input_edit, 2, 1, 1, 3)
         btn_in = QPushButton("Browse")
         btn_in.clicked.connect(self._browse_input)
-        grid.addWidget(btn_in, 1, 4)
+        grid.addWidget(btn_in, 2, 4)
 
         # Parameters
-        grid.addWidget(QLabel("Clip limit (float):"), 2, 0)
+        grid.addWidget(QLabel("Clip limit (float):"), 3, 0)
         self.clip_spin = QDoubleSpinBox(); self.clip_spin.setDecimals(3); self.clip_spin.setRange(0.1, 100.0); self.clip_spin.setValue(3.0)
-        grid.addWidget(self.clip_spin, 2, 1)
+        grid.addWidget(self.clip_spin, 3, 1)
 
-        grid.addWidget(QLabel("Tile grid size (int):"), 2, 2)
+        grid.addWidget(QLabel("Tile grid size (int):"), 3, 2)
         self.tile_spin = QSpinBox(); self.tile_spin.setRange(1, 64); self.tile_spin.setValue(8)
-        grid.addWidget(self.tile_spin, 2, 3)
+        grid.addWidget(self.tile_spin, 3, 3)
 
         # Output file
-        grid.addWidget(QLabel("Output filename:"), 3, 0)
+        grid.addWidget(QLabel("Output filename:"), 4, 0)
         self.output_edit = QLineEdit("clahe_output.fits")
-        grid.addWidget(self.output_edit, 3, 1, 1, 3)
+        grid.addWidget(self.output_edit, 4, 1, 1, 3)
         btn_out = QPushButton("Browse")
         btn_out.clicked.connect(self._browse_save)
-        grid.addWidget(btn_out, 3, 4)
+        grid.addWidget(btn_out, 4, 4)
 
         # Buttons
         self.preview_btn = QPushButton("Load & Preview")
         self.preview_btn.clicked.connect(self._load_and_preview)
-        grid.addWidget(self.preview_btn, 4, 0)
+        grid.addWidget(self.preview_btn, 5, 0)
 
         self.run_btn = QPushButton("Apply CLAHE & Save")
         self.run_btn.clicked.connect(self._apply_and_save)
-        grid.addWidget(self.run_btn, 4, 1)
+        grid.addWidget(self.run_btn, 5, 1)
 
         self.clear_btn = QPushButton("Clear Log")
         self.clear_btn.clicked.connect(lambda: self.log.clear())
-        grid.addWidget(self.clear_btn, 4, 2)
+        grid.addWidget(self.clear_btn, 5, 2)
 
         # Preview label and log
         self.preview_label = QLabel("Preview")
         self.preview_label.setFixedSize(560, 360)
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        grid.addWidget(self.preview_label, 5, 0, 6, 3)
+        grid.addWidget(self.preview_label, 6, 0, 6, 3)
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        grid.addWidget(self.log, 5, 3, 6, 2)
+        grid.addWidget(self.log, 6, 3, 6, 2)
 
     def _log(self, *args):
         self.log.append(" ".join(str(a) for a in args))
@@ -262,6 +328,27 @@ class ClaheWindow(QMainWindow):
         tile = int(self.tile_spin.value())
         try:
             clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(tile, tile))
+
+            # If FITS input and normalization check is enabled, verify primary data is 0..1
+            if self.fits_radio.isChecked() and self.check_normalized.isChecked():
+                try:
+                    raw, hdr_check = read_fits_image(self.input_path)
+                    if raw is None:
+                        QMessageBox.critical(self, "Normalization check", "Input FITS contains no data.")
+                        return
+                    # check min/max across entire array
+                    arr_check = np.array(raw, dtype=np.float64)
+                    if not _check_normalized_0_1(arr_check):
+                        launched = _launch_normalize_gui(self.input_path)
+                        if launched:
+                            QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1]. Launched normalize_gui.py for the input file. Please normalize and re-run.")
+                        else:
+                            QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1] and normalize_gui.py was not found.")
+                        return
+                except Exception as e:
+                    QMessageBox.critical(self, "Normalization check error", str(e))
+                    return
+
             if self.fits_radio.isChecked():
                 # read raw data again to preserve full precision and header
                 raw, hdr = read_fits_image(self.input_path)
@@ -305,6 +392,11 @@ class ClaheWindow(QMainWindow):
                 # Ensure header is appropriate: set BITPIX to -32 for float32
                 if hdr is None:
                     hdr = fits.Header()
+                try:
+                    hdr['BITPIX'] = -32
+                except Exception:
+                    pass
+
                 # write FITS as float32 primary
                 write_fits_image(outpath, out_arr, header=hdr)
                 self._log(f"Wrote FITS (CLAHE float32 0..1) to {outpath} shape={out_arr.shape} dtype={out_arr.dtype}")
@@ -344,7 +436,18 @@ class ClaheWindow(QMainWindow):
                     if not ok:
                         raise IOError("Failed to write image with cv2.imwrite")
                 self._log(f"Wrote image (CLAHE) to {outpath} dtype={img_out.dtype} shape={getattr(img_out,'shape',None)}")
-            QMessageBox.information(self, "Done", f"Saved CLAHE result to:\n{outpath}")
+
+            # After successful save, optionally launch Siril
+            if self.check_open_siril.isChecked():
+                launched, siril_msg = _maybe_launch_siril(outpath)
+                if siril_msg:
+                    self._log(siril_msg)
+                if launched:
+                    QMessageBox.information(self, "Done", f"Saved CLAHE result to:\n{outpath}\n\nSiril launched.")
+                else:
+                    QMessageBox.information(self, "Done", f"Saved CLAHE result to:\n{outpath}\n\n{siril_msg}")
+            else:
+                QMessageBox.information(self, "Done", f"Saved CLAHE result to:\n{outpath}")
         except Exception as e:
             tb = traceback.format_exc()
             self._log("Error:", e)
