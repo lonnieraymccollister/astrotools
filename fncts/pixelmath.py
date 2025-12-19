@@ -11,17 +11,20 @@ Changes:
      * Preserves/updates the primary header and writes the result with the same channel layout
        as the first input (if first input was channel-first (3,Y,X) the output keeps that).
  - Safer numeric handling (float64 arithmetic) and clearer error messages.
+ - Added normalization checks and Siril launch option.
 """
 import sys
 import os
+import subprocess
 from pathlib import Path
+import shutil
 
 import numpy as np
 from astropy.io import fits
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout, QLabel, QLineEdit,
-    QPushButton, QFileDialog, QComboBox, QMessageBox
+    QPushButton, QFileDialog, QComboBox, QMessageBox, QCheckBox
 )
 from PyQt6.QtCore import Qt
 
@@ -97,8 +100,23 @@ class PixelMathWindow(QMainWindow):
         self.statusLabel = QLabel("")
         layout.addWidget(self.statusLabel, 8, 0, 1, 4)
 
+        # Row 9: Normalization check for first image
+        self.checkFirstNormalized = QCheckBox("Check first image normalized to [0,1]")
+        self.checkFirstNormalized.setChecked(True)
+        layout.addWidget(self.checkFirstNormalized, 9, 0, 1, 4)
+
+        # Row 10: Normalization check for second image
+        self.checkSecondNormalized = QCheckBox("Check second image normalized to [0,1]")
+        self.checkSecondNormalized.setChecked(True)
+        layout.addWidget(self.checkSecondNormalized, 10, 0, 1, 4)
+
+        # Row 11: Offer to open result in Siril
+        self.checkOpenInSiril = QCheckBox("Offer to open result in Siril after save")
+        self.checkOpenInSiril.setChecked(True)
+        layout.addWidget(self.checkOpenInSiril, 11, 0, 1, 4)
+
         # Set minimum size
-        self.setMinimumSize(720, 320)
+        self.setMinimumSize(820, 420)
 
     # File dialogs
     def browseFirstImage(self):
@@ -202,6 +220,39 @@ class PixelMathWindow(QMainWindow):
         arr = arr.astype(np.float64, copy=False)
         return arr, header, layout_info
 
+    def _check_normalized_0_1(self, arr, tol=1e-8):
+        """
+        Return True if arr min is approximately 0 and max approximately 1 within tol.
+        Works for 2D and 3D arrays.
+        """
+        if arr.size == 0:
+            return False
+        amin = float(np.nanmin(arr))
+        amax = float(np.nanmax(arr))
+        if np.isnan(amin) or np.isnan(amax):
+            return False
+        return (abs(amin - 0.0) <= tol) and (abs(amax - 1.0) <= tol)
+
+    def _launch_normalize_gui(self, filepath):
+        """
+        Launch normalize_gui.py with the given filepath using the same Python interpreter.
+        Non-blocking. Returns True if launch succeeded, False otherwise.
+        """
+        try:
+            script = Path("normalize_gui.py")
+            if not script.exists():
+                # try to find normalize_gui.py in same directory as this script
+                script = Path(__file__).resolve().parent / "normalize_gui.py"
+            if not script.exists():
+                self.statusLabel.setText("normalize_gui.py not found in current directory.")
+                return False
+            # Launch the normalizer with the filename as argument
+            subprocess.Popen([sys.executable, str(script), str(filepath)])
+            return True
+        except Exception as e:
+            self.statusLabel.setText(f"Failed to launch normalizer: {e}")
+            return False
+
     # Compute operation
     def computeOperation(self):
         self.statusLabel.setText("")  # clear
@@ -210,11 +261,36 @@ class PixelMathWindow(QMainWindow):
             return
 
         op = self.operationComboBox.currentText()
+
+        # Load images first so we can check normalization if requested
         try:
             im1, hdr1, info1 = self._load_fits_preserve_header(inputs["first_file"])
             im2, hdr2, info2 = self._load_fits_preserve_header(inputs["second_file"])
         except Exception as e:
             self.statusLabel.setText(f"Error loading FITS: {e}")
+            return
+
+        # Normalization checks
+        try:
+            if self.checkFirstNormalized.isChecked():
+                if not self._check_normalized_0_1(im1):
+                    launched = self._launch_normalize_gui(inputs["first_file"])
+                    if launched:
+                        self.statusLabel.setText("First image not normalized. Launched normalize_gui.py for first image.")
+                    else:
+                        self.statusLabel.setText("First image not normalized and normalize_gui.py could not be launched.")
+                    return
+
+            if self.checkSecondNormalized.isChecked():
+                if not self._check_normalized_0_1(im2):
+                    launched = self._launch_normalize_gui(inputs["second_file"])
+                    if launched:
+                        self.statusLabel.setText("Second image not normalized. Launched normalize_gui.py for second image.")
+                    else:
+                        self.statusLabel.setText("Second image not normalized and normalize_gui.py could not be launched.")
+                    return
+        except Exception as e:
+            self.statusLabel.setText(f"Normalization check failed: {e}")
             return
 
         # Check dimension compatibility after orientation normalization:
@@ -288,6 +364,21 @@ class PixelMathWindow(QMainWindow):
             self.statusLabel.setText("Operation completed; output saved successfully.")
         except Exception as e:
             self.statusLabel.setText(f"Failed writing output FITS: {e}")
+            return
+
+        # Offer to open in Siril if requested
+        if self.checkOpenInSiril.isChecked():
+            try:
+                siril_exe = shutil.which("siril")
+                if siril_exe:
+                    # Launch Siril with the output file path
+                    subprocess.Popen([siril_exe, os.path.abspath(inputs["output_file"])])
+                    self.statusLabel.setText("Operation completed; output saved and Siril launched.")
+                else:
+                    self.statusLabel.setText("Operation completed; output saved. Siril executable not found in PATH.")
+            except Exception as e:
+                self.statusLabel.setText(f"Operation completed; output saved. Failed to launch Siril: {e}")
+
 
 def main():
     app = QApplication(sys.argv)
