@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import sys
 from pathlib import Path
+import subprocess
+import shutil
 import numpy as np
 from astropy.io import fits
 from scipy import ndimage
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QSlider
+    QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QSlider, QCheckBox
 )
 from PyQt6.QtCore import Qt
 
@@ -132,6 +134,50 @@ def rank_filter_fits_color(inpath, outpath, radius=3.0, percentile=50.0, weight=
     fits.writeto(outpath, filtered.astype(np.float32), header=hdr, overwrite=True)
     return filtered
 
+# ---------------- Normalization and Siril helpers ----------------
+def _check_normalized_0_1(arr, tol=1e-8):
+    """
+    Return True if arr min is approximately 0 and max approximately 1 within tol.
+    Works for 2D and 3D arrays.
+    """
+    if arr is None or arr.size == 0:
+        return False
+    amin = float(np.nanmin(arr))
+    amax = float(np.nanmax(arr))
+    if np.isnan(amin) or np.isnan(amax):
+        return False
+    return (abs(amin - 0.0) <= tol) and (abs(amax - 1.0) <= tol)
+
+def _launch_normalize_gui(filepath):
+    """
+    Launch normalize_gui.py with the given filepath using the same Python interpreter.
+    Non-blocking. Returns True if launch succeeded, False otherwise.
+    """
+    try:
+        script = Path("normalize_gui.py")
+        if not script.exists():
+            script = Path(__file__).resolve().parent / "normalize_gui.py"
+        if not script.exists():
+            return False
+        subprocess.Popen([sys.executable, str(script), str(filepath)])
+        return True
+    except Exception:
+        return False
+
+def _maybe_launch_siril(output_path):
+    """
+    Try to launch Siril with the output file. Returns (launched: bool, message: str).
+    """
+    try:
+        siril_exe = shutil.which("siril")
+        if siril_exe:
+            subprocess.Popen([siril_exe, str(Path(output_path).resolve())])
+            return True, "Siril launched."
+        else:
+            return False, "Siril executable not found in PATH."
+    except Exception as e:
+        return False, f"Failed to launch Siril: {e}"
+
 # ---------------- PyQt6 GUI ----------------
 class RankFilterWindow(QMainWindow):
     def __init__(self):
@@ -164,6 +210,17 @@ class RankFilterWindow(QMainWindow):
         row2.addWidget(self.out_label)
         row2.addWidget(btn_out)
         v.addLayout(row2)
+
+        # normalization and Siril checkboxes (global)
+        chk_row = QHBoxLayout()
+        self.checkInputNormalized = QCheckBox("Check input normalized to [0,1]")
+        self.checkInputNormalized.setChecked(True)
+        chk_row.addWidget(self.checkInputNormalized)
+        self.checkOpenInSiril = QCheckBox("Offer to open result in Siril after save")
+        self.checkOpenInSiril.setChecked(True)
+        chk_row.addWidget(self.checkOpenInSiril)
+        chk_row.addStretch()
+        v.addLayout(chk_row)
 
         # radius
         rrow = QHBoxLayout()
@@ -270,10 +327,40 @@ class RankFilterWindow(QMainWindow):
             QMessageBox.critical(self, "Parameter error", str(e))
             return
 
+        # Normalization check (global)
+        if self.checkInputNormalized.isChecked():
+            try:
+                with fits.open(self._inpath, memmap=False) as hdul:
+                    data = None
+                    for hdu in hdul:
+                        if hdu.data is not None:
+                            data = hdu.data
+                            break
+                    if data is None:
+                        QMessageBox.critical(self, "Normalization check", "Input FITS contains no data.")
+                        return
+                    if not _check_normalized_0_1(np.array(data)):
+                        launched = _launch_normalize_gui(self._inpath)
+                        if launched:
+                            QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1]. Launched normalize_gui.py for the input file. Please normalize and re-run.")
+                        else:
+                            QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1] and normalize_gui.py was not found.")
+                        return
+            except Exception as e:
+                QMessageBox.critical(self, "Normalization check error", str(e))
+                return
+
         self.btn_run.setEnabled(False)
         try:
             rank_filter_fits_color(self._inpath, self._outpath, radius=radius, percentile=percentile, weight=weight, filter_alpha=filter_alpha)
-            QMessageBox.information(self, "Done", f"Filtered FITS written to:\n{self._outpath}")
+            # After successful write, optionally launch Siril
+            siril_msg = ""
+            if self.checkOpenInSiril.isChecked():
+                launched, siril_msg = _maybe_launch_siril(self._outpath)
+            info_msg = f"Filtered FITS written to:\n{self._outpath}"
+            if siril_msg:
+                info_msg += f"\n\n{siril_msg}"
+            QMessageBox.information(self, "Done", info_msg)
         except Exception as e:
             QMessageBox.critical(self, "Processing error", str(e))
         finally:
