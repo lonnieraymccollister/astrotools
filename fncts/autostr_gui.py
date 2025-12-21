@@ -6,14 +6,21 @@ Saves a stretched FITS and records parameters in header.
 
 Enhancements:
  - Add "Clip extremes" option similar to Siril's histogram transform clip button.
-   When enabled, pixels below the clip_low_percentile and above the clip_high_percentile
-   are excluded from percentile and median calculations (they are not removed from the
-   output image; clipping only affects the parameter estimation used for the stretch).
  - UI: checkbox to enable clipping and two spinboxes to set clip low/high percentiles.
  - Logging of clipping behavior and values.
+ - Added two global checkboxes:
+     * "Check input normalized to [0,1]" (checked by default). If enabled and the input FITS
+       primary data min/max are not approximately 0 and 1, the GUI will launch normalize_gui.py
+       with the input filename and abort the current operation so the user can normalize the file.
+     * "Offer to open result in Siril after save" (checked by default). If enabled, the GUI will
+       attempt to launch the `siril` executable with the saved output path after a successful save.
 """
 import sys
 import traceback
+import subprocess
+import shutil
+from pathlib import Path
+
 import numpy as np
 from astropy.io import fits
 
@@ -40,6 +47,53 @@ def _safe_float_for_header(x, fallback=0.0):
         return float(fallback)
     return xf
 
+# ---------- normalization and Siril helpers (new) ----------
+def _check_normalized_0_1(arr, tol=1e-8):
+    """
+    Return True if arr min is approximately 0 and max approximately 1 within tol.
+    Works for 2D and 3D arrays.
+    """
+    if arr is None:
+        return False
+    a = np.array(arr, dtype=np.float64)
+    if a.size == 0:
+        return False
+    amin = float(np.nanmin(a))
+    amax = float(np.nanmax(a))
+    if np.isnan(amin) or np.isnan(amax):
+        return False
+    return (abs(amin - 0.0) <= tol) and (abs(amax - 1.0) <= tol)
+
+def _launch_normalize_gui(filepath):
+    """
+    Launch normalize_gui.py with the given filepath using the same Python interpreter.
+    Non-blocking. Returns True if launch succeeded, False otherwise.
+    """
+    try:
+        script = Path("normalize_gui.py")
+        if not script.exists():
+            script = Path(__file__).resolve().parent / "normalize_gui.py"
+        if not script.exists():
+            return False
+        subprocess.Popen([sys.executable, str(script), str(filepath)])
+        return True
+    except Exception:
+        return False
+
+def _maybe_launch_siril(output_path):
+    """
+    Try to launch Siril with the output file. Returns (launched: bool, message: str).
+    """
+    try:
+        siril_exe = shutil.which("siril")
+        if siril_exe:
+            subprocess.Popen([siril_exe, str(Path(output_path).resolve())])
+            return True, "Siril launched."
+        else:
+            return False, "Siril executable not found in PATH."
+    except Exception as e:
+        return False, f"Failed to launch Siril: {e}"
+
 # ---------- stretch logic ----------
 def smh_stretch(data, lower_percent=0.5, upper_percent=99.5, mid_override=None,
                 clip_enabled=False, clip_low_pct=0.0, clip_high_pct=0.0):
@@ -47,7 +101,7 @@ def smh_stretch(data, lower_percent=0.5, upper_percent=99.5, mid_override=None,
     Perform SMH-style histogram stretch on numeric array.
     If mid_override is provided (numeric), use that as the midtone value (clipped to [low, high]).
     If clip_enabled is True, pixels below the clip_low_pct percentile and above the
-    (100 - clip_high_pct) percentile are excluded from percentile/median calculations.
+    (100 - clip_high_pct) percentile are excluded from percentile and median calculations.
     Returns (stretched in [0,1], low, med, high, gamma, used_mask_info)
     where used_mask_info is a dict with clipping details for logging.
     """
@@ -152,6 +206,7 @@ class AutoStrWindow(QMainWindow):
         grid = QGridLayout()
         central.setLayout(grid)
 
+        # Top row: input and global checkboxes
         grid.addWidget(QLabel("Input FITS:"), 0, 0)
         self.input_edit = QLineEdit()
         grid.addWidget(self.input_edit, 0, 1, 1, 3)
@@ -159,34 +214,43 @@ class AutoStrWindow(QMainWindow):
         btn_in.clicked.connect(self._browse_input)
         grid.addWidget(btn_in, 0, 4)
 
-        grid.addWidget(QLabel("Output filename (optional):"), 1, 0)
+        # Global checkboxes: normalization check and Siril launch
+        self.check_normalized = QCheckBox("Check input normalized to [0,1]")
+        self.check_normalized.setChecked(True)
+        grid.addWidget(self.check_normalized, 1, 1, 1, 2)
+
+        self.check_open_siril = QCheckBox("Offer to open result in Siril after save")
+        self.check_open_siril.setChecked(True)
+        grid.addWidget(self.check_open_siril, 1, 3, 1, 2)
+
+        grid.addWidget(QLabel("Output filename (optional):"), 2, 0)
         self.output_edit = QLineEdit("")
         self.output_edit.setPlaceholderText("leave empty to auto add _smh.fit")
-        grid.addWidget(self.output_edit, 1, 1, 1, 3)
+        grid.addWidget(self.output_edit, 2, 1, 1, 3)
         btn_out = QPushButton("Browse Save Location")
         btn_out.clicked.connect(self._browse_save)
-        grid.addWidget(btn_out, 1, 4)
+        grid.addWidget(btn_out, 2, 4)
 
-        grid.addWidget(QLabel("Lower percentile (%):"), 2, 0)
+        grid.addWidget(QLabel("Lower percentile (%):"), 3, 0)
         self.lower_spin = QDoubleSpinBox()
         self.lower_spin.setDecimals(6)
         self.lower_spin.setRange(0.0, 50.0)
         self.lower_spin.setSingleStep(0.1)
         self.lower_spin.setValue(0.5)
-        grid.addWidget(self.lower_spin, 2, 1)
+        grid.addWidget(self.lower_spin, 3, 1)
 
-        grid.addWidget(QLabel("Upper percentile (%):"), 2, 2)
+        grid.addWidget(QLabel("Upper percentile (%):"), 3, 2)
         self.upper_spin = QDoubleSpinBox()
         self.upper_spin.setDecimals(6)
         self.upper_spin.setRange(50.0, 100.0)
         self.upper_spin.setSingleStep(0.1)
         self.upper_spin.setValue(99.999)
-        grid.addWidget(self.upper_spin, 2, 3)
+        grid.addWidget(self.upper_spin, 3, 3)
 
         # New: custom midtone checkbox and entry
         self.custom_mid_chk = QCheckBox("Use custom midtone value")
         self.custom_mid_chk.setChecked(False)
-        grid.addWidget(self.custom_mid_chk, 3, 0, 1, 2)
+        grid.addWidget(self.custom_mid_chk, 4, 0, 1, 2)
 
         self.mid_spin = QDoubleSpinBox()
         self.mid_spin.setDecimals(6)
@@ -195,65 +259,65 @@ class AutoStrWindow(QMainWindow):
         self.mid_spin.setSingleStep(0.1)
         self.mid_spin.setValue(0.0)
         self.mid_spin.setEnabled(False)
-        grid.addWidget(QLabel("Midtone value:"), 3, 2)
-        grid.addWidget(self.mid_spin, 3, 3)
+        grid.addWidget(QLabel("Midtone value:"), 4, 2)
+        grid.addWidget(self.mid_spin, 4, 3)
 
         # Use toggled which passes a boolean and is less error prone
         self.custom_mid_chk.toggled.connect(self.mid_spin.setEnabled)
 
         self.keep_header_chk = QCheckBox("Preserve original header (add STRETCH keys)")
         self.keep_header_chk.setChecked(True)
-        grid.addWidget(self.keep_header_chk, 4, 0, 1, 3)
+        grid.addWidget(self.keep_header_chk, 5, 0, 1, 3)
 
         # New: clipping controls (Siril-like clip button behavior)
         self.clip_chk = QCheckBox("Enable clipping of histogram extremes (affects parameter estimation)")
         self.clip_chk.setChecked(False)
-        grid.addWidget(self.clip_chk, 5, 0, 1, 4)
+        grid.addWidget(self.clip_chk, 6, 0, 1, 4)
 
-        grid.addWidget(QLabel("Clip low percentile (%):"), 6, 0)
+        grid.addWidget(QLabel("Clip low percentile (%):"), 7, 0)
         self.clip_low_spin = QDoubleSpinBox()
         self.clip_low_spin.setDecimals(6)
         self.clip_low_spin.setRange(0.0, 49.0)
         self.clip_low_spin.setSingleStep(0.1)
         self.clip_low_spin.setValue(0.0)
-        grid.addWidget(self.clip_low_spin, 6, 1)
+        grid.addWidget(self.clip_low_spin, 7, 1)
 
-        grid.addWidget(QLabel("Clip high percentile (%):"), 6, 2)
+        grid.addWidget(QLabel("Clip high percentile (%):"), 7, 2)
         self.clip_high_spin = QDoubleSpinBox()
         self.clip_high_spin.setDecimals(6)
         self.clip_high_spin.setRange(0.0, 49.0)
         self.clip_high_spin.setSingleStep(0.1)
         self.clip_high_spin.setValue(0.0)
-        grid.addWidget(self.clip_high_spin, 6, 3)
+        grid.addWidget(self.clip_high_spin, 7, 3)
 
         self.preview_btn = QPushButton("Load & Preview Histogram")
         self.preview_btn.clicked.connect(self._load_and_preview)
-        grid.addWidget(self.preview_btn, 7, 3)
+        grid.addWidget(self.preview_btn, 8, 3)
 
         self.run_btn = QPushButton("Run Stretch & Save")
         self.run_btn.clicked.connect(self._run_stretch)
-        grid.addWidget(self.run_btn, 8, 0)
+        grid.addWidget(self.run_btn, 9, 0)
 
         self.clear_btn = QPushButton("Clear Log")
         self.clear_btn.clicked.connect(lambda: self.log.clear())
-        grid.addWidget(self.clear_btn, 8, 1)
+        grid.addWidget(self.clear_btn, 9, 1)
 
         # Results text
-        grid.addWidget(QLabel("Computed parameters:"), 9, 0)
+        grid.addWidget(QLabel("Computed parameters:"), 10, 0)
         self.params_box = QTextEdit()
         self.params_box.setReadOnly(True)
         self.params_box.setFixedHeight(120)
-        grid.addWidget(self.params_box, 10, 0, 1, 5)
+        grid.addWidget(self.params_box, 11, 0, 1, 5)
 
         # Histogram canvas
         self.canvas = HistCanvas(width=8, height=3)
-        grid.addWidget(self.canvas, 11, 0, 4, 5)
+        grid.addWidget(self.canvas, 12, 0, 4, 5)
 
         # Log
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFixedHeight(80)
-        grid.addWidget(self.log, 15, 0, 1, 5)
+        grid.addWidget(self.log, 16, 0, 1, 5)
 
     def _log(self, *args):
         self.log.append(" ".join(str(a) for a in args))
@@ -318,10 +382,32 @@ class AutoStrWindow(QMainWindow):
             QMessageBox.critical(self, "Load error", f"{e}\n\n{tb}")
 
     def _run_stretch(self):
+        # If no data loaded, attempt to load
         if self.data is None:
             self._load_and_preview()
             if self.data is None:
                 return
+
+        # If normalization check is enabled, verify input primary data is 0..1
+        if self.check_normalized.isChecked():
+            try:
+                with fits.open(self.input_edit.text().strip()) as hdul:
+                    raw = hdul[0].data
+                if raw is None:
+                    QMessageBox.critical(self, "Normalization check", "Input FITS contains no data.")
+                    return
+                arr_check = np.array(raw, dtype=np.float64)
+                if not _check_normalized_0_1(arr_check):
+                    launched = _launch_normalize_gui(self.input_edit.text().strip())
+                    if launched:
+                        QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1]. Launched normalize_gui.py for the input file. Please normalize and re-run.")
+                    else:
+                        QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1] and normalize_gui.py was not found.")
+                    return
+            except Exception as e:
+                QMessageBox.critical(self, "Normalization check error", str(e))
+                return
+
         try:
             lower = float(self.lower_spin.value())
             upper = float(self.upper_spin.value())
@@ -424,7 +510,16 @@ class AutoStrWindow(QMainWindow):
 
             self.params_box.setPlainText("\n".join(params))
             self.canvas.plot_hist(stretched, bins=256, title="Stretched histogram")
-            QMessageBox.information(self, "Done", f"Wrote stretched FITS: {outpath}")
+
+            # Optionally launch Siril
+            if self.check_open_siril.isChecked():
+                launched, siril_msg = _maybe_launch_siril(outpath)
+                if launched:
+                    QMessageBox.information(self, "Done", f"Wrote stretched FITS: {outpath}\n\nSiril launched.")
+                else:
+                    QMessageBox.information(self, "Done", f"Wrote stretched FITS: {outpath}\n\n{siril_msg}")
+            else:
+                QMessageBox.information(self, "Done", f"Wrote stretched FITS: {outpath}")
         except Exception as e:
             tb = traceback.format_exc()
             self._log("Error:", e)
