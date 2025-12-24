@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-dynamic_rescale16.py
-Standalone utility: split a large 2D FITS into tiles, process tiles (dynamic block rescale + gamma + bin),
-and reassemble processed tiles back to the full image.
+dynamic_rescale16_histmatch.py
+Modified from dynamic_rescale16.py to perform histogram matching of processed tiles
+(using the brightest processed tile as reference) before reassembly.
 
-Usage: python dynamic_rescale16.py
-Follow interactive prompts to choose mode 01 (split), 02 (process tiles), or 03 (reassemble).
+Usage: python dynamic_rescale16_histmatch.py
+Follow interactive prompts to choose mode 01 (split), 02 (process tiles), or 03 (reassemble with histogram matching).
 """
 import os
 import sys
@@ -155,10 +155,122 @@ def process_tile(tile_file, width_of_square, bin_value, gamma_value, resize_fact
     print(f"Tile processed and saved to {out_filename}")
 
 # -------------------------
+# Histogram matching utilities
+# -------------------------
+def robust_brightness_metric(data, method="p99"):
+    """
+    Compute a robust brightness metric for a tile.
+    Masks zeros and NaNs (padding) and returns:
+      - 'p99' : 99th percentile
+      - 'median' : median
+      - 'top_mean' : mean of top 1%
+    """
+    if data is None:
+        return -np.inf
+    flat = data.ravel()
+    mask = np.isfinite(flat) & (flat != 0)
+    if not np.any(mask):
+        return -np.inf
+    vals = flat[mask]
+    if method == "p99":
+        return float(np.percentile(vals, 99.0))
+    if method == "median":
+        return float(np.median(vals))
+    if method == "top_mean":
+        k = max(1, int(len(vals) * 0.01))
+        top_vals = np.partition(vals, -k)[-k:]
+        return float(np.mean(top_vals))
+    return float(np.mean(vals))
+
+def pick_brightest_tile(tiles, method="p99"):
+    """
+    Given a list of tile file paths, return the path and metric of the brightest tile.
+    """
+    best_tile = None
+    best_val = -np.inf
+    for t in tiles:
+        try:
+            with fits.open(t, memmap=False) as hdul:
+                data = hdul[0].data
+            val = robust_brightness_metric(data, method=method)
+            if val > best_val:
+                best_val = val
+                best_tile = t
+        except Exception as e:
+            print(f"Warning: skipping {t} due to error: {e}")
+    return best_tile, best_val
+
+def histogram_match(source, reference, n_bins=65536):
+    """
+    Histogram match source to reference using CDF mapping.
+    Works on 2D arrays. Ignores zero-padding (treats zeros as mask).
+    Returns matched array with same dtype as source (float).
+    """
+    if source is None or reference is None:
+        return source
+
+    src = np.asarray(source, dtype=np.float64)
+    ref = np.asarray(reference, dtype=np.float64)
+
+    # Mask zeros and NaNs (assume padding zeros)
+    src_mask = np.isfinite(src) & (src != 0)
+    ref_mask = np.isfinite(ref) & (ref != 0)
+
+    if not np.any(src_mask) or not np.any(ref_mask):
+        return source
+
+    src_vals = src[src_mask].ravel()
+    ref_vals = ref[ref_mask].ravel()
+
+    # If values are already small range, use unique mapping
+    # Compute histograms over the value range present in reference and source
+    src_min, src_max = src_vals.min(), src_vals.max()
+    ref_min, ref_max = ref_vals.min(), ref_vals.max()
+
+    if src_min == src_max or ref_min == ref_max:
+        return source
+
+    # Use a fixed number of bins but adapt range
+    bins = np.linspace(min(src_min, ref_min), max(src_max, ref_max), n_bins, endpoint=True)
+
+    src_hist, bin_edges = np.histogram(src_vals, bins=bins, density=False)
+    ref_hist, _ = np.histogram(ref_vals, bins=bin_edges, density=False)
+
+    # CDFs
+    src_cdf = np.cumsum(src_hist).astype(np.float64)
+    src_cdf /= src_cdf[-1]
+    ref_cdf = np.cumsum(ref_hist).astype(np.float64)
+    ref_cdf /= ref_cdf[-1]
+
+    # Bin centers
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+
+    # Create mapping from source bin center to reference value via interpolation of CDFs
+    # For each source cdf value, find corresponding reference bin center
+    interp_ref_values = np.interp(src_cdf, ref_cdf, bin_centers)
+
+    # Map source pixels: find bin index for each source pixel and replace with interp_ref_values[idx]
+    src_bin_idx = np.searchsorted(bin_edges, src_vals, side='right') - 1
+    src_bin_idx = np.clip(src_bin_idx, 0, len(interp_ref_values)-1)
+    mapped_vals = interp_ref_values[src_bin_idx]
+
+    # Create output array and fill masked positions with mapped values
+    out = src.copy()
+    out_flat = out.ravel()
+    mask_flat = src_mask.ravel()
+    out_flat[mask_flat] = mapped_vals
+    out = out_flat.reshape(src.shape)
+
+    # Keep zeros (padding) as zeros
+    out[~src_mask] = 0.0
+
+    return out
+
+# -------------------------
 # Main interactive flow
 # -------------------------
 def main():
-    print("Enter 01 to split tiles, 02 to process tiles, or 03 to combine tiles")
+    print("Enter 01 to split tiles, 02 to process tiles, or 03 to combine tiles (with histogram matching)")
     choice = input("--> ").strip()
     if choice == '01':
         input_file_name = input("Enter the input FITS file name --> ").strip()
@@ -208,19 +320,59 @@ def main():
             print("Original input FITS required to know final shape/header.")
             return
         image, header = load_fits(input_file_name)
-        tiles = sorted([os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith("_binned_gamma_corrected_drs.fits")])
-        if not tiles:
-            print("No processed tiles found with suffix '_binned_gamma_corrected_drs.fits' in", output_dir)
+
+        # Find processed tiles (the ones produced by process_tile)
+        processed_suffix = "_binned_gamma_corrected_drs.fits"
+        processed_tiles = sorted([os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(processed_suffix)])
+        if not processed_tiles:
+            print("No processed tiles found with suffix", processed_suffix, "in", output_dir)
             return
-        final_image = reassemble_image(tiles, image.shape)
+
+        # Pick brightest processed tile as reference
+        ref_tile, ref_val = pick_brightest_tile(processed_tiles, method="p99")
+        if ref_tile is None:
+            print("Could not determine a reference tile for histogram matching.")
+            return
+        print("Reference (brightest) tile for histogram matching:", ref_tile, "metric:", ref_val)
+
+        # Load reference data
+        with fits.open(ref_tile) as hdul:
+            ref_data = hdul[0].data.astype(np.float64)
+
+        # Create matched tile files (suffix _matched.fits)
+        matched_tiles = []
+        for t in processed_tiles:
+            try:
+                with fits.open(t) as hdul:
+                    data = hdul[0].data.astype(np.float64)
+                    hdr = hdul[0].header
+                matched = histogram_match(data, ref_data, n_bins=4096)  # 4096 bins is usually enough and faster
+                outname = t.replace(processed_suffix, processed_suffix.replace(".fits", "_matched.fits"))
+                fits.writeto(outname, matched.astype(np.float32), hdr, overwrite=True)
+                matched_tiles.append(outname)
+                print("Wrote matched tile:", outname)
+            except Exception as e:
+                print(f"Failed histogram matching for {t}: {e}")
+
+        if not matched_tiles:
+            print("No matched tiles produced, aborting reassembly.")
+            return
+
+        # Reassemble using matched tiles
+        final_image = reassemble_image(matched_tiles, image.shape)
         filename = "output_" + os.path.basename(output_dir) + ".fits"
         fits.writeto(filename, final_image.astype(np.float32), header, overwrite=True)
+
         # Optional cleanup
-        cleanup = input("Remove processed tiles? y/N --> ").strip().lower()
+        cleanup = input("Remove matched tiles? y/N --> ").strip().lower()
         if cleanup == 'y':
-            for tile_file in tiles:
-                os.remove(tile_file)
+            for tile_file in matched_tiles:
+                try:
+                    os.remove(tile_file)
+                except Exception:
+                    pass
         print("Processing complete. Final image saved as", filename)
+
     else:
         print("Invalid option entered.")
 
