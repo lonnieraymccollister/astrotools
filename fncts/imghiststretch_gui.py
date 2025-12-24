@@ -2,9 +2,12 @@ import sys
 import numpy as np
 from scipy.special import erfinv
 from astropy.io import fits
+from pathlib import Path
+import subprocess
+import shutil
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFileDialog, QComboBox, QMessageBox, QFormLayout
+    QPushButton, QFileDialog, QComboBox, QMessageBox, QFormLayout, QCheckBox
 )
 from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -52,6 +55,55 @@ def lognormal_specification(image, mu, sigma_ln):
     return new_vals[inv_idx].reshape(image.shape)
 
 # ------------------------------
+# Helpers: normalization check and Siril launcher
+# ------------------------------
+def _check_normalized_0_1(arr, tol=1e-8):
+    """
+    Return True if arr min is approximately 0 and max approximately 1 within tol.
+    Works for 2D and 3D arrays.
+    """
+    if arr is None:
+        return False
+    a = np.array(arr, dtype=np.float64)
+    if a.size == 0:
+        return False
+    amin = float(np.nanmin(a))
+    amax = float(np.nanmax(a))
+    if np.isnan(amin) or np.isnan(amax):
+        return False
+    return (abs(amin - 0.0) <= tol) and (abs(amax - 1.0) <= tol)
+
+def _launch_normalize_gui(filepath):
+    """
+    Launch normalize_gui.py with the given filepath using the same Python interpreter.
+    Non-blocking. Returns True if launch succeeded, False otherwise.
+    """
+    try:
+        script = Path("normalize_gui.py")
+        if not script.exists():
+            script = Path(__file__).resolve().parent / "normalize_gui.py"
+        if not script.exists():
+            return False
+        subprocess.Popen([sys.executable, str(script), str(filepath)])
+        return True
+    except Exception:
+        return False
+
+def _maybe_launch_siril(output_path):
+    """
+    Try to launch Siril with the output file. Returns (launched: bool, message: str).
+    """
+    try:
+        siril_exe = shutil.which("siril")
+        if siril_exe:
+            subprocess.Popen([siril_exe, str(Path(output_path).resolve())])
+            return True, "Siril launched."
+        else:
+            return False, "Siril executable not found in PATH."
+    except Exception as e:
+        return False, f"Failed to launch Siril: {e}"
+
+# ------------------------------
 # Main GUI
 # ------------------------------
 class HistSpecGUI(QWidget):
@@ -76,6 +128,17 @@ class HistSpecGUI(QWidget):
         file_layout.addWidget(self.file_edit)
         file_layout.addWidget(btn_browse)
         layout.addLayout(file_layout)
+
+        # New global checkboxes: normalization check and Siril launch
+        chk_layout = QHBoxLayout()
+        self.check_normalized = QCheckBox("Check input normalized to [0,1]")
+        self.check_normalized.setChecked(True)
+        chk_layout.addWidget(self.check_normalized)
+        self.check_open_siril = QCheckBox("Offer to open result in Siril after save")
+        self.check_open_siril.setChecked(True)
+        chk_layout.addWidget(self.check_open_siril)
+        chk_layout.addStretch()
+        layout.addLayout(chk_layout)
 
         # Distribution selector and parameter entries
         form = QFormLayout()
@@ -150,13 +213,21 @@ class HistSpecGUI(QWidget):
             return
         try:
             with fits.open(path) as hdul:
-                data = hdul[0].data.astype(np.float64)
+                data = hdul[0].data
                 header = hdul[0].header
             if data is None:
                 raise ValueError("No image data found in primary HDU.")
-            self.image = data
+            self.image = np.asarray(data).astype(np.float64)
             self.hdul_header = header
-            self.status_label.setText(f"Loaded {path} shape={self.image.shape}")
+
+            # If normalization check is enabled, perform a quick check and inform user
+            if self.check_normalized.isChecked():
+                if not _check_normalized_0_1(self.image):
+                    self.status_label.setText("Loaded but not normalized to [0,1]. Enable normalization or run normalize_gui.py.")
+                else:
+                    self.status_label.setText(f"Loaded {path} shape={self.image.shape}")
+            else:
+                self.status_label.setText(f"Loaded {path} shape={self.image.shape}")
         except Exception as e:
             QMessageBox.critical(self, "Load error", str(e))
             self.status_label.setText("Load failed")
@@ -189,6 +260,26 @@ class HistSpecGUI(QWidget):
             self.param_sigma_ln.setPlaceholderText("sigma (e.g., 0.5)")
 
     def apply_specification(self):
+        # Before applying, if normalization check is enabled, verify input file (if loaded from file)
+        path = self.file_edit.text().strip()
+        if self.check_normalized.isChecked() and path:
+            try:
+                with fits.open(path) as hdul:
+                    raw = hdul[0].data
+                if raw is None:
+                    QMessageBox.critical(self, "Normalization check", "Input FITS contains no data.")
+                    return
+                if not _check_normalized_0_1(np.array(raw)):
+                    launched = _launch_normalize_gui(path)
+                    if launched:
+                        QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1]. Launched normalize_gui.py for the input file. Please normalize and re-run.")
+                    else:
+                        QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1] and normalize_gui.py was not found.")
+                    return
+            except Exception as e:
+                QMessageBox.critical(self, "Normalization check error", str(e))
+                return
+
         if self.image is None:
             QMessageBox.warning(self, "No image", "Load a FITS image first.")
             return
@@ -230,6 +321,14 @@ class HistSpecGUI(QWidget):
             fits.writeto(out_name, self.specified_image, header=self.hdul_header, overwrite=True)
             self.status_label.setText(f"Applied {name}, saved {out_name}")
             QMessageBox.information(self, "Done", f"Specification applied and saved as {out_name}")
+
+            # Optionally offer to open in Siril
+            if self.check_open_siril.isChecked():
+                launched, msg = _maybe_launch_siril(out_name)
+                if launched:
+                    QMessageBox.information(self, "Siril", f"Siril launched with {out_name}")
+                else:
+                    QMessageBox.information(self, "Siril", msg)
         except Exception as e:
             QMessageBox.critical(self, "Apply error", str(e))
             self.status_label.setText("Apply failed")
@@ -273,6 +372,27 @@ class HistSpecGUI(QWidget):
         if self.specified_image is None:
             QMessageBox.warning(self, "No specified image", "Apply a specification first.")
             return
+
+        # If normalization check is enabled, verify input file (if available)
+        path = self.file_edit.text().strip()
+        if self.check_normalized.isChecked() and path:
+            try:
+                with fits.open(path) as hdul:
+                    raw = hdul[0].data
+                if raw is None:
+                    QMessageBox.critical(self, "Normalization check", "Input FITS contains no data.")
+                    return
+                if not _check_normalized_0_1(np.array(raw)):
+                    launched = _launch_normalize_gui(path)
+                    if launched:
+                        QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1]. Launched normalize_gui.py for the input file. Please normalize and re-run.")
+                    else:
+                        QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1] and normalize_gui.py was not found.")
+                    return
+            except Exception as e:
+                QMessageBox.critical(self, "Normalization check error", str(e))
+                return
+
         path, _ = QFileDialog.getSaveFileName(self, "Save specified FITS", "", "FITS Files (*.fits *.fit);;All Files (*)")
         if not path:
             return
@@ -280,6 +400,14 @@ class HistSpecGUI(QWidget):
             fits.writeto(path, self.specified_image, header=self.hdul_header, overwrite=True)
             self.status_label.setText(f"Saved specified image to {path}")
             QMessageBox.information(self, "Saved", f"Saved specified image to {path}")
+
+            # Optionally offer to open in Siril
+            if self.check_open_siril.isChecked():
+                launched, msg = _maybe_launch_siril(path)
+                if launched:
+                    QMessageBox.information(self, "Siril", f"Siril launched with {path}")
+                else:
+                    QMessageBox.information(self, "Siril", msg)
         except Exception as e:
             QMessageBox.critical(self, "Save error", str(e))
             self.status_label.setText("Save failed")
