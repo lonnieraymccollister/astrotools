@@ -70,6 +70,7 @@ ACTIONS = {
     "ecolor_vs_distance_pyvista.py (spawn)": (sys.executable, "fncts/ecolor_vs_distance_pyvista.py"),
     "ebv_map_gui (spawn)": (sys.executable, "fncts/ebv_map_gui.py"),
     "rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
+    "De-skew Img (spawn)": (sys.executable, "fncts/deskew_book_gui.py"),
     # Add more mappings as needed
 }
 
