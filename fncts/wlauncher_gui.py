@@ -71,6 +71,7 @@ ACTIONS = {
     "ebv_map_gui (spawn)": (sys.executable, "fncts/ebv_map_gui.py"),
     "rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
     "De-skew Img (spawn)": (sys.executable, "fncts/deskew_book_gui.py"),
+    "PmVtr Img (spawn)": (sys.executable, "fncts/PmVtr.py"),
     # Add more mappings as needed
 }
 
