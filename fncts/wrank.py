@@ -112,8 +112,50 @@ def rank_filter_color_array(arr, radius=3.0, percentile=50.0, weight=0.6, filter
         return np.transpose(out3, (2, 0, 1))
     return out3
 
+# ---------------- Patch 2: centralized FITS writer with optional normalization and NORMED header ----------------
+def write_fits_preserve_layout(path, arr_yxc, header, layout_info, normalize_output=True):
+    """
+    Write arr_yxc back to FITS preserving original layout.
+    If normalize_output=True, normalize to [0,1] before saving.
+    Adds FITS header keyword NORMED = 1 or 0.
+    """
+    out = np.array(arr_yxc, copy=False)
+
+    # ---------- Optional Normalization ----------
+    norm_applied = 0
+    if normalize_output:
+        finite = np.isfinite(out)
+        if np.any(finite):
+            mn = float(np.nanmin(out))
+            mx = float(np.nanmax(out))
+            if mx > mn:
+                out = (out - mn) / (mx - mn)
+            else:
+                out = np.zeros_like(out, dtype=np.float64)
+        else:
+            out = np.zeros_like(out, dtype=np.float64)
+        norm_applied = 1
+    # --------------------------------------------
+
+    # Preserve original layout: if layout_info indicates channel_first (3, Y, X), transpose back
+    if layout_info.get("channel_first", False):
+        if out.ndim == 3 and out.shape[2] == 3:
+            out_write = np.transpose(out, (2, 0, 1))
+        elif out.ndim == 2:
+            out_write = out[np.newaxis, :, :]
+        else:
+            out_write = out
+    else:
+        out_write = out
+
+    hdr = header.copy() if header is not None else fits.Header()
+    hdr['BITPIX'] = -32
+    hdr['NORMED'] = (norm_applied, "1 if output was normalized to [0,1]")
+
+    fits.writeto(path, out_write.astype(np.float32), hdr, overwrite=True)
+
 # ---------------- FITS IO wrapper that detects color layout ----------------
-def rank_filter_fits_color(inpath, outpath, radius=3.0, percentile=50.0, weight=0.6, filter_alpha=False):
+def rank_filter_fits_color(inpath, outpath, radius=3.0, percentile=50.0, weight=0.6, filter_alpha=False, normalize_output=True):
     with fits.open(inpath, memmap=False) as hdul:
         # pick first HDU with usable data
         src_hdu = None
@@ -130,8 +172,10 @@ def rank_filter_fits_color(inpath, outpath, radius=3.0, percentile=50.0, weight=
     filtered = rank_filter_color_array(data, radius=radius, percentile=percentile, weight=weight, filter_alpha=filter_alpha)
 
     hdr.add_history(f"Color/gray rank filter radius={radius}, pct={percentile}, weight={weight}, filter_alpha={filter_alpha}")
-    # write filtered array as primary HDU (preserve header from source_hdu)
-    fits.writeto(outpath, filtered.astype(np.float32), header=hdr, overwrite=True)
+
+    # Use centralized writer so normalization and NORMED header are applied consistently
+    layout_info = {"orig_shape": data.shape, "channel_first": (data.ndim == 3 and data.shape[0] == 3)}
+    write_fits_preserve_layout(outpath, filtered.astype(np.float64), hdr, layout_info, normalize_output=normalize_output)
     return filtered
 
 # ---------------- Normalization and Siril helpers ----------------
@@ -219,6 +263,12 @@ class RankFilterWindow(QMainWindow):
         self.checkOpenInSiril = QCheckBox("Offer to open result in Siril after save")
         self.checkOpenInSiril.setChecked(True)
         chk_row.addWidget(self.checkOpenInSiril)
+
+        # NEW (Patch 1): checkbox to control output normalization
+        self.checkNormalizeOutput = QCheckBox("Normalize output FITS to [0,1]")
+        self.checkNormalizeOutput.setChecked(True)
+        chk_row.addWidget(self.checkNormalizeOutput)
+
         chk_row.addStretch()
         v.addLayout(chk_row)
 
@@ -327,7 +377,7 @@ class RankFilterWindow(QMainWindow):
             QMessageBox.critical(self, "Parameter error", str(e))
             return
 
-        # Normalization check (global)
+        # Normalization check (global) with explicit warning (Patch 4)
         if self.checkInputNormalized.isChecked():
             try:
                 with fits.open(self._inpath, memmap=False) as hdul:
@@ -340,11 +390,17 @@ class RankFilterWindow(QMainWindow):
                         QMessageBox.critical(self, "Normalization check", "Input FITS contains no data.")
                         return
                     if not _check_normalized_0_1(np.array(data)):
+                        QMessageBox.warning(
+                            self,
+                            "Input Not Normalized",
+                            "Input FITS is not normalized to [0,1].\n"
+                            "normalize_gui.py will be launched."
+                        )
                         launched = _launch_normalize_gui(self._inpath)
                         if launched:
-                            QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1]. Launched normalize_gui.py for the input file. Please normalize and re-run.")
+                            self.statusBar().showMessage("Input not normalized. Launched normalize_gui.py.")
                         else:
-                            QMessageBox.information(self, "Normalization required", "Input not normalized to [0,1] and normalize_gui.py was not found.")
+                            self.statusBar().showMessage("Input not normalized and normalize_gui.py was not found.")
                         return
             except Exception as e:
                 QMessageBox.critical(self, "Normalization check error", str(e))
@@ -352,7 +408,15 @@ class RankFilterWindow(QMainWindow):
 
         self.btn_run.setEnabled(False)
         try:
-            rank_filter_fits_color(self._inpath, self._outpath, radius=radius, percentile=percentile, weight=weight, filter_alpha=filter_alpha)
+            rank_filter_fits_color(
+                self._inpath,
+                self._outpath,
+                radius=radius,
+                percentile=percentile,
+                weight=weight,
+                filter_alpha=filter_alpha,
+                normalize_output=self.checkNormalizeOutput.isChecked()
+            )
             # After successful write, optionally launch Siril
             siril_msg = ""
             if self.checkOpenInSiril.isChecked():

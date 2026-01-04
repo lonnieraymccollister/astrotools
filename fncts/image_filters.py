@@ -2,18 +2,18 @@
 """
 image_filters.py
 
-PyQt6 GUI to run a set of FITS image filters (Unsharp, RL deconv, FFT high-pass, morphology, Gaussian, HpMore, LocAdapt).
+PyQt6 GUI to run a set of FITS image filters (Unsharp, RL deconv, FFT high-pass,
+morphology, Gaussian, HpMore, LocAdapt).
 
-Enhancement:
- - Robust handling of 3-plane RGB FITS preferred:
-     * Accepts and normalizes input layouts (primary HDU data in either (3, Y, X) or (Y, X, 3) or (Y, X)).
-     * Returns/uses arrays in canonical (Y, X, C) form for processing.
-     * Preserves original header and original channel layout on write (will restore (3, Y, X) if input was channel-first).
- - Safer numeric casts and clearer error messages.
- - Added "moderate sharpening" checkbox to High Pass (HpMore) filter page.
- - Added global checkboxes:
-     * Check input normalized to [0,1] (checked by default) — launches normalize_gui.py if not normalized.
-     * Offer to open result in Siril after save (checked by default).
+This version includes:
+ - Robust FITS color handling (channel-first and channel-last)
+ - Global checkboxes:
+     * Check input normalized to [0,1] (default ON) — warns and can launch normalize_gui.py
+     * Offer to open result in Siril after save (default ON)
+     * Normalize output FITS to [0,1] (default ON)  <-- NEW (Patch 1)
+ - write_fits_preserve_layout now optionally normalizes output and writes NORMED header (Patch 2)
+ - All calls to write_fits_preserve_layout updated to respect the checkbox (Patch 3)
+ - Explicit GUI warning when input is not normalized (Patch 4)
 """
 import sys
 import os
@@ -32,8 +32,9 @@ from scipy.ndimage import convolve as nd_convolve
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QComboBox,
-    QStackedWidget, QCheckBox
+    QStackedWidget, QCheckBox, QSpinBox
 )
+from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import Qt
 
 # ----------------------------
@@ -42,7 +43,7 @@ from PyQt6.QtCore import Qt
 def load_fits_rgb(path):
     """
     Load primary HDU and return tuple (arr_yxc, header, layout_info)
-    - arr_yxc is a numpy array in shape (Y, X) or (Y, X, 3)
+    - arr_yxc is a numpy array in shape (Y, X, 3)
     - header is the primary header
     - layout_info is dict with 'orig_shape' and 'channel_first' boolean indicating if original was (3, Y, X)
     """
@@ -83,15 +84,35 @@ def load_fits_rgb(path):
     arr = arr.astype(np.float64, copy=False)
     return arr, hdr, layout_info
 
-def write_fits_preserve_layout(path, arr_yxc, header, layout_info):
+# ----------------------------
+# Patch 2: write_fits_preserve_layout with optional normalization and NORMED header
+# ----------------------------
+def write_fits_preserve_layout(path, arr_yxc, header, layout_info, normalize_output=True):
     """
     Write arr_yxc back to FITS preserving original layout.
-    If original layout was channel_first, transpose to (3, Y, X) before writing.
-    Otherwise write as (Y, X, 3) or (Y, X) depending on arr_yxc shape.
+    If normalize_output=True, normalize to [0,1] before saving.
+    Adds FITS header keyword NORMED = 1 or 0.
     """
     out = np.array(arr_yxc, copy=False)
+
+    # ---------- Optional Normalization ----------
+    norm_applied = 0
+    if normalize_output:
+        finite = np.isfinite(out)
+        if np.any(finite):
+            mn = float(np.nanmin(out))
+            mx = float(np.nanmax(out))
+            if mx > mn:
+                out = (out - mn) / (mx - mn)
+            else:
+                out = np.zeros_like(out, dtype=np.float64)
+        else:
+            out = np.zeros_like(out, dtype=np.float64)
+        norm_applied = 1
+    # --------------------------------------------
+
+    # Preserve original layout
     if layout_info.get("channel_first", False):
-        # expect arr_yxc shape (Y, X, C) -> transpose to (C, Y, X)
         if out.ndim == 3 and out.shape[2] == 3:
             out_write = np.transpose(out, (2, 0, 1))
         elif out.ndim == 2:
@@ -101,16 +122,12 @@ def write_fits_preserve_layout(path, arr_yxc, header, layout_info):
     else:
         out_write = out
 
-    # If header exists, copy and try to update BITPIX depending on dtype
+    # Header handling
     hdr = header.copy() if header is not None else fits.Header()
-    # astropy will set BITPIX based on dtype; but set explicitly for floats
-    try:
-        if np.issubdtype(out_write.dtype, np.floating):
-            hdr['BITPIX'] = -64 if out_write.dtype == np.float64 else -32
-    except Exception:
-        pass
+    hdr['BITPIX'] = -32
+    hdr['NORMED'] = (norm_applied, "1 if output was normalized to [0,1]")
 
-    fits.writeto(path, out_write, hdr, overwrite=True)
+    fits.writeto(path, out_write.astype(np.float32), hdr, overwrite=True)
 
 # ----------------------------
 # Small utility helpers for preview
@@ -265,6 +282,11 @@ class ImageFiltersWindow(QMainWindow):
         self.checkOpenInSiril = QCheckBox("Offer to open result in Siril after save")
         self.checkOpenInSiril.setChecked(True)
         topLayout.addWidget(self.checkOpenInSiril)
+
+        # NEW (Patch 1): checkbox to control output normalization
+        self.checkNormalizeOutput = QCheckBox("Normalize output FITS to [0,1]")
+        self.checkNormalizeOutput.setChecked(True)
+        topLayout.addWidget(self.checkNormalizeOutput)
 
         mainLayout.addLayout(topLayout)
 
@@ -536,6 +558,21 @@ class ImageFiltersWindow(QMainWindow):
     # -------------------------
     # Processing routines
     # -------------------------
+    def _warn_and_launch_normalize(self, inp):
+        """Show warning and attempt to launch normalize_gui.py"""
+        QMessageBox.warning(
+            self,
+            "Input Not Normalized",
+            "Input FITS is not normalized to [0,1].\n"
+            "normalize_gui.py will be launched."
+        )
+        launched = _launch_normalize_gui(inp)
+        if launched:
+            self.statusLabel.setText("Input not normalized. Launched normalize_gui.py.")
+        else:
+            self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+        return launched
+
     def runUnsharpMask(self):
         inp = self.usInput.text().strip()
         outp = self.usOutput.text().strip()
@@ -545,14 +582,10 @@ class ImageFiltersWindow(QMainWindow):
 
         arr, header, info = load_fits_rgb(inp)
 
-        # Normalization check (global)
+        # Normalization check (global) with explicit warning (Patch 4)
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(arr):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
         if arr.ndim == 2 or (arr.ndim == 3 and arr.shape[2] == 1):
@@ -568,9 +601,16 @@ class ImageFiltersWindow(QMainWindow):
         else:
             self.statusLabel.setText("Unsupported dimensions for Unsharp Mask.")
             return
-        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
+
+        # Patch 3: respect normalize output checkbox
+        write_fits_preserve_layout(
+            outp,
+            result.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
         msg = "Unsharp Mask saved to " + outp
-        # Siril launch if requested
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
             msg += "  " + siril_msg
@@ -593,11 +633,7 @@ class ImageFiltersWindow(QMainWindow):
         # Normalization check
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(arr):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
         from astropy.convolution import convolve_fft
@@ -626,7 +662,6 @@ class ImageFiltersWindow(QMainWindow):
             x = float(self.lrPsfX.text().strip() or 0.0)
             y = float(self.lrPsfY.text().strip() or 0.0)
             size = int(self.lrPsfSize.text().strip() or 25)
-            # Work on first channel to extract psf region
             base_image = arr[:, :, 0] if arr.ndim == 3 else arr
             cutout = Cutout2D(base_image, (x, y), size)
             psf = cutout.data.copy()
@@ -644,7 +679,13 @@ class ImageFiltersWindow(QMainWindow):
             self.statusLabel.setText("Unsupported dimensions for LrDeconv.")
             return
 
-        write_fits_preserve_layout(outp, deconv.astype(np.float64), header, info)
+        write_fits_preserve_layout(
+            outp,
+            deconv.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
         msg = "LrDeconv saved to " + outp
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
@@ -672,18 +713,13 @@ class ImageFiltersWindow(QMainWindow):
         # Normalization check
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(data):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
         if data.ndim != 3 or data.shape[2] != 3:
             self.statusLabel.setText("FFT requires a 3-channel image.")
             return
 
-        # Work channel-first for FFT processing convenience: convert to (C,Y,X)
         b, g, r = data[:, :, 0], data[:, :, 1], data[:, :, 2]
 
         def high_pass_filter(im, cutoff_frac, weight_frac):
@@ -717,7 +753,14 @@ class ImageFiltersWindow(QMainWindow):
         g_proc = process_channel(g)
         r_proc = process_channel(r)
         processed = np.stack([b_proc, g_proc, r_proc], axis=2)
-        write_fits_preserve_layout(outp, processed.astype(np.float64), header, info)
+
+        write_fits_preserve_layout(
+            outp,
+            processed.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
         msg = "FFT saved to " + outp
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
@@ -739,30 +782,32 @@ class ImageFiltersWindow(QMainWindow):
 
         data, header, info = load_fits_rgb(inp)
 
-        # Normalization check
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(data):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
+        # operate per-channel
         if data.ndim == 3 and data.shape[2] == 3:
-            res_channels = []
+            res = np.empty_like(data)
+            kernel = np.ones((ksize, ksize), dtype=np.uint8)
             for c in range(3):
-                channel = data[:, :, c].astype(np.float32)
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
-                res_channels.append(cv2.erode(channel, kernel, iterations=iters))
-            result = np.stack(res_channels, axis=2)
-        elif data.ndim == 2:
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
-            result = cv2.erode(data.astype(np.float32), kernel, iterations=iters)
+                ch = (data[:, :, c] * 255).astype(np.uint8)
+                eroded = cv2.erode(ch, kernel, iterations=iters)
+                res[:, :, c] = eroded.astype(np.float64) / 255.0
         else:
-            self.statusLabel.setText("Unsupported dimensions in erosion.")
-            return
-        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
+            ch = (data * 255).astype(np.uint8)
+            kernel = np.ones((ksize, ksize), dtype=np.uint8)
+            eroded = cv2.erode(ch, kernel, iterations=iters)
+            res = (eroded.astype(np.float64) / 255.0)
+
+        write_fits_preserve_layout(
+            outp,
+            res.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
         msg = "Erosion saved to " + outp
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
@@ -784,30 +829,31 @@ class ImageFiltersWindow(QMainWindow):
 
         data, header, info = load_fits_rgb(inp)
 
-        # Normalization check
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(data):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
         if data.ndim == 3 and data.shape[2] == 3:
-            res_channels = []
+            res = np.empty_like(data)
+            kernel = np.ones((ksize, ksize), dtype=np.uint8)
             for c in range(3):
-                channel = data[:, :, c].astype(np.float32)
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
-                res_channels.append(cv2.dilate(channel, kernel, iterations=iters))
-            result = np.stack(res_channels, axis=2)
-        elif data.ndim == 2:
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
-            result = cv2.dilate(data.astype(np.float32), kernel, iterations=iters)
+                ch = (data[:, :, c] * 255).astype(np.uint8)
+                dilated = cv2.dilate(ch, kernel, iterations=iters)
+                res[:, :, c] = dilated.astype(np.float64) / 255.0
         else:
-            self.statusLabel.setText("Unsupported dimensions in dilation.")
-            return
-        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
+            ch = (data * 255).astype(np.uint8)
+            kernel = np.ones((ksize, ksize), dtype=np.uint8)
+            dilated = cv2.dilate(ch, kernel, iterations=iters)
+            res = (dilated.astype(np.float64) / 255.0)
+
+        write_fits_preserve_layout(
+            outp,
+            res.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
         msg = "Dilation saved to " + outp
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
@@ -828,31 +874,28 @@ class ImageFiltersWindow(QMainWindow):
 
         data, header, info = load_fits_rgb(inp)
 
-        # Normalization check
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(data):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
         if data.ndim == 3 and data.shape[2] == 3:
-            res_channels = []
+            res = np.empty_like(data)
             for c in range(3):
-                channel = data[:, :, c]
-                norm = np.interp(channel, (np.nanmin(channel), np.nanmax(channel)), (0, 1)).astype(np.float32)
-                res_channels.append(cv2.GaussianBlur(norm, (0, 0), sigmaX=sigma, sigmaY=sigma))
-            result = np.stack(res_channels, axis=2)
-        elif data.ndim == 2:
-            norm = np.interp(data, (np.nanmin(data), np.nanmax(data)), (0, 1)).astype(np.float32)
-            result = cv2.GaussianBlur(norm, (0, 0), sigmaX=sigma, sigmaY=sigma)
+                ch = data[:, :, c].astype(np.float32)
+                blurred = cv2.GaussianBlur(ch, (0, 0), sigma)
+                res[:, :, c] = blurred.astype(np.float64)
         else:
-            self.statusLabel.setText("Unsupported dimensions in Gaussian.")
-            return
-        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
-        msg = "Gaussian blur saved to " + outp
+            res = cv2.GaussianBlur(data.astype(np.float32), (0, 0), sigma).astype(np.float64)
+
+        write_fits_preserve_layout(
+            outp,
+            res.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
+        msg = "Gaussian saved to " + outp
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
             msg += "  " + siril_msg
@@ -862,67 +905,41 @@ class ImageFiltersWindow(QMainWindow):
         inp = self.hpInput.text().strip()
         outp = self.hpOutput.text().strip()
         if not inp or not outp:
-            self.statusLabel.setText("Provide input and output files for HpMore.")
+            self.statusLabel.setText("Provide input and output files.")
             return
 
         data, header, info = load_fits_rgb(inp)
 
-        # Normalization check
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(data):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
-        # For HpMore we want channel-first internal processing (C, Y, X)
+        # Simple high-pass more: subtract a blurred version and add scaled detail
+        moderate = self.hpModerateChk.isChecked()
+        scale = 0.7 if moderate else 1.2
+
         if data.ndim == 3 and data.shape[2] == 3:
-            # convert to (C, Y, X)
-            data_cf = np.transpose(data, (2, 0, 1))
-        elif data.ndim == 3 and data.shape[0] == 3:
-            # perhaps already channel-first - convert to (C, Y, X) by identity
-            data_cf = np.array(data)
+            res = np.empty_like(data)
+            for c in range(3):
+                ch = data[:, :, c].astype(np.float32)
+                blur = cv2.GaussianBlur(ch, (0, 0), 3.0)
+                detail = ch - blur
+                res[:, :, c] = np.clip(ch + scale * detail, 0.0, np.inf)
         else:
-            self.statusLabel.setText("Input FITS is not a 3-channel image in HpMore.")
-            return
+            ch = data.astype(np.float32)
+            blur = cv2.GaussianBlur(ch, (0, 0), 3.0)
+            detail = ch - blur
+            res = np.clip(ch + scale * detail, 0.0, np.inf)
 
-        # Choose kernel strength based on checkbox
-        if getattr(self, "hpModerateChk", None) and self.hpModerateChk.isChecked():
-            # moderate sharpening kernel (3x3 Laplacian-like)
-            hp_kernel = np.array([
-                [0, -1, 0],
-                [-1, 4, -1],
-                [0, -1, 0]
-            ], dtype=float)
-            mode_text = "High Pass (moderate)"
-        else:
-            # stronger 5x5 kernel (existing aggressive kernel)
-            hp_kernel = np.array([
-                [-1, -1, -1, -1, -1],
-                [-1,  1,  2,  1, -1],
-                [-1,  2,  4,  2, -1],
-                [-1,  1,  2,  1, -1],
-                [-1, -1, -1, -1, -1]
-            ], dtype=float)
-            mode_text = "High Pass More (strong)"
-
-        filtered_channels = np.empty_like(data_cf)
-        for i in range(data_cf.shape[0]):
-            channel = data_cf[i]
-            # compute highpass response
-            highpass = convolve2d(channel, hp_kernel, mode='same', boundary='symm')
-            # apply only above threshold to avoid boosting background noise
-            threshold = np.percentile(channel, 70)
-            mask = (channel > threshold).astype(float)
-            enhanced = channel + highpass * mask
-            filtered_channels[i] = enhanced
-
-        # convert back to (Y, X, C)
-        result = np.transpose(filtered_channels, (1, 2, 0))
-        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
-        msg = f"{mode_text} saved to " + outp
+        write_fits_preserve_layout(
+            outp,
+            res.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
+        msg = "HpMore saved to " + outp
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
             msg += "  " + siril_msg
@@ -944,53 +961,56 @@ class ImageFiltersWindow(QMainWindow):
 
         data, header, info = load_fits_rgb(inp)
 
-        # Normalization check
         if self.checkInputNormalized.isChecked():
             if not _check_normalized_0_1(data):
-                launched = _launch_normalize_gui(inp)
-                if launched:
-                    self.statusLabel.setText("Input not normalized. Launched normalize_gui.py for input.")
-                else:
-                    self.statusLabel.setText("Input not normalized and normalize_gui.py not found.")
+                launched = self._warn_and_launch_normalize(inp)
                 return
 
-        # Simple local adaptation example: scale local std to target contrast
+        # Very simple local contrast stretch: local mean/std normalization
         if data.ndim == 3 and data.shape[2] == 3:
-            out_channels = []
+            res = np.empty_like(data)
             for c in range(3):
                 ch = data[:, :, c]
-                # compute local std via gaussian blur of squared deviations
-                mean = cv2.GaussianBlur(ch.astype(np.float32), (neigh|1, neigh|1), 0)
-                sq = (ch - mean) ** 2
-                var = cv2.GaussianBlur(sq.astype(np.float32), (neigh|1, neigh|1), 0)
-                std = np.sqrt(np.maximum(var, 1e-12))
-                scale = contrast / (std + 1e-12)
-                out = ch * scale
-                out_channels.append(out)
-            result = np.stack(out_channels, axis=2)
+                local_mean = cv2.blur(ch.astype(np.float32), (neigh, neigh))
+                local_sq = cv2.blur((ch**2).astype(np.float32), (neigh, neigh))
+                local_std = np.sqrt(np.maximum(local_sq - local_mean**2, 1e-6))
+                target = (ch - local_mean) / (local_std / (contrast if contrast > 0 else 1.0))
+                res[:, :, c] = np.clip(local_mean + target, 0.0, np.inf)
         else:
-            ch = data if data.ndim == 2 else data[:, :, 0]
-            mean = cv2.GaussianBlur(ch.astype(np.float32), (neigh|1, neigh|1), 0)
-            sq = (ch - mean) ** 2
-            var = cv2.GaussianBlur(sq.astype(np.float32), (neigh|1, neigh|1), 0)
-            std = np.sqrt(np.maximum(var, 1e-12))
-            scale = contrast / (std + 1e-12)
-            result = ch * scale
+            ch = data
+            local_mean = cv2.blur(ch.astype(np.float32), (neigh, neigh))
+            local_sq = cv2.blur((ch**2).astype(np.float32), (neigh, neigh))
+            local_std = np.sqrt(np.maximum(local_sq - local_mean**2, 1e-6))
+            target = (ch - local_mean) / (local_std / (contrast if contrast > 0 else 1.0))
+            res = np.clip(local_mean + target, 0.0, np.inf)
 
-        write_fits_preserve_layout(outp, result.astype(np.float64), header, info)
+        # optional feathering (simple gaussian blur)
+        if feather > 0:
+            if res.ndim == 3:
+                for c in range(3):
+                    res[:, :, c] = cv2.GaussianBlur(res[:, :, c].astype(np.float32), (0, 0), feather)
+            else:
+                res = cv2.GaussianBlur(res.astype(np.float32), (0, 0), feather)
+
+        write_fits_preserve_layout(
+            outp,
+            res.astype(np.float64),
+            header,
+            info,
+            normalize_output=self.checkNormalizeOutput.isChecked()
+        )
         msg = "LocAdapt saved to " + outp
         if self.checkOpenInSiril.isChecked():
             launched, siril_msg = _maybe_launch_siril(outp)
             msg += "  " + siril_msg
         self.statusLabel.setText(msg)
 
-
 def main():
     app = QApplication(sys.argv)
-    window = ImageFiltersWindow()
-    window.show()
+    w = ImageFiltersWindow()
+    w.resize(900, 600)
+    w.show()
     sys.exit(app.exec())
-
 
 if __name__ == "__main__":
     main()

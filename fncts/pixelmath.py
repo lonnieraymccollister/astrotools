@@ -12,6 +12,10 @@ Changes:
        as the first input (if first input was channel-first (3,Y,X) the output keeps that).
  - Safer numeric handling (float64 arithmetic) and clearer error messages.
  - Added normalization checks and Siril launch option.
+ - NEW: Global checkbox to control output normalization (default ON) (Patch 1)
+ - NEW: write_fits_preserve_layout normalizes output and writes NORMED header (Patch 2)
+ - UPDATED: write call uses write_fits_preserve_layout and respects checkbox (Patch 3)
+ - UPDATED: explicit GUI warning when input is not normalized before launching normalizer (Patch 4)
 """
 import sys
 import os
@@ -27,6 +31,49 @@ from PyQt6.QtWidgets import (
     QPushButton, QFileDialog, QComboBox, QMessageBox, QCheckBox
 )
 from PyQt6.QtCore import Qt
+
+
+def write_fits_preserve_layout(path, arr_yxc, header, layout_info, normalize_output=True):
+    """
+    Write arr_yxc back to FITS preserving original layout.
+    If normalize_output=True, normalize to [0,1] before saving.
+    Adds FITS header keyword NORMED = 1 or 0.
+    """
+    out = np.array(arr_yxc, copy=False)
+
+    # Optional normalization
+    norm_applied = 0
+    if normalize_output:
+        finite = np.isfinite(out)
+        if np.any(finite):
+            mn = float(np.nanmin(out))
+            mx = float(np.nanmax(out))
+            if mx > mn:
+                out = (out - mn) / (mx - mn)
+            else:
+                out = np.zeros_like(out, dtype=np.float64)
+        else:
+            out = np.zeros_like(out, dtype=np.float64)
+        norm_applied = 1
+
+    # Preserve original layout
+    if layout_info.get("channel_first", False):
+        # expect arr_yxc shape (Y, X, C) -> transpose to (C, Y, X)
+        if out.ndim == 3 and out.shape[2] == 3:
+            out_write = np.transpose(out, (2, 0, 1))
+        elif out.ndim == 2:
+            out_write = out[np.newaxis, :, :]
+        else:
+            out_write = out
+    else:
+        out_write = out
+
+    # Header handling
+    hdr = header.copy() if header is not None else fits.Header()
+    hdr['BITPIX'] = -32
+    hdr['NORMED'] = (norm_applied, "1 if output was normalized to [0,1]")
+
+    fits.writeto(path, out_write.astype(np.float32), hdr, overwrite=True)
 
 
 class PixelMathWindow(QMainWindow):
@@ -115,8 +162,13 @@ class PixelMathWindow(QMainWindow):
         self.checkOpenInSiril.setChecked(True)
         layout.addWidget(self.checkOpenInSiril, 11, 0, 1, 4)
 
+        # NEW (Patch 1): Normalize output checkbox
+        self.checkNormalizeOutput = QCheckBox("Normalize output FITS to [0,1]")
+        self.checkNormalizeOutput.setChecked(True)
+        layout.addWidget(self.checkNormalizeOutput, 12, 0, 1, 4)
+
         # Set minimum size
-        self.setMinimumSize(820, 420)
+        self.setMinimumSize(820, 460)
 
     # File dialogs
     def browseFirstImage(self):
@@ -233,6 +285,21 @@ class PixelMathWindow(QMainWindow):
             return False
         return (abs(amin - 0.0) <= tol) and (abs(amax - 1.0) <= tol)
 
+    def _warn_and_launch_normalize(self, filepath, which="Input"):
+        """Show warning and attempt to launch normalize_gui.py"""
+        QMessageBox.warning(
+            self,
+            f"{which} Not Normalized",
+            f"{which} FITS is not normalized to [0,1].\n"
+            "normalize_gui.py will be launched."
+        )
+        launched = self._launch_normalize_gui(filepath)
+        if launched:
+            self.statusLabel.setText(f"{which} not normalized. Launched normalize_gui.py.")
+        else:
+            self.statusLabel.setText(f"{which} not normalized and normalize_gui.py not found.")
+        return launched
+
     def _launch_normalize_gui(self, filepath):
         """
         Launch normalize_gui.py with the given filepath using the same Python interpreter.
@@ -270,24 +337,16 @@ class PixelMathWindow(QMainWindow):
             self.statusLabel.setText(f"Error loading FITS: {e}")
             return
 
-        # Normalization checks
+        # Normalization checks with explicit warning (Patch 4)
         try:
             if self.checkFirstNormalized.isChecked():
                 if not self._check_normalized_0_1(im1):
-                    launched = self._launch_normalize_gui(inputs["first_file"])
-                    if launched:
-                        self.statusLabel.setText("First image not normalized. Launched normalize_gui.py for first image.")
-                    else:
-                        self.statusLabel.setText("First image not normalized and normalize_gui.py could not be launched.")
+                    launched = self._warn_and_launch_normalize(inputs["first_file"], which="First image")
                     return
 
             if self.checkSecondNormalized.isChecked():
                 if not self._check_normalized_0_1(im2):
-                    launched = self._launch_normalize_gui(inputs["second_file"])
-                    if launched:
-                        self.statusLabel.setText("Second image not normalized. Launched normalize_gui.py for second image.")
-                    else:
-                        self.statusLabel.setText("Second image not normalized and normalize_gui.py could not be launched.")
+                    launched = self._warn_and_launch_normalize(inputs["second_file"], which="Second image")
                     return
         except Exception as e:
             self.statusLabel.setText(f"Normalization check failed: {e}")
@@ -356,11 +415,15 @@ class PixelMathWindow(QMainWindow):
         except Exception:
             pass
 
-        # Write result
+        # Write result using centralized writer that can normalize and set NORMED (Patch 3)
         try:
-            # create PrimaryHDU and preserve header keywords
-            hdu = fits.PrimaryHDU(data=out_arr, header=out_header)
-            hdu.writeto(inputs["output_file"], overwrite=True)
+            write_fits_preserve_layout(
+                inputs["output_file"],
+                out_arr,
+                out_header,
+                info1,
+                normalize_output=self.checkNormalizeOutput.isChecked()
+            )
             self.statusLabel.setText("Operation completed; output saved successfully.")
         except Exception as e:
             self.statusLabel.setText(f"Failed writing output FITS: {e}")
