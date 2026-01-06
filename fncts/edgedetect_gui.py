@@ -9,6 +9,9 @@ import traceback
 import numpy as np
 import cv2
 import tifffile
+from astropy.io import fits
+from pathlib import Path
+
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
@@ -66,6 +69,82 @@ def scale_float_to_uint8(img):
     return out
 
 class EdgeDetectWindow(QMainWindow):
+
+    def _save_output_as_fits(self):
+        """
+        Find the most likely output PNG produced by this tool (sbl or cny or a png matching outbase)
+        and write a .fits file with the same pixel values (no rescaling).
+        """
+        outbase = self.output_edit.text().strip()
+        if not outbase:
+            QMessageBox.warning(self, "Output required", "Specify an output basename or path first")
+            return
+
+        # Build candidate filenames to check (prefer Sobel then Canny then generic)
+        candidates = []
+
+        # If user provided a directory, check standard filenames inside it
+        if os.path.isdir(outbase):
+            candidates.extend([
+                os.path.join(outbase, "edges_sobel.png"),
+                os.path.join(outbase, "edges_canny.png"),
+                os.path.join(outbase, "edges_sobel.jpg"),
+                os.path.join(outbase, "edges_canny.jpg"),
+            ])
+        else:
+            # If user provided a basename without extension, try appended tags
+            base_root, base_ext = os.path.splitext(outbase)
+            if base_ext == "":
+                candidates.extend([
+                    outbase + "_sbl.png",
+                    outbase + "_cny.png",
+                    outbase + ".png",
+                ])
+            else:
+                # user provided a filename with extension: try that and also replace extension with png
+                candidates.append(outbase)
+                candidates.append(base_root + ".png")
+
+            # also try common replacements if user typed a path with extension
+            candidates.extend([
+                base_root + "_sbl.png",
+                base_root + "_cny.png",
+            ])
+
+        # Remove duplicates while preserving order
+        seen = set()
+        uniq_candidates = []
+        for c in candidates:
+            if c not in seen:
+                seen.add(c)
+                uniq_candidates.append(c)
+
+        found = False
+        for fn in uniq_candidates:
+            if os.path.exists(fn):
+                try:
+                    img = cv2.imread(fn, cv2.IMREAD_UNCHANGED)
+                    if img is None:
+                        continue
+                    # Prepare fits path: replace extension with .fits or append .fits
+                    p = Path(fn)
+                    fits_path = str(p.with_suffix(".fits"))
+                    # Write FITS with the same dtype and values (no rescaling)
+                    # If image is color (H,W,3) we write the array as-is; astropy will set BITPIX accordingly.
+                    fits.writeto(fits_path, img, overwrite=True)
+                    self._log(f"Wrote FITS from {fn}: {fits_path}")
+                    QMessageBox.information(self, "Saved", f"Wrote FITS: {fits_path}")
+                    found = True
+                    break
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    self._log("Error writing FITS:", e)
+                    QMessageBox.critical(self, "FITS write error", f"{e}\n\n{tb}")
+                    return
+
+        if not found:
+            QMessageBox.warning(self, "File not found", "Could not find an output PNG to convert to FITS. Make sure you have run the tool and that the output basename is correct.")
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Edge Detection (Sobel / Canny)")
@@ -117,6 +196,11 @@ class EdgeDetectWindow(QMainWindow):
         self.clear_btn = QPushButton("Clear Log")
         self.clear_btn.clicked.connect(lambda: self.log.clear())
         grid.addWidget(self.clear_btn, 3, 2)
+
+        # NEW: Save output as FITS button (writes an 8-bit FITS from the PNG output, no rescaling)
+        self.savefits_btn = QPushButton("Save Output as FITS")
+        self.savefits_btn.clicked.connect(self._save_output_as_fits)
+        grid.addWidget(self.savefits_btn, 3, 3)
 
         # Preview label and log
         self.preview_label = QLabel("Preview")
