@@ -110,7 +110,7 @@ class ProperMotionGUI(QWidget):
         self.setLayout(grid)
 
         # Proper motion inputs
-        grid.addWidget(QLabel("Proper Motion RA (mas/yr):"), 0, 0)
+        grid.addWidget(QLabel("Proper Motion RA (mas/yr)X(-1 using Png,jpg):"), 0, 0)
         self.pm_ra_edit = QLineEdit("6.74")
         grid.addWidget(self.pm_ra_edit, 0, 1)
 
@@ -132,11 +132,11 @@ class ProperMotionGUI(QWidget):
         grid.addWidget(self.years_spin, 3, 1)
 
         # Start coordinates
-        grid.addWidget(QLabel("Start X (px):"), 4, 0)
+        grid.addWidget(QLabel("Start X (px)Values in Siril:"), 4, 0)
         self.x_edit = QLineEdit("100")
         grid.addWidget(self.x_edit, 4, 1)
 
-        grid.addWidget(QLabel("Start Y (px)Must Mirror in Siril:"), 5, 0)
+        grid.addWidget(QLabel("Start Y (px)Values in Siril:Using fits clk Mirror then use"), 5, 0)
         self.y_edit = QLineEdit("100")
         grid.addWidget(self.y_edit, 5, 1)
 
