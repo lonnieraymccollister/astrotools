@@ -34,7 +34,7 @@ from matplotlib.figure import Figure
 # Core stacking helpers
 # -------------------------
 def get_fits_files(input_dir):
-    pattern = os.path.join(input_dir, "*.fits")
+    pattern = os.path.join(input_dir, "*.fit*")
     files = sorted(glob.glob(pattern))
     if not files:
         raise FileNotFoundError(f"No FITS files found in {input_dir}")
