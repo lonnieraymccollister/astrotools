@@ -31,6 +31,7 @@ ACTIONS = {
     "Mask tool GUI (spawn)": (sys.executable, "fncts/mask_tool_gui.py"),
     "Fits Splitter (spawn)": (sys.executable, "fncts/fits_splitter.py"),
     "Align JPG GUI (spawn)": (sys.executable, "fncts/align_jpg_gui.py"),
+    "Align & Stack (spawn)": (sys.executable, "fncts/align_and_stack_gui.py"),
     "Plot 3D GUI (spawn)": (sys.executable, "fncts/plot3d_gui.py"),
     "Rotational Gradient (spawn)": (sys.executable, "fncts/RotationalGradient.py"),
     "Dynamic Rescale (spawn)": (sys.executable, "fncts/dynamic_rescale16_gui_cython.py"),
