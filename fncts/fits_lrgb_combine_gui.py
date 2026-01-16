@@ -135,10 +135,10 @@ class FitsCombinerGUI(QWidget):
         opts_h = QHBoxLayout()
         opts_h.addWidget(QLabel("Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["L*RGB", "L-weighted", "Channels only"])
+        self.mode_combo.addItems(["L-weighted", "L*RGB", "Channels only"])
         opts_h.addWidget(self.mode_combo)
         opts_h.addWidget(QLabel("L weight (for L-weighted):"))
-        self.lweight_le = QLineEdit("0.5")
+        self.lweight_le = QLineEdit("1.0")
         self.lweight_le.setFixedWidth(60)
         opts_h.addWidget(self.lweight_le)
         layout.addLayout(opts_h)
@@ -220,7 +220,7 @@ class FitsCombinerGUI(QWidget):
             try:
                 l_weight = float(self.lweight_le.text().strip())
             except Exception:
-                l_weight = 0.5
+                l_weight = 1.0
 
             # read inputs
             lum, header = read_primary_fits(paths["Luminance"])
