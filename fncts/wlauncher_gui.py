@@ -28,6 +28,7 @@ from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
 ACTIONS = {
     "Exit": ("exit",),
     "AffineTransform (exec file)": (sys.executable, "fncts/affine_transform.py"),
+    "Crop": (sys.executable, "fncts/crop.py"),
     "Mask tool GUI (spawn)": (sys.executable, "fncts/mask_tool_gui.py"),
     "Fits Splitter (spawn)": (sys.executable, "fncts/fits_splitter.py"),
     "Align JPG GUI (spawn)": (sys.executable, "fncts/align_jpg_gui.py"),
@@ -57,6 +58,7 @@ ACTIONS = {
     "Pixel Math (spawn)": (sys.executable, "fncts/pixelmath.py"),
     "Color Tool (spawn)": (sys.executable, "fncts/color_tool.py"),
     "Image Filters (spawn)": (sys.executable, "fncts/image_filters.py"),
+    "Rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
     "Align Images (spawn)": (sys.executable, "fncts/align_imgs.py"),
     "Stacker GUI (spawn)": (sys.executable, "fncts/stacker_gui.py"),
     "Analyze FITS Roundness & Trails (spawn)": (sys.executable, "analyze_fits_roundness_trails.py"),
@@ -70,7 +72,6 @@ ACTIONS = {
     "ecolor_vs_distance_gui (spawn)": (sys.executable, "fncts/ecolor_vs_distance_gui.py"),
     "ecolor_vs_distance_pyvista.py (spawn)": (sys.executable, "fncts/ecolor_vs_distance_pyvista.py"),
     "ebv_map_gui (spawn)": (sys.executable, "fncts/ebv_map_gui.py"),
-    "rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
     "De-skew Img (spawn)": (sys.executable, "fncts/deskew_book_gui.py"),
     "PmVtr Img (spawn)": (sys.executable, "fncts/PmVtr.py"),
     # Add more mappings as needed
