@@ -9,6 +9,14 @@ Features:
 - File pickers for input image, mask (for Apply Mask), and output filename
 - Run button, status/log area
 - FITS operations use astropy.io.fits; image ops use OpenCV (cv2)
+
+Added:
+- Checkbox (checked by default) labeled:
+  "Siril HT: Replace zeros with 1 only (for normalized FITS)"
+  Enabled only when mode is Invert Mask and FITS is selected.
+  When checked, for FITS inversion the tool will replace zeros with 1
+  and leave all other pixels unchanged. When unchecked, the original
+  inversion behavior is used.
 """
 import sys
 import os
@@ -22,11 +30,12 @@ from astropy.io import fits
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
     QFileDialog, QGridLayout, QComboBox, QRadioButton, QButtonGroup,
-    QTextEdit, QMessageBox, QHBoxLayout
+    QTextEdit, QMessageBox, QHBoxLayout, QCheckBox
 )
 from PyQt6.QtCore import Qt
 
 # ---------- Core operations ----------
+
 def apply_mask_image_cv2(image_path, mask_path, out_path):
     """Apply mask to a non-FITS image using OpenCV bitwise_and."""
     img = cv2.imread(str(image_path), -1)
@@ -110,13 +119,43 @@ def invert_fits(image_path, out_path):
     hdu.writeto(str(out_path), overwrite=True)
     return out_path
 
+def replace_zeros_with_one_fits(image_path, out_path):
+    """
+    Replace all exact zeros in the FITS data with 1.0 and leave all other pixels unchanged.
+    Preserves header and non-finite pixels.
+    """
+    with fits.open(str(image_path)) as hdul:
+        data = hdul[0].data.astype(np.float64)
+        hdr = hdul[0].header
+
+    if data is None:
+        raise ValueError("FITS image contains no data.")
+
+    # Create a copy to avoid modifying original array in-place
+    out = data.copy()
+    # Only replace finite zeros; preserve NaNs/infinite as-is
+    finite_mask = np.isfinite(out)
+    zero_mask = finite_mask & (out == 0.0)
+    if not np.any(zero_mask):
+        # No zeros found; still write a copy to out_path
+        hdu = fits.PrimaryHDU(out, header=hdr)
+        hdu.writeto(str(out_path), overwrite=True)
+        return out_path
+
+    out[zero_mask] = 1.0
+
+    hdu = fits.PrimaryHDU(out, header=hdr)
+    hdu.writeto(str(out_path), overwrite=True)
+    return out_path
+
 # ---------- GUI ----------
+
 class MaskToolWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Mask Tool (Apply / Invert)")
         self._build_ui()
-        self.resize(760, 380)
+        self.resize(760, 420)
 
     def _build_ui(self):
         central = QWidget()
@@ -167,19 +206,24 @@ class MaskToolWindow(QMainWindow):
         btn_out.clicked.connect(self._pick_save)
         grid.addWidget(btn_out, 4, 3)
 
+        # Siril HT checkbox (for Invert Mask mode, FITS only)
+        self.siril_checkbox = QCheckBox("Siril HT: Replace zeros with 1 only (for normalized FITS)")
+        self.siril_checkbox.setChecked(True)  # checked by default
+        grid.addWidget(self.siril_checkbox, 5, 0, 1, 4)
+
         # Run / Clear
         self.run_btn = QPushButton("Run")
         self.run_btn.clicked.connect(self._on_run)
-        grid.addWidget(self.run_btn, 5, 0)
+        grid.addWidget(self.run_btn, 6, 0)
 
         self.clear_btn = QPushButton("Clear Log")
         self.clear_btn.clicked.connect(self._clear_log)
-        grid.addWidget(self.clear_btn, 5, 1)
+        grid.addWidget(self.clear_btn, 6, 1)
 
         # Status log
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        grid.addWidget(self.log, 6, 0, 4, 4)
+        grid.addWidget(self.log, 7, 0, 4, 4)
 
         # initialize mode UI
         self._update_mode_ui()
@@ -210,12 +254,18 @@ class MaskToolWindow(QMainWindow):
 
     def _update_mode_ui(self):
         mode = self.mode_combo.currentText()
+        # Mask field only for Apply Mask
         if mode == "Apply Mask":
             self.mask_edit.setEnabled(True)
         else:
             self.mask_edit.setEnabled(False)
-        # update file dialog behavior for browses
-        # (No need to change widgets themselves here; browse callbacks check radio buttons)
+
+        # Siril HT checkbox: enabled only when Invert Mask AND FITS selected
+        siril_enabled = (mode == "Invert Mask") and self.fits_radio.isChecked()
+        self.siril_checkbox.setEnabled(siril_enabled)
+
+        # If checkbox disabled, ensure it's not misleading (keep checked state but disabled)
+        # No further UI changes needed; browse callbacks check radio buttons.
 
     def _on_run(self):
         mode = self.mode_combo.currentText()
@@ -223,6 +273,7 @@ class MaskToolWindow(QMainWindow):
         in_path = self.input_edit.text().strip()
         out_path = self.output_edit.text().strip()
         mask_path = self.mask_edit.text().strip()
+        siril_ht = self.siril_checkbox.isChecked()
 
         try:
             if not in_path:
@@ -243,8 +294,17 @@ class MaskToolWindow(QMainWindow):
             else:  # Invert Mask
                 self._log(f"Running Invert (fits={use_fits}) on {in_path} -> {out_path}")
                 if use_fits:
-                    res = invert_fits(in_path, out_path)
+                    # If Siril HT checkbox is checked, replace zeros with 1 only (preserve everything else)
+                    if siril_ht:
+                        self._log("Siril HT option enabled: replacing zeros with 1 only (FITS).")
+                        res = replace_zeros_with_one_fits(in_path, out_path)
+                    else:
+                        self._log("Siril HT option disabled: performing standard inversion.")
+                        res = invert_fits(in_path, out_path)
                 else:
+                    # For non-FITS images, Siril HT checkbox has no effect; always invert
+                    if siril_ht:
+                        self._log("Siril HT option ignored for non-FITS images; performing standard inversion.")
                     res = invert_image_cv2(in_path, out_path)
                 self._log(f"Saved inverted output: {res}")
 
@@ -255,6 +315,7 @@ class MaskToolWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"{e}\n\n{tb}")
 
 # ---------- Entry ----------
+
 def main():
     app = QApplication(sys.argv)
     win = MaskToolWindow()

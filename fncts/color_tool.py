@@ -241,7 +241,7 @@ class ColorWindow(QMainWindow):
                 R = img[:, :, 0].astype(np.float64)
                 G = img[:, :, 1].astype(np.float64)
                 B = img[:, :, 2].astype(np.float64)
-                luminance = 0.2989 * R + 0.5870 * G + 0.1140 * B
+                luminance = 0.2126 * R + 0.7152 * G + 0.0722 * B
                 fits.PrimaryHDU(data=luminance).writeto(outputFile, overwrite=True)
                 self.statusLabel.setText("Create Luminance (FITS) completed successfully.")
             else:

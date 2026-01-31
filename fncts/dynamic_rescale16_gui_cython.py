@@ -7,7 +7,6 @@ and falls back to a pure-Python block rescaler when not.
 
 Usage: python dynamic_rescale16_gui_cython.py
 """
-
 import sys
 import os
 import re
@@ -167,6 +166,67 @@ def process_tile(tile_file, width_of_square, bin_value, gamma_value, resize_fact
     log_fn(f"Saved: {out_filename}")
 
 # -------------------------
+# Full-file (chunk) processing
+# -------------------------
+def process_entire_file(input_file, width_of_square, bin_value, gamma_value, resize_factor, resize_div, out_dir=".", log_fn=print):
+    """
+    Process the entire FITS image as a single chunk using the same pipeline as tiles.
+    Saves output as <input_basename>_chunk_binned_gamma_corrected_drs.fits in out_dir.
+    """
+    log_fn(f"Processing entire file as chunk: {input_file}")
+    image_data, header = load_fits(input_file)
+    if image_data is None:
+        log_fn("Input file contains no data.")
+        return None
+
+    if image_data.ndim != 2:
+        raise ValueError("This processing expects a 2D image in the primary HDU.")
+
+    # Normalize to 0..65535 as uint16
+    minv = np.nanmin(image_data)
+    maxv = np.nanmax(image_data)
+    if maxv == minv:
+        norm_image = np.zeros_like(image_data, dtype=np.uint16)
+    else:
+        norm_image = ((image_data - minv) / (maxv - minv) * 65535.0).astype(np.uint16)
+
+    # Resize using OpenCV
+    fx = (resize_factor / resize_div) if resize_div != 0 else 1.0
+    if fx <= 0:
+        fx = 1.0
+    resized = cv2.resize(norm_image, None, fx=fx, fy=fx, interpolation=cv2.INTER_LANCZOS4)
+
+    # Convert to float64 for block processing
+    img64 = resized.astype(np.float64)
+    out64 = np.empty_like(img64, dtype=np.float64)
+
+    # Use Cython or fallback
+    rescale_blocks(img64, out64, block_size=int(width_of_square))
+
+    # Gamma correction
+    gamma_corrected = np.round(65535.0 * (out64 / 65535.0) ** float(gamma_value)).astype(np.float64)
+
+    # Normalize before binning
+    img_array = (gamma_corrected / 6553500.0).astype(np.float64)
+
+    # Binning
+    bin_factor = max(1, int(bin_value))
+    h_img, w_img = img_array.shape
+    new_height = h_img // bin_factor
+    new_width = w_img // bin_factor
+    if new_height == 0 or new_width == 0:
+        raise ValueError("Bin factor too large for the resized image size.")
+
+    trimmed = img_array[:new_height*bin_factor, :new_width*bin_factor]
+    binned = trimmed.reshape(new_height, bin_factor, new_width, bin_factor).sum(axis=(1,3))
+
+    base = os.path.splitext(os.path.basename(input_file))[0]
+    outname = os.path.join(out_dir, f"{base}_chunk_binned_gamma_corrected_drs.fits")
+    fits.writeto(outname, binned.astype(np.float32), header, overwrite=True)
+    log_fn(f"Chunk saved to {outname}")
+    return outname
+
+# -------------------------
 # PyQt6 GUI
 # -------------------------
 class MainWindow(QMainWindow):
@@ -174,7 +234,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("DynamicRescale16 GUI (Cython integrated)")
         self._build_ui()
-        self.resize(820, 620)
+        self.resize(920, 660)
 
     def _build_ui(self):
         central = QWidget()
@@ -185,7 +245,8 @@ class MainWindow(QMainWindow):
         # Mode
         grid.addWidget(QLabel("Mode:"), 0, 0)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Split Tiles", "Process Tiles", "Reassemble"])
+        # Added "Process Chunk" mode
+        self.mode_combo.addItems(["Split Tiles", "Process Tiles", "Process Chunk", "Reassemble"])
         self.mode_combo.currentIndexChanged.connect(self._update_mode)
         grid.addWidget(self.mode_combo, 0, 1, 1, 3)
 
@@ -238,37 +299,52 @@ class MainWindow(QMainWindow):
         self.resize_div = QSpinBox(); self.resize_div.setRange(1,1024); self.resize_div.setValue(1)
         grid.addWidget(self.resize_div, 7, 3)
 
-        # Reassemble inputs
-        grid.addWidget(QLabel("Processed tiles dir (reassemble):"), 8, 0)
-        self.rea_tiles_dir = QLineEdit("tiles")
-        grid.addWidget(self.rea_tiles_dir, 8, 1, 1, 2)
+        # Chunk inputs (new)
+        grid.addWidget(QLabel("Input FITS (chunk):"), 8, 0)
+        self.chunk_input = QLineEdit()
+        grid.addWidget(self.chunk_input, 8, 1, 1, 2)
         btn = QPushButton("Browse")
-        btn.clicked.connect(lambda: self._pick_file(self.rea_tiles_dir, mode='dir'))
+        btn.clicked.connect(lambda: self._pick_file(self.chunk_input, mode='open', filter="FITS Files (*.fits *.fit)"))
         grid.addWidget(btn, 8, 3)
 
-        grid.addWidget(QLabel("Original FITS (for shape/header):"), 9, 0)
+        grid.addWidget(QLabel("Chunk output dir:"), 9, 0)
+        self.chunk_outdir = QLineEdit(".")
+        grid.addWidget(self.chunk_outdir, 9, 1, 1, 2)
+        btn = QPushButton("Browse")
+        btn.clicked.connect(lambda: self._pick_file(self.chunk_outdir, mode='dir'))
+        grid.addWidget(btn, 9, 3)
+
+        # Reassemble inputs
+        grid.addWidget(QLabel("Processed tiles dir (reassemble):"), 10, 0)
+        self.rea_tiles_dir = QLineEdit("tiles")
+        grid.addWidget(self.rea_tiles_dir, 10, 1, 1, 2)
+        btn = QPushButton("Browse")
+        btn.clicked.connect(lambda: self._pick_file(self.rea_tiles_dir, mode='dir'))
+        grid.addWidget(btn, 10, 3)
+
+        grid.addWidget(QLabel("Original FITS (for shape/header):"), 11, 0)
         self.orig_fits = QLineEdit()
-        grid.addWidget(self.orig_fits, 9, 1, 1, 2)
+        grid.addWidget(self.orig_fits, 11, 1, 1, 2)
         btn = QPushButton("Browse")
         btn.clicked.connect(lambda: self._pick_file(self.orig_fits, mode='open', filter="FITS Files (*.fits *.fit)"))
-        grid.addWidget(btn, 9, 3)
+        grid.addWidget(btn, 11, 3)
 
         # Run / clear / status
         self.run_button = QPushButton("Run")
         self.run_button.clicked.connect(self._on_run)
-        grid.addWidget(self.run_button, 10, 0)
+        grid.addWidget(self.run_button, 12, 0)
 
         self.clear_button = QPushButton("Clear Log")
         self.clear_button.clicked.connect(self._clear_log)
-        grid.addWidget(self.clear_button, 10, 1)
+        grid.addWidget(self.clear_button, 12, 1)
 
         # Show whether Cython import succeeded
         self.cython_label = QLabel(f"Cython available: {CYTHON_AVAILABLE}")
-        grid.addWidget(self.cython_label, 10, 2, 1, 2)
+        grid.addWidget(self.cython_label, 12, 2, 1, 2)
 
         self.status = QTextEdit()
         self.status.setReadOnly(True)
-        grid.addWidget(self.status, 11, 0, 8, 4)
+        grid.addWidget(self.status, 13, 0, 8, 4)
 
         if not CYTHON_AVAILABLE and _IMPORT_ERR is not None:
             self._log(f"Import error for warpaffinemaskrescale: {_IMPORT_ERR}")
@@ -301,11 +377,18 @@ class MainWindow(QMainWindow):
         mode = self.mode_combo.currentText()
         split_enabled = (mode == "Split Tiles")
         proc_enabled = (mode == "Process Tiles")
+        chunk_enabled = (mode == "Process Chunk")
         rea_enabled  = (mode == "Reassemble")
+        # split widgets
         for w in (self.split_input, self.tile_h, self.tile_w, self.tiles_dir):
             w.setEnabled(split_enabled)
+        # process tiles widgets
         for w in (self.proc_tiles_dir, self.width_square, self.bin_value, self.gamma_edit, self.resize_factor, self.resize_div):
             w.setEnabled(proc_enabled)
+        # chunk widgets
+        for w in (self.chunk_input, self.chunk_outdir, self.width_square, self.bin_value, self.gamma_edit, self.resize_factor, self.resize_div):
+            w.setEnabled(chunk_enabled)
+        # reassemble widgets
         for w in (self.rea_tiles_dir, self.orig_fits):
             w.setEnabled(rea_enabled)
 
@@ -342,7 +425,25 @@ class MainWindow(QMainWindow):
                     except Exception as e:
                         self._log(f"Failed {f}: {e}")
                 self._log("Processing complete")
+            elif mode == "Process Chunk":
+                inp = self.chunk_input.text().strip()
+                outdir = self.chunk_outdir.text().strip() or "."
+                if not inp or not os.path.isfile(inp):
+                    raise ValueError("Select a valid input FITS file for chunk processing")
+                os.makedirs(outdir, exist_ok=True)
+                width_square = int(self.width_square.value())
+                binv = int(self.bin_value.value())
+                gamma = float(self.gamma_edit.text().strip())
+                rf = int(self.resize_factor.value()); rd = int(self.resize_div.value())
+                self._log(f"Processing chunk {inp} -> {outdir}")
+                try:
+                    outname = process_entire_file(inp, width_square, binv, gamma, rf, rd, out_dir=outdir, log_fn=self._log)
+                    if outname:
+                        self._log(f"Chunk processing complete: {outname}")
+                except Exception as e:
+                    self._log(f"Chunk processing failed: {e}")
             else:
+                # Reassemble
                 tiles_dir = self.rea_tiles_dir.text().strip() or "tiles"
                 orig = self.orig_fits.text().strip()
                 if not os.path.isdir(tiles_dir):
