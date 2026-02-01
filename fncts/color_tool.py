@@ -4,10 +4,11 @@ color_tool.py
 Simple PyQt6 GUI for: Split Tricolor, Combine Tricolor, Create Luminance (FITS or common image files).
 Save this file and run: python color_tool.py
 
-Added: In Create Luminance page a dropdown to select the luminance equation:
- - synthetic-luminance = 1 * R + 1 * G + 1 * B
- - Human per(709) luminance = 0.2126 * R + 0.7152 * G + 0.0722 * B
- - Bayer-one shot color-luminance = 1 * R + 2 * G + 1 * B
+Change:
+- In Combine Tricolor page a checkbox labeled "two" (unchecked by default).
+  When checked, Blue input may be left empty and Blue will be computed as:
+      Blue = 0.5 * R + 0.5 * G
+  The combine then proceeds normally using that computed Blue channel.
 """
 import sys
 import os
@@ -19,7 +20,8 @@ from astropy.io import fits
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QComboBox, QStackedWidget
+    QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QComboBox, QStackedWidget,
+    QCheckBox
 )
 from PyQt6.QtCore import Qt
 
@@ -98,6 +100,12 @@ class ColorWindow(QMainWindow):
         self.combineModeCombo = QComboBox()
         self.combineModeCombo.addItems(["FITS", "Other"])
         combineLayout.addWidget(self.combineModeCombo, 4, 1)
+
+        # New checkbox "two - Leave Blue entry Empty" (unchecked by default)
+        self.two_checkbox = QCheckBox("two - Leave Blue entry Empty")
+        self.two_checkbox.setChecked(False)
+        combineLayout.addWidget(self.two_checkbox, 5, 0, 1, 3)
+
         self.stack.addWidget(self.combineWidget)
 
         # Page 2: Create Luminance
@@ -207,32 +215,100 @@ class ColorWindow(QMainWindow):
         redFile = self.combineRedLine.text().strip()
         outputFile = self.combineOutputLine.text().strip()
         mode = self.combineModeCombo.currentText()
-        if not (blueFile and greenFile and redFile and outputFile):
-            self.statusLabel.setText("All input and output files are required for Combine Tricolor.")
+        two_checked = self.two_checkbox.isChecked()
+
+        # Require red, green, output always
+        if not (greenFile and redFile and outputFile):
+            self.statusLabel.setText("Red, Green and Output files are required for Combine Tricolor.")
             return
+
         try:
             if mode == "FITS":
-                with fits.open(blueFile) as hdul:
-                    header = hdul[0].header
-                    blue = hdul[0].data.astype(np.float32)
-                with fits.open(greenFile) as hdul:
-                    green = hdul[0].data.astype(np.float32)
+                # Read red and green (required)
                 with fits.open(redFile) as hdul:
                     red = hdul[0].data.astype(np.float32)
+                    header = hdul[0].header
+                with fits.open(greenFile) as hdul:
+                    green = hdul[0].data.astype(np.float32)
+
+                if two_checked:
+                    # Compute blue = 0.5 * R + 0.5 * G
+                    blue = 0.5 * red + 0.5 * green
+                else:
+                    if not blueFile:
+                        self.statusLabel.setText("Blue file required when 'two' is not checked.")
+                        return
+                    with fits.open(blueFile) as hdul:
+                        blue = hdul[0].data.astype(np.float32)
+
+                # Stack as (R, G, B) in FITS first-dimension channel order
                 RGB = np.stack((red, green, blue))
                 hdu = fits.PrimaryHDU(data=RGB, header=header)
                 hdu.writeto(outputFile, overwrite=True)
-                self.statusLabel.setText("Combine Tricolor (FITS) completed successfully.")
+                if two_checked:
+                    self.statusLabel.setText("Combine Tricolor (FITS) completed using computed Blue = 0.5*R + 0.5*G.")
+                else:
+                    self.statusLabel.setText("Combine Tricolor (FITS) completed successfully.")
             else:
-                blue = cv2.imread(blueFile, -1)
-                green = cv2.imread(greenFile, -1)
-                red = cv2.imread(redFile, -1)
-                if blue is None or green is None or red is None:
-                    self.statusLabel.setText("Error reading one of the input images (Other).")
+                # Other (image) mode
+                # Read red and green (required)
+                red_img = cv2.imread(redFile, cv2.IMREAD_UNCHANGED)
+                green_img = cv2.imread(greenFile, cv2.IMREAD_UNCHANGED)
+                if red_img is None or green_img is None:
+                    self.statusLabel.setText("Error reading Red or Green input images (Other).")
                     return
-                merged = cv2.merge((red, green, blue))
-                cv2.imwrite(outputFile, merged)
-                self.statusLabel.setText("Combine Tricolor (Other) completed successfully.")
+
+                # Extract single-channel intensity arrays for R and G
+                def extract_channel(img):
+                    if img.ndim == 2:
+                        return img.astype(np.float64)
+                    elif img.ndim == 3 and img.shape[2] >= 3:
+                        # assume BGR; user provided red/green files may be single-channel or color
+                        # For red file, prefer channel 2; for green file, prefer channel 1
+                        return img[:, :, 0].astype(np.float64) if img.shape[2] == 1 else img[:, :, 0].astype(np.float64)
+                    elif img.ndim == 3 and img.shape[2] == 1:
+                        return img[:, :, 0].astype(np.float64)
+                    else:
+                        return img[:, :, 0].astype(np.float64)
+
+                R = extract_channel(red_img)
+                G = extract_channel(green_img)
+
+                if two_checked:
+                    B = 0.5 * R + 0.5 * G
+                else:
+                    if not blueFile:
+                        self.statusLabel.setText("Blue file required when 'two' is not checked.")
+                        return
+                    blue_img = cv2.imread(blueFile, cv2.IMREAD_UNCHANGED)
+                    if blue_img is None:
+                        self.statusLabel.setText("Error reading Blue input image (Other).")
+                        return
+                    B = extract_channel(blue_img)
+
+                # Prepare merged image in B,G,R order for OpenCV
+                # Determine output dtype based on inputs (prefer integer if inputs are integer)
+                dtype = red_img.dtype
+                # Clip and cast appropriately
+                if np.issubdtype(dtype, np.integer):
+                    info = np.iinfo(dtype)
+                    R_out = np.clip(R, info.min, info.max).astype(dtype)
+                    G_out = np.clip(G, info.min, info.max).astype(dtype)
+                    B_out = np.clip(B, info.min, info.max).astype(dtype)
+                else:
+                    R_out = R.astype(np.float32)
+                    G_out = G.astype(np.float32)
+                    B_out = B.astype(np.float32)
+
+                merged = cv2.merge((B_out, G_out, R_out))
+                ok = cv2.imwrite(outputFile, merged)
+                if not ok:
+                    self.statusLabel.setText("Failed to write output image (Other).")
+                    return
+                if two_checked:
+                    self.statusLabel.setText("Combine Tricolor (Other) completed using computed Blue = 0.5*R + 0.5*G.")
+                else:
+                    self.statusLabel.setText("Combine Tricolor (Other) completed successfully.")
         except Exception as e:
             self.statusLabel.setText(f"Error in Combine Tricolor: {e}")
 
