@@ -3,8 +3,12 @@
 color_tool.py
 Simple PyQt6 GUI for: Split Tricolor, Combine Tricolor, Create Luminance (FITS or common image files).
 Save this file and run: python color_tool.py
-"""
 
+Added: In Create Luminance page a dropdown to select the luminance equation:
+ - synthetic-luminance = 1 * R + 1 * G + 1 * B
+ - Human per(709) luminance = 0.2126 * R + 0.7152 * G + 0.0722 * B
+ - Bayer-one shot color-luminance = 1 * R + 2 * G + 1 * B
+"""
 import sys
 import os
 from pathlib import Path
@@ -115,6 +119,18 @@ class ColorWindow(QMainWindow):
         self.lumModeCombo = QComboBox()
         self.lumModeCombo.addItems(["FITS", "Other"])
         lumLayout.addWidget(self.lumModeCombo, 2, 1)
+
+        # New: Luminance equation dropdown
+        lumLayout.addWidget(QLabel("Luminance Equation:"), 3, 0)
+        self.lumEqCombo = QComboBox()
+        # Add items in the requested order and exact labels
+        self.lumEqCombo.addItems([
+            "synthetic-luminance = 1 * R + 1 * G + 1 * B",
+            "Human per(709) luminance = 0.2126 * R + 0.7152 * G + 0.0722 * B",
+            "Bayer-one shot color-luminance = 1 * R + 2 * G + 1 * B"
+        ])
+        lumLayout.addWidget(self.lumEqCombo, 3, 1, 1, 2)
+
         self.stack.addWidget(self.luminanceWidget)
 
         # Run button + status
@@ -177,6 +193,7 @@ class ColorWindow(QMainWindow):
                     self.statusLabel.setText("Error reading image in Other mode.")
                     return
                 channels = cv2.split(img)
+                # OpenCV returns B,G,R order
                 cv2.imwrite(f"{outputBase}_Blue.png", channels[0])
                 cv2.imwrite(f"{outputBase}_Green.png", channels[1])
                 cv2.imwrite(f"{outputBase}_Red.png", channels[2])
@@ -223,35 +240,90 @@ class ColorWindow(QMainWindow):
         inputFile = self.lumInputLine.text().strip()
         outputFile = self.lumOutputLine.text().strip()
         mode = self.lumModeCombo.currentText()
+        eq_label = self.lumEqCombo.currentText()
         if not (inputFile and outputFile):
             self.statusLabel.setText("Both input and output files are required for Create Luminance.")
             return
+
+        # Map selected equation to weights (R, G, B)
+        if eq_label.startswith("synthetic-luminance"):
+            wR, wG, wB = 1.0, 1.0, 1.0
+        elif eq_label.startswith("Human per(709)"):
+            wR, wG, wB = 0.2126, 0.7152, 0.0722
+        elif eq_label.startswith("Bayer-one shot"):
+            wR, wG, wB = 1.0, 2.0, 1.0
+        else:
+            # fallback to standard Rec.709
+            wR, wG, wB = 0.2126, 0.7152, 0.0722
+
         try:
             if mode == "FITS":
                 hdul = fits.open(inputFile)
                 data = hdul[0].data
+                header = hdul[0].header
                 hdul.close()
+                # Accept either channel-first (3, H, W) or channel-last (H, W, 3)
                 if data.ndim == 3 and data.shape[0] == 3:
-                    img = np.transpose(data, (1, 2, 0))
+                    img = np.transpose(data, (1, 2, 0))  # to H,W,3
                 elif data.ndim == 3 and data.shape[2] == 3:
                     img = data
                 else:
                     self.statusLabel.setText("Unexpected FITS channel layout for luminance.")
                     return
+
+                # Ensure float for computation
                 R = img[:, :, 0].astype(np.float64)
                 G = img[:, :, 1].astype(np.float64)
                 B = img[:, :, 2].astype(np.float64)
-                luminance = 0.2126 * R + 0.7152 * G + 0.0722 * B
-                fits.PrimaryHDU(data=luminance).writeto(outputFile, overwrite=True)
-                self.statusLabel.setText("Create Luminance (FITS) completed successfully.")
+
+                luminance = (wR * R) + (wG * G) + (wB * B)
+
+                # Write luminance as float FITS (preserve header where possible)
+                fits.PrimaryHDU(data=luminance, header=header).writeto(outputFile, overwrite=True)
+                self.statusLabel.setText(f"Create Luminance (FITS) completed using: {eq_label}")
+
             else:
-                img = cv2.imread(inputFile, -1)
+                img = cv2.imread(inputFile, cv2.IMREAD_UNCHANGED)
                 if img is None:
                     self.statusLabel.setText("Error reading input image (Other).")
                     return
-                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                cv2.imwrite(outputFile, gray)
-                self.statusLabel.setText("Create Luminance (Other) completed successfully.")
+
+                # If grayscale already, just write it out
+                if img.ndim == 2:
+                    gray = img
+                else:
+                    # OpenCV loads as BGR
+                    img_f = img.astype(np.float64)
+                    # split channels B,G,R
+                    if img_f.shape[2] >= 3:
+                        B = img_f[:, :, 0]
+                        G = img_f[:, :, 1]
+                        R = img_f[:, :, 2]
+                    else:
+                        # unexpected channel count
+                        self.statusLabel.setText("Unexpected channel count in input image.")
+                        return
+
+                    luminance = (wR * R) + (wG * G) + (wB * B)
+
+                    # To avoid overflow/clipping issues, scale/clamp to original dtype range.
+                    dtype = img.dtype
+                    if np.issubdtype(dtype, np.integer):
+                        # determine max for integer type
+                        info = np.iinfo(dtype)
+                        # If weights sum > 1, luminance may exceed original range; clip
+                        luminance = np.clip(luminance, info.min, info.max)
+                        gray = luminance.astype(dtype)
+                    else:
+                        # float image: keep float32
+                        gray = luminance.astype(np.float32)
+
+                ok = cv2.imwrite(outputFile, gray)
+                if not ok:
+                    self.statusLabel.setText("Failed to write output image (Other).")
+                    return
+                self.statusLabel.setText(f"Create Luminance (Other) completed using: {eq_label}")
+
         except Exception as e:
             self.statusLabel.setText(f"Error in Create Luminance: {e}")
 
@@ -263,5 +335,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    win = ColorWindow()
-    win.show()
