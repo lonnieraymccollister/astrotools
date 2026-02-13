@@ -61,6 +61,7 @@ ACTIONS = {
     "Color Tool (spawn)": (sys.executable, "fncts/color_tool.py"),
     "Image Filters (spawn)": (sys.executable, "fncts/image_filters.py"),
     "Rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
+    "siril_fft_notch_gui (spawn)": (sys.executable, "fncts/siril_fft_notch_guia.py"),
     "Align Images (spawn)": (sys.executable, "fncts/align_imgs.py"),
     "Stacker GUI (spawn)": (sys.executable, "fncts/stacker_gui.py"),
     "Analyze FITS Roundness & Trails (spawn)": (sys.executable, "analyze_fits_roundness_trails.py"),
