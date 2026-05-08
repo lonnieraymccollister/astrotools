@@ -90,7 +90,7 @@ class PixelMathWindow(QMainWindow):
         # Row 0: Operation selector
         layout.addWidget(QLabel("Operation:"), 0, 0)
         self.operationComboBox = QComboBox()
-        self.operationComboBox.addItems(["Add", "Subtract", "Multiply", "Divide", "Max", "Min"])
+        self.operationComboBox.addItems(["Subtract","Add both nan", "Subtract-2nd nan", "Multiply", "Divide", "Max", "Min"])
         layout.addWidget(self.operationComboBox, 0, 1, 1, 2)
 
         # Row 1: First image
@@ -369,10 +369,25 @@ class PixelMathWindow(QMainWindow):
 
         # Arithmetic (float64)
         try:
-            if op == "Add":
-                result_image = im1 + im2 + inputs["brightness"]
+            if op == "Add both nan":
+                # numeric-safe arithmetic: treat NaNs and infinities as zero
+                im1_safe = np.nan_to_num(im1, nan=0.0, posinf=0.0, neginf=0.0)
+                im2_safe = np.nan_to_num(im2, nan=0.0, posinf=0.0, neginf=0.0)
+
+                # compute (replace + with - if you need subtraction)
+                result_image = im1_safe + im2_safe + inputs["brightness"]
+
+                # clamp negatives to zero
+                result_image = np.clip(result_image, 0.0, None)
+
             elif op == "Subtract":
                 result_image = im1 - im2 + inputs["brightness"]
+
+            elif op == "Subtract-2nd nan":
+                im2_safe = np.nan_to_num(im2, nan=0.0)
+                #result_image = im1 - im2 + inputs["brightness"]
+                result_image = im1 - im2_safe + inputs["brightness"]  
+                result_image = np.clip(result_image, 0.0, None)           
             elif op == "Multiply":
                 result_image = im1 * im2 + inputs["brightness"]
             elif op == "Divide":

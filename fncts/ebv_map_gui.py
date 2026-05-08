@@ -4,6 +4,12 @@ ebv_map_gui.py
 
 PyQt6 GUI for interpolating scattered E(B-V)/E(color) sightlines to a 2D map with contours.
 
+This patched version adds:
+ - Ability to write the interpolated E(B-V) map to a FITS file (with optional reference FITS header).
+ - Ability to compute band extinction maps A_lambda for R/G/B using Cardelli+89 and save them as FITS.
+ - UI controls for selecting a reference FITS, toggling FITS outputs, setting R_V and effective wavelengths.
+ - Minimal validation and status messages for FITS outputs.
+
 Behavior:
  - Bottom x-axis shows decimal degrees.
  - Top x-axis shows RA in H:M by default (no seconds).
@@ -14,7 +20,9 @@ Behavior:
  - Place a highlighted star marker at a user-specified RA/Dec (degrees) and optional label.
  - New: checkbox to treat the marker RA/Dec entries as sexagesimal (RA: H:M:S, Dec: D:M:S)
  - New: checkbox to mirror (flip) the X axis (RA) and checkbox to mirror the Y axis (Dec)
+ - New: FITS outputs for E(B-V) and A_lambda (R/G/B)
 """
+
 import sys
 import threading
 from pathlib import Path
@@ -40,14 +48,71 @@ class WorkerSignals(QObject):
     status = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
+
+# ----------------- New helpers: Cardelli extinction and FITS writer -----------------
+def cardelli_A_over_Av(wl_micron, Rv=3.1):
+    """
+    Return A(lambda)/A(V) using Cardelli et al. 1989 (optical/NIR portion).
+    Valid for wavelengths roughly 0.303 - 3.3 microns (x between 0.3 and 3.3 inverse microns).
+    wl_micron can be scalar or numpy array.
+    """
+    wl = np.array(wl_micron, dtype=float)
+    x = 1.0 / wl  # inverse microns
+    a = np.zeros_like(x)
+    b = np.zeros_like(x)
+
+    # IR: x < 1.1
+    ir = x < 1.1
+    if np.any(ir):
+        a[ir] = 0.574 * x[ir]**1.61
+        b[ir] = -0.527 * x[ir]**1.61
+
+    # Optical/NIR: 1.1 <= x <= 3.3
+    opt = (x >= 1.1) & (x <= 3.3)
+    if np.any(opt):
+        y = x[opt] - 1.82
+        # coefficients from Cardelli et al. Table 3 (lowest-first)
+        a_coeff = np.array([1.0, 0.17699, -0.50447, -0.02427,
+                            0.72085, 0.01979, -0.77530, 0.32999])
+        b_coeff = np.array([0.0, 1.41338, 2.28305, 1.07233,
+                            -5.38434, -0.62251, 5.30260, -2.09002])
+        # polyval expects highest-first; reverse arrays
+        a[opt] = np.polyval(a_coeff[::-1], y)
+        b[opt] = np.polyval(b_coeff[::-1], y)
+
+    # UV (x > 3.3) not implemented here; raise if used
+    uv = x > 3.3
+    if np.any(uv):
+        raise ValueError("Wavelength < 0.303 micron (x>3.3) is outside this Cardelli implementation.")
+
+    return a + b / Rv
+
+
+def write_fits_map(data, header, outpath):
+    """
+    Write a 2D numpy array to FITS. If header is provided, attach it.
+    """
+    from astropy.io import fits
+    if header is not None:
+        hdu = fits.PrimaryHDU(data.astype(np.float32), header=header)
+    else:
+        hdu = fits.PrimaryHDU(data.astype(np.float32))
+    hdu.writeto(outpath, overwrite=True)
+
+
+# -------------------------------------------------------------------------------
+
+
 def _format_ra_hm_ticks(ticks_deg):
     sc = SkyCoord(ra=ticks_deg * u.deg, dec=np.zeros_like(ticks_deg) * u.deg, frame="icrs")
     hms = [sc.ra.to_string(unit=u.hour, sep=":", precision=0, pad=True) for _ in ticks_deg]
     return [s.rsplit(":", 1)[0] for s in hms]
 
+
 def _format_ra_hms_ticks(ticks_deg):
     sc = SkyCoord(ra=ticks_deg * u.deg, dec=np.zeros_like(ticks_deg) * u.deg, frame="icrs")
     return [sc.ra.to_string(unit=u.hour, sep=":", precision=0, pad=True) for _ in ticks_deg]
+
 
 def map_worker(params, signals: WorkerSignals):
     try:
@@ -84,6 +149,38 @@ def map_worker(params, signals: WorkerSignals):
         # smoothing
         sigma = float(params["smooth_sigma"])
         grid_sm = gaussian_filter(grid_ebv, sigma=sigma) if sigma > 0 else grid_ebv
+
+        # --- compute mean extinction and percent corrections for title (insert here) ---
+        try:
+            mean_ebv = float(np.nanmean(grid_sm))
+            # compute mean A_lambda and percent corrections even if save_alam is False
+            Rv = float(params.get("Rv", 3.1))
+            wl_r = float(params.get("wl_r", 0.64))
+            wl_g = float(params.get("wl_g", 0.53))
+            wl_b = float(params.get("wl_b", 0.44))
+
+            Aov_r = float(cardelli_A_over_Av(wl_r, Rv=Rv))
+            Aov_g = float(cardelli_A_over_Av(wl_g, Rv=Rv))
+            Aov_b = float(cardelli_A_over_Av(wl_b, Rv=Rv))
+
+            mean_A_r = Rv * mean_ebv * Aov_r
+            mean_A_g = Rv * mean_ebv * Aov_g
+            mean_A_b = Rv * mean_ebv * Aov_b
+
+            pct_r = (10.0**(0.4 * mean_A_r) - 1.0) * 100.0
+            pct_g = (10.0**(0.4 * mean_A_g) - 1.0) * 100.0
+            pct_b = (10.0**(0.4 * mean_A_b) - 1.0) * 100.0
+
+            # build a compact title fragment
+            title_corr = (f"E(B-V)={mean_ebv:.3f} mag  "
+                          f"A_R={mean_A_r:.3f} mag (+{pct_r:.1f}%)  "
+                          f"A_G={mean_A_g:.3f} mag (+{pct_g:.1f}%)  "
+                          f"A_B={mean_A_b:.3f} mag (+{pct_b:.1f}%)")
+            signals.status.emit(f"Average extinction summary: {title_corr}")
+        except Exception as e:
+            title_corr = "Mean extinction: N/A"
+            signals.status.emit(f"Average-extinction calc failed: {e}")
+        # --- end mean-extinction snippet ---
 
         # plotting
         signals.status.emit("Rendering figure...")
@@ -215,7 +312,9 @@ def map_worker(params, signals: WorkerSignals):
         ax_top.tick_params(axis='x', which='major', pad=6)
 
         ax.set_ylabel("Dec (deg)")
-        ax.set_title(params.get("title", "Interpolated E(B-V) (scattered sightlines)"))
+        main_title = params.get("title", "E(B-V Sghtlns))")
+        # Keep title compact to avoid overlap; use newline if you prefer two lines
+        ax.set_title(f"{title_corr}")
         ax.grid(which='major', color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
         plt.tight_layout()
 
@@ -224,9 +323,64 @@ def map_worker(params, signals: WorkerSignals):
         plt.close(fig)
 
         signals.status.emit(f"Saved map to {outpath}")
+
+        # --- write FITS outputs if requested ---
+        ref_hdr = None
+        if params.get("ref_fits", ""):
+            try:
+                from astropy.io import fits as _fits
+                ref_h = _fits.getheader(params["ref_fits"])
+                ref_data = _fits.getdata(params["ref_fits"])
+                ref_hdr = ref_h
+                signals.status.emit(f"Loaded reference FITS header from {params['ref_fits']}")
+            except Exception as e:
+                signals.status.emit(f"Warning: failed to read reference FITS header: {e}; FITS outputs will use minimal header.")
+                ref_hdr = None
+
+        # write E(B-V) FITS
+        if params.get("save_ebv", False):
+            out_ebv = params.get("out_ebv", "E_BV_map.fits")
+            try:
+                hdr = ref_hdr if ref_hdr is not None else None
+                write_fits_map(grid_sm.astype(np.float32), hdr, out_ebv)
+                signals.status.emit(f"Wrote E(B-V) FITS to {out_ebv}")
+            except Exception as e:
+                signals.status.emit(f"Failed to write E(B-V) FITS: {e}")
+
+        # compute and write A_lambda maps for requested bands
+        if params.get("save_alam", False):
+            try:
+                Rv = float(params.get("Rv", 3.1))
+                # read effective wavelengths (microns)
+                wl_r = float(params.get("wl_r", 0.64))
+                wl_g = float(params.get("wl_g", 0.53))
+                wl_b = float(params.get("wl_b", 0.44))
+                # compute A_over_Av
+                Aov_r = float(cardelli_A_over_Av(wl_r, Rv=Rv))
+                Aov_g = float(cardelli_A_over_Av(wl_g, Rv=Rv))
+                Aov_b = float(cardelli_A_over_Av(wl_b, Rv=Rv))
+                # A_lambda = Rv * E(B-V) * A(lambda)/A(V)
+                A_r = (Rv * grid_sm) * Aov_r
+                A_g = (Rv * grid_sm) * Aov_g
+                A_b = (Rv * grid_sm) * Aov_b
+
+                # write
+                from astropy.io import fits as _fits
+                base = Path(params.get("outfig", "ebv_scattered_map.png")).stem
+                out_r = params.get("out_alam_r", f"{base}_A_lambda_R.fits")
+                out_g = params.get("out_alam_g", f"{base}_A_lambda_G.fits")
+                out_b = params.get("out_alam_b", f"{base}_A_lambda_B.fits")
+                write_fits_map(A_r.astype(np.float32), ref_hdr, out_r)
+                write_fits_map(A_g.astype(np.float32), ref_hdr, out_g)
+                write_fits_map(A_b.astype(np.float32), ref_hdr, out_b)
+                signals.status.emit(f"Wrote A_lambda FITS: {out_r}, {out_g}, {out_b}")
+            except Exception as e:
+                signals.status.emit(f"Failed to compute/write A_lambda FITS: {e}")
+
         signals.finished.emit(True, str(outpath))
     except Exception as e:
         signals.finished.emit(False, str(e))
+
 
 class EbvMapGui(QWidget):
     def __init__(self):
@@ -375,6 +529,43 @@ class EbvMapGui(QWidget):
         grid.addWidget(btn_out, row, 4)
         row += 1
 
+        # --- New FITS output controls ---
+        grid.addWidget(QLabel("Reference FITS (for header/shape):"), row, 0)
+        self.ref_fits_edit = QLineEdit("")
+        grid.addWidget(self.ref_fits_edit, row, 1, 1, 2)
+        btn_ref = QPushButton("Browse")
+        def browse_ref():
+            p, _ = QFileDialog.getOpenFileName(self, "Open reference FITS", str(Path.cwd()), "FITS files (*.fits *.fit *.fts)")
+            if p:
+                self.ref_fits_edit.setText(p)
+        btn_ref.clicked.connect(browse_ref)
+        grid.addWidget(btn_ref, row, 3)
+        row += 1
+
+        grid.addWidget(QLabel("Save E(B-V) FITS:"), row, 0)
+        self.save_ebv_chk = QCheckBox(); self.save_ebv_chk.setChecked(True)
+        grid.addWidget(self.save_ebv_chk, row, 1)
+        grid.addWidget(QLabel("Save A_lambda FITS:"), row, 2)
+        self.save_alam_chk = QCheckBox(); self.save_alam_chk.setChecked(True)
+        grid.addWidget(self.save_alam_chk, row, 3)
+        row += 1
+
+        grid.addWidget(QLabel("R_V:"), row, 0)
+        self.rv_spin = QDoubleSpinBox(); self.rv_spin.setRange(2.0, 6.0); self.rv_spin.setValue(3.1); self.rv_spin.setSingleStep(0.1)
+        grid.addWidget(self.rv_spin, row, 1)
+        grid.addWidget(QLabel("Eff wl R (um):"), row, 2)
+        self.wl_r_edit = QLineEdit("0.64")
+        grid.addWidget(self.wl_r_edit, row, 3)
+        row += 1
+        grid.addWidget(QLabel("Eff wl G (um):"), row, 0)
+        self.wl_g_edit = QLineEdit("0.53")
+        grid.addWidget(self.wl_g_edit, row, 1)
+        grid.addWidget(QLabel("Eff wl B (um):"), row, 2)
+        self.wl_b_edit = QLineEdit("0.44")
+        grid.addWidget(self.wl_b_edit, row, 3)
+        row += 1
+        # --- end new FITS controls ---
+
         # preview and run controls
         btn_preview = QPushButton("Load Preview (first 50 rows)")
         btn_preview.clicked.connect(self.load_preview)
@@ -477,6 +668,7 @@ class EbvMapGui(QWidget):
             QMessageBox.warning(self, "Missing", "CSV file not found.")
             return
 
+        # base params
         params = {
             "csv": csv_path,
             "ra_col": self.ra_edit.text().strip(),
@@ -502,13 +694,28 @@ class EbvMapGui(QWidget):
             "cmap": self.cmap_edit.text().strip(),
             "pct_interval": self.pct_interval_spin.value(),
             "outfig": self.out_edit.text().strip(),
-            "title": "Interpolated E(B-V) (scattered sightlines)",
+            "title": "Intrpltd E(B-V) (sctrd sghtlns)",
             "dpi": 200,
             "cbar_label": "E(B-V) (mag)",
             # new mirror flags
             "mirror_x": self.mirror_x_chk.isChecked(),
             "mirror_y": self.mirror_y_chk.isChecked()
         }
+
+        # new FITS params
+        params.update({
+            "ref_fits": self.ref_fits_edit.text().strip(),
+            "save_ebv": self.save_ebv_chk.isChecked(),
+            "save_alam": self.save_alam_chk.isChecked(),
+            "Rv": float(self.rv_spin.value()),
+            "wl_r": self.wl_r_edit.text().strip(),
+            "wl_g": self.wl_g_edit.text().strip(),
+            "wl_b": self.wl_b_edit.text().strip(),
+            "out_ebv": Path(self.out_edit.text()).with_suffix(".ebv.fits").as_posix(),
+            "out_alam_r": Path(self.out_edit.text()).with_suffix(".A_R.fits").as_posix(),
+            "out_alam_g": Path(self.out_edit.text()).with_suffix(".A_G.fits").as_posix(),
+            "out_alam_b": Path(self.out_edit.text()).with_suffix(".A_B.fits").as_posix(),
+        })
 
         self.run_btn.setEnabled(False)
         self.progress.setVisible(True)
@@ -531,11 +738,13 @@ class EbvMapGui(QWidget):
             self.append_log(f"Error: {message}")
             QMessageBox.critical(self, "Error", message)
 
+
 def main():
     app = QApplication(sys.argv)
     gui = EbvMapGui()
     gui.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
