@@ -12,10 +12,11 @@ Changes:
        as the first input (if first input was channel-first (3,Y,X) the output keeps that).
  - Safer numeric handling (float64 arithmetic) and clearer error messages.
  - Added normalization checks and Siril launch option.
- - NEW: Global checkbox to control output normalization (default ON) (Patch 1)
- - NEW: write_fits_preserve_layout normalizes output and writes NORMED header (Patch 2)
- - UPDATED: write call uses write_fits_preserve_layout and respects checkbox (Patch 3)
- - UPDATED: explicit GUI warning when input is not normalized before launching normalizer (Patch 4)
+ - NEW: Global checkbox to control output normalization (default ON)
+ - NEW: write_fits_preserve_layout normalizes output and writes NORMED header
+ - UPDATED: write call uses write_fits_preserve_layout and respects checkbox
+ - UPDATED: explicit GUI warning when input is not normalized before launching normalizer
+ - NEW: Per-channel R/G/B numerator and denominator controls for each input image (compact single-row layout)
 """
 import sys
 import os
@@ -28,7 +29,8 @@ from astropy.io import fits
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout, QLabel, QLineEdit,
-    QPushButton, QFileDialog, QComboBox, QMessageBox, QCheckBox
+    QPushButton, QFileDialog, QComboBox, QMessageBox, QCheckBox,
+    QHBoxLayout
 )
 from PyQt6.QtCore import Qt
 
@@ -91,52 +93,116 @@ class PixelMathWindow(QMainWindow):
         layout.addWidget(QLabel("Operation:"), 0, 0)
         self.operationComboBox = QComboBox()
         self.operationComboBox.addItems(["Subtract","Add both nan", "Subtract-2nd nan", "Multiply", "Divide", "Max", "Min"])
-        layout.addWidget(self.operationComboBox, 0, 1, 1, 2)
+        layout.addWidget(self.operationComboBox, 0, 1, 1, 3)
 
         # Row 1: First image
         layout.addWidget(QLabel("First Image File:"), 1, 0)
         self.firstImageLineEdit = QLineEdit()
-        layout.addWidget(self.firstImageLineEdit, 1, 1)
+        layout.addWidget(self.firstImageLineEdit, 1, 1, 1, 2)
         self.firstBrowseButton = QPushButton("Browse")
         self.firstBrowseButton.clicked.connect(self.browseFirstImage)
-        layout.addWidget(self.firstBrowseButton, 1, 2)
+        layout.addWidget(self.firstBrowseButton, 1, 3)
 
         # Row 2: Second image
         layout.addWidget(QLabel("Second Image File:"), 2, 0)
         self.secondImageLineEdit = QLineEdit()
-        layout.addWidget(self.secondImageLineEdit, 2, 1)
+        layout.addWidget(self.secondImageLineEdit, 2, 1, 1, 2)
         self.secondBrowseButton = QPushButton("Browse")
         self.secondBrowseButton.clicked.connect(self.browseSecondImage)
-        layout.addWidget(self.secondBrowseButton, 2, 2)
+        layout.addWidget(self.secondBrowseButton, 2, 3)
 
         # Row 3: Output file
         layout.addWidget(QLabel("Output File:"), 3, 0)
         self.outputLineEdit = QLineEdit()
-        layout.addWidget(self.outputLineEdit, 3, 1)
+        layout.addWidget(self.outputLineEdit, 3, 1, 1, 2)
         self.outputBrowseButton = QPushButton("Browse")
         self.outputBrowseButton.clicked.connect(self.browseOutputFile)
-        layout.addWidget(self.outputBrowseButton, 3, 2)
+        layout.addWidget(self.outputBrowseButton, 3, 3)
 
         # Row 4: Brightness adjustment
         layout.addWidget(QLabel("Brightness Adjustment (add):"), 4, 0)
         self.brightnessLineEdit = QLineEdit("0")
-        layout.addWidget(self.brightnessLineEdit, 4, 1, 1, 2)
+        layout.addWidget(self.brightnessLineEdit, 4, 1, 1, 3)
 
-        # Row 5: Image1 contrast numerator/denom
-        layout.addWidget(QLabel("Image1 Contrast Numerator:"), 5, 0)
+        # Row 5: Image1 compact contrast controls (scalar + per-channel R/G/B) using a horizontal sublayout
+        layout.addWidget(QLabel("Image1 Contrast:"), 5, 0)
+        img1_widget = QWidget()
+        img1_h = QHBoxLayout(img1_widget)
+        img1_h.setContentsMargins(0, 0, 0, 0)
+
+        # Scalar numerator/denom
+        img1_h.addWidget(QLabel("Scalar N:"))
         self.img1ContrastNumLineEdit = QLineEdit("1")
-        layout.addWidget(self.img1ContrastNumLineEdit, 5, 1)
-        layout.addWidget(QLabel("Denom:"), 5, 2)
-        self.img1ContrastDenomLineEdit = QLineEdit("1")
-        layout.addWidget(self.img1ContrastDenomLineEdit, 5, 3)
+        self.img1ContrastNumLineEdit.setMaximumWidth(60)
+        img1_h.addWidget(self.img1ContrastNumLineEdit)
+        img1_h.addWidget(QLabel("D:"))
+        self.img1ContrastDenLineEdit = QLineEdit("1")
+        self.img1ContrastDenLineEdit.setMaximumWidth(60)
+        img1_h.addWidget(self.img1ContrastDenLineEdit)
 
-        # Row 6: Image2 contrast numerator/denom
-        layout.addWidget(QLabel("Image2 Contrast Numerator:"), 6, 0)
+        # Per-channel numerators
+        img1_h.addWidget(QLabel(" R N:"))
+        self.img1RNum = QLineEdit("1"); self.img1RNum.setMaximumWidth(50)
+        img1_h.addWidget(self.img1RNum)
+        img1_h.addWidget(QLabel("G N:"))
+        self.img1GNum = QLineEdit("1"); self.img1GNum.setMaximumWidth(50)
+        img1_h.addWidget(self.img1GNum)
+        img1_h.addWidget(QLabel("B N:"))
+        self.img1BNum = QLineEdit("1"); self.img1BNum.setMaximumWidth(50)
+        img1_h.addWidget(self.img1BNum)
+
+        # Per-channel denominators
+        img1_h.addWidget(QLabel(" R D:"))
+        self.img1RDen = QLineEdit("1"); self.img1RDen.setMaximumWidth(50)
+        img1_h.addWidget(self.img1RDen)
+        img1_h.addWidget(QLabel("G D:"))
+        self.img1GDen = QLineEdit("1"); self.img1GDen.setMaximumWidth(50)
+        img1_h.addWidget(self.img1GDen)
+        img1_h.addWidget(QLabel("B D:"))
+        self.img1BDen = QLineEdit("1"); self.img1BDen.setMaximumWidth(50)
+        img1_h.addWidget(self.img1BDen)
+
+        layout.addWidget(img1_widget, 5, 1, 1, 3)
+
+        # Row 6: Image2 compact contrast controls (scalar + per-channel R/G/B) using a horizontal sublayout
+        layout.addWidget(QLabel("Image2 Contrast:"), 6, 0)
+        img2_widget = QWidget()
+        img2_h = QHBoxLayout(img2_widget)
+        img2_h.setContentsMargins(0, 0, 0, 0)
+
+        # Scalar numerator/denom
+        img2_h.addWidget(QLabel("Scalar N:"))
         self.img2ContrastNumLineEdit = QLineEdit("1")
-        layout.addWidget(self.img2ContrastNumLineEdit, 6, 1)
-        layout.addWidget(QLabel("Denom:"), 6, 2)
-        self.img2ContrastDenomLineEdit = QLineEdit("1")
-        layout.addWidget(self.img2ContrastDenomLineEdit, 6, 3)
+        self.img2ContrastNumLineEdit.setMaximumWidth(60)
+        img2_h.addWidget(self.img2ContrastNumLineEdit)
+        img2_h.addWidget(QLabel("D:"))
+        self.img2ContrastDenLineEdit = QLineEdit("1")
+        self.img2ContrastDenLineEdit.setMaximumWidth(60)
+        img2_h.addWidget(self.img2ContrastDenLineEdit)
+
+        # Per-channel numerators
+        img2_h.addWidget(QLabel(" R N:"))
+        self.img2RNum = QLineEdit("1"); self.img2RNum.setMaximumWidth(50)
+        img2_h.addWidget(self.img2RNum)
+        img2_h.addWidget(QLabel("G N:"))
+        self.img2GNum = QLineEdit("1"); self.img2GNum.setMaximumWidth(50)
+        img2_h.addWidget(self.img2GNum)
+        img2_h.addWidget(QLabel("B N:"))
+        self.img2BNum = QLineEdit("1"); self.img2BNum.setMaximumWidth(50)
+        img2_h.addWidget(self.img2BNum)
+
+        # Per-channel denominators
+        img2_h.addWidget(QLabel(" R D:"))
+        self.img2RDen = QLineEdit("1"); self.img2RDen.setMaximumWidth(50)
+        img2_h.addWidget(self.img2RDen)
+        img2_h.addWidget(QLabel("G D:"))
+        self.img2GDen = QLineEdit("1"); self.img2GDen.setMaximumWidth(50)
+        img2_h.addWidget(self.img2GDen)
+        img2_h.addWidget(QLabel("B D:"))
+        self.img2BDen = QLineEdit("1"); self.img2BDen.setMaximumWidth(50)
+        img2_h.addWidget(self.img2BDen)
+
+        layout.addWidget(img2_widget, 6, 1, 1, 3)
 
         # Row 7: Compute button
         self.computeButton = QPushButton("Compute")
@@ -162,13 +228,13 @@ class PixelMathWindow(QMainWindow):
         self.checkOpenInSiril.setChecked(True)
         layout.addWidget(self.checkOpenInSiril, 11, 0, 1, 4)
 
-        # NEW (Patch 1): Normalize output checkbox
+        # Row 12: Normalize output checkbox
         self.checkNormalizeOutput = QCheckBox("Normalize output FITS to [0,1]")
         self.checkNormalizeOutput.setChecked(True)
         layout.addWidget(self.checkNormalizeOutput, 12, 0, 1, 4)
 
         # Set minimum size
-        self.setMinimumSize(820, 460)
+        self.setMinimumSize(920, 480)
 
     # File dialogs
     def browseFirstImage(self):
@@ -197,17 +263,51 @@ class PixelMathWindow(QMainWindow):
 
         try:
             brightness = float(self.brightnessLineEdit.text())
+
+            # scalar (backwards compatible)
             img1_num = float(self.img1ContrastNumLineEdit.text())
-            img1_denom = float(self.img1ContrastDenomLineEdit.text())
+            img1_den = float(self.img1ContrastDenLineEdit.text())
             img2_num = float(self.img2ContrastNumLineEdit.text())
-            img2_denom = float(self.img2ContrastDenomLineEdit.text())
+            img2_den = float(self.img2ContrastDenLineEdit.text())
+
+            # per-channel (Image1)
+            img1_rnum = float(self.img1RNum.text())
+            img1_gnum = float(self.img1GNum.text())
+            img1_bnum = float(self.img1BNum.text())
+            img1_rden = float(self.img1RDen.text())
+            img1_gden = float(self.img1GDen.text())
+            img1_bden = float(self.img1BDen.text())
+
+            # per-channel (Image2)
+            img2_rnum = float(self.img2RNum.text())
+            img2_gnum = float(self.img2GNum.text())
+            img2_bnum = float(self.img2BNum.text())
+            img2_rden = float(self.img2RDen.text())
+            img2_gden = float(self.img2GDen.text())
+            img2_bden = float(self.img2BDen.text())
+
         except ValueError:
             self.statusLabel.setText("Error: Brightness/contrast fields must be numbers.")
             return None
 
-        if img1_denom == 0 or img2_denom == 0:
-            self.statusLabel.setText("Error: Contrast denominators must not be zero.")
+        # denominators must not be zero
+        if img1_den == 0 or img2_den == 0:
+            self.statusLabel.setText("Error: Scalar contrast denominators must not be zero.")
             return None
+        if img1_rden == 0 or img1_gden == 0 or img1_bden == 0 or img2_rden == 0 or img2_gden == 0 or img2_bden == 0:
+            self.statusLabel.setText("Error: Per-channel denominators must not be zero.")
+            return None
+
+        # Build scale values: scalar fallback and per-channel arrays
+        img1_scale_scalar = img1_num / img1_den
+        img2_scale_scalar = img2_num / img2_den
+
+        img1_scale_rgb = np.array([img1_rnum / img1_rden,
+                                   img1_gnum / img1_gden,
+                                   img1_bnum / img1_bden], dtype=np.float64)
+        img2_scale_rgb = np.array([img2_rnum / img2_rden,
+                                   img2_gnum / img2_gden,
+                                   img2_bnum / img2_bden], dtype=np.float64)
 
         if not os.path.exists(first_file):
             self.statusLabel.setText("Error: First image file does not exist.")
@@ -221,8 +321,10 @@ class PixelMathWindow(QMainWindow):
             "second_file": second_file,
             "output_file": output_file,
             "brightness": brightness,
-            "img1_scale": img1_num / img1_denom,
-            "img2_scale": img2_num / img2_denom
+            "img1_scale_scalar": img1_scale_scalar,
+            "img2_scale_scalar": img2_scale_scalar,
+            "img1_scale_rgb": img1_scale_rgb,
+            "img2_scale_rgb": img2_scale_rgb
         }
 
     # utility: load fits primary and normalize orientation
@@ -337,7 +439,7 @@ class PixelMathWindow(QMainWindow):
             self.statusLabel.setText(f"Error loading FITS: {e}")
             return
 
-        # Normalization checks with explicit warning (Patch 4)
+        # Normalization checks with explicit warning
         try:
             if self.checkFirstNormalized.isChecked():
                 if not self._check_normalized_0_1(im1):
@@ -363,9 +465,20 @@ class PixelMathWindow(QMainWindow):
                 self.statusLabel.setText(f"Error: Input images do not have the same dimensions ({im1.shape} vs {im2.shape}).")
                 return
 
-        # perform scaling
-        im1 = im1 * inputs["img1_scale"]
-        im2 = im2 * inputs["img2_scale"]
+        # perform scaling: use per-channel scales for 3-channel images, scalar otherwise
+        # Image 1
+        if im1.ndim == 3 and im1.shape[2] == 3:
+            scales = inputs["img1_scale_rgb"].reshape((1, 1, 3))
+            im1 = im1 * scales
+        else:
+            im1 = im1 * inputs["img1_scale_scalar"]
+
+        # Image 2
+        if im2.ndim == 3 and im2.shape[2] == 3:
+            scales = inputs["img2_scale_rgb"].reshape((1, 1, 3))
+            im2 = im2 * scales
+        else:
+            im2 = im2 * inputs["img2_scale_scalar"]
 
         # Arithmetic (float64)
         try:
@@ -374,10 +487,7 @@ class PixelMathWindow(QMainWindow):
                 im1_safe = np.nan_to_num(im1, nan=0.0, posinf=0.0, neginf=0.0)
                 im2_safe = np.nan_to_num(im2, nan=0.0, posinf=0.0, neginf=0.0)
 
-                # compute (replace + with - if you need subtraction)
                 result_image = im1_safe + im2_safe + inputs["brightness"]
-
-                # clamp negatives to zero
                 result_image = np.clip(result_image, 0.0, None)
 
             elif op == "Subtract":
@@ -385,9 +495,8 @@ class PixelMathWindow(QMainWindow):
 
             elif op == "Subtract-2nd nan":
                 im2_safe = np.nan_to_num(im2, nan=0.0)
-                #result_image = im1 - im2 + inputs["brightness"]
-                result_image = im1 - im2_safe + inputs["brightness"]  
-                result_image = np.clip(result_image, 0.0, None)           
+                result_image = im1 - im2_safe + inputs["brightness"]
+                result_image = np.clip(result_image, 0.0, None)
             elif op == "Multiply":
                 result_image = im1 * im2 + inputs["brightness"]
             elif op == "Divide":
@@ -406,31 +515,24 @@ class PixelMathWindow(QMainWindow):
 
         # Decide output layout: preserve first input's original layout (channel-first or channel-last)
         out_header = hdr1.copy() if hdr1 is not None else fits.Header()
-        # If first input was channel-first originally, transpose result back to (C, Y, X)
         if info1.get("channel_first", False):
-            # result_image is (Y, X, C) or (Y, X) -> convert to (C, Y, X)
             if result_image.ndim == 3 and result_image.shape[2] == 3:
                 out_arr = np.transpose(result_image, (2, 0, 1))
             elif result_image.ndim == 2:
                 out_arr = result_image[np.newaxis, :, :]
             else:
-                # unexpected shape - write as-is
                 out_arr = result_image
         else:
-            # keep as (Y, X, C) or (Y, X)
             out_arr = result_image
 
-        # Ensure output dtype is float64 for precision (user can downcast later if desired)
         out_arr = out_arr.astype(np.float64, copy=False)
 
-        # Update header BITPIX if present: FITS writer will set BITPIX based on data dtype,
-        # but if we want to be explicit set to -64 for float64
         try:
             out_header['BITPIX'] = -64
         except Exception:
             pass
 
-        # Write result using centralized writer that can normalize and set NORMED (Patch 3)
+        # Write result using centralized writer that can normalize and set NORMED
         try:
             write_fits_preserve_layout(
                 inputs["output_file"],
@@ -449,7 +551,6 @@ class PixelMathWindow(QMainWindow):
             try:
                 siril_exe = shutil.which("siril")
                 if siril_exe:
-                    # Launch Siril with the output file path
                     subprocess.Popen([siril_exe, os.path.abspath(inputs["output_file"])])
                     self.statusLabel.setText("Operation completed; output saved and Siril launched.")
                 else:
