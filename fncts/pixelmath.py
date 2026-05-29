@@ -188,7 +188,7 @@ class PixelMathWindow(QMainWindow):
         self.img2GNum = QLineEdit("1"); self.img2GNum.setMaximumWidth(50)
         img2_h.addWidget(self.img2GNum)
         img2_h.addWidget(QLabel("B N:"))
-        self.img2BNum = QLineEdit("1"); self.img2BNum.setMaximumWidth(50)
+        self.img2BNum = QLineEdit("2511886"); self.img2BNum.setMaximumWidth(50)
         img2_h.addWidget(self.img2BNum)
 
         # Per-channel denominators
@@ -199,7 +199,7 @@ class PixelMathWindow(QMainWindow):
         self.img2GDen = QLineEdit("1"); self.img2GDen.setMaximumWidth(50)
         img2_h.addWidget(self.img2GDen)
         img2_h.addWidget(QLabel("B D:"))
-        self.img2BDen = QLineEdit("1"); self.img2BDen.setMaximumWidth(50)
+        self.img2BDen = QLineEdit("10000000000"); self.img2BDen.setMaximumWidth(50)
         img2_h.addWidget(self.img2BDen)
 
         layout.addWidget(img2_widget, 6, 1, 1, 3)
