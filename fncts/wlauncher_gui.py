@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
 """
-The system uses some copilot code plus adition code.
 launcher_gui.py
-PyQt6 GUI replacement for your text-based menu. Choose an action from a dropdown,
-enter any required strings in the boxes below, and run the action. Actions that
-were executed with subprocess in your original script are invoked the same way here.
+PyQt6 GUI replacement for your text-based menu.
+Template-aware action mapping:
+Each ACTION entry is:
+    ("Label", (python_exe, script_path, arg1_source, arg2_source, ...))
+
+argX_source can be:
+    "input1", "input2", "output", "param"  -> taken from GUI fields
+    any other string                        -> passed literally (e.g. "--out", "gaia", "5.0")
 """
+
 import sys
-import os
 import subprocess
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton, QComboBox,
-    QGridLayout, QTextEdit, QFileDialog, QHBoxLayout, QVBoxLayout, QMessageBox
+    QGridLayout, QTextEdit, QFileDialog, QHBoxLayout, QMessageBox
 )
-from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
 
 # -----------------------
 # Action mapping
 # -----------------------
-# Each entry: ("Label shown in UI", callable or command tuple)
-# If value is a tuple: (python_exe, script_path, arg1_source, arg2_source, ...)
-# argX_source can be "input1","input2","pattern","output" or a literal value.
-# If value is a callable, it will be called with a dict of inputs.
 ACTIONS = {
     "Exit": ("exit",),
+
     "AffineTransform (exec file)": (sys.executable, "fncts/affine_transform.py"),
     "Crop": (sys.executable, "fncts/crop.py"),
     "Mask tool GUI (spawn)": (sys.executable, "fncts/mask_tool_gui.py"),
@@ -45,12 +45,10 @@ ACTIONS = {
     "Video GUI (spawn)": (sys.executable, "fncts/video_gui.py"),
     "Gamma GUI (spawn)": (sys.executable, "fncts/gamma_gui.py"),
     "Copy Old Header GUI (spawn)": (sys.executable, "fncts/cpy_old_hdr_gui.py"),
-    "CLAHE GUI (spawn)": (sys.executable, "fncts/clahe_gui.py"),
     "Hist Match GUI (spawn)": (sys.executable, "fncts/hist_match_gui.py"),
     "Distance GUI (spawn)": (sys.executable, "fncts/distance_gui.py"),
     "EdgeDetect GUI (spawn)": (sys.executable, "fncts/edgedetect_gui.py"),
     "BinImg GUI (spawn)": (sys.executable, "fncts/binimg_gui.py"),
-    "Auto Stretch GUI (spawn)": (sys.executable, "fncts/autostr_gui.py"),
     "WCS Plotter GUI (spawn)": (sys.executable, "fncts/fits_wcs_plotter_gui.py"),
     "Align Images By Dir (spawn)": (sys.executable, "fncts/align_imgs_gui_fallback.py"),
     "Combine LRGB GUI (spawn)": (sys.executable, "fncts/fits_lrgb_combine_gui.py"),
@@ -60,6 +58,8 @@ ACTIONS = {
     "Pixel Math (spawn)": (sys.executable, "fncts/pixelmath.py"),
     "Color Tool (spawn)": (sys.executable, "fncts/color_tool.py"),
     "Image Filters (spawn)": (sys.executable, "fncts/image_filters.py"),
+    "CLAHE GUI (spawn)": (sys.executable, "fncts/clahe_gui.py"),
+    "Auto Stretch GUI (spawn)": (sys.executable, "fncts/autostr_gui.py"),
     "Rank_gui (spawn)": (sys.executable, "fncts/wrank.py"),
     "siril_fft_notch_gui (spawn)": (sys.executable, "fncts/siril_fft_notch_guia.py"),
     "Align Images (spawn)": (sys.executable, "fncts/align_imgs.py"),
@@ -68,8 +68,32 @@ ACTIONS = {
     "Normalize GUI (spawn)": (sys.executable, "fncts/normalize_gui.py"),
     "RaDec->2pt Angle GUI (spawn)": (sys.executable, "fncts/radectwoptang_gui.py"),
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
-    "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
+
+    # Template-aware dust tools
+    # apConsoleWcs.py csv --out out.csv
+    "Dust WCS LkUp (spawn)": (
+        sys.executable,
+        "fncts/apConsoleWcs.py",
+        "input1",
+        "--out",
+        "output"
+    ),
+
+    # apConsole.py csv --catalog gaia --radius 5.0 --out out.csv
+    "Dust Gaia LkUp (spawn)": (
+        sys.executable,
+        "fncts/apConsole.py",
+        "input1",
+        "--catalog",
+        "gaia",
+        "--radius",
+        "5.0",
+        "--out",
+        "output"
+    ),
+
     "classify sptype GUI (spawn)": (sys.executable, "fncts/classify_sptype_gui.py"),
+    "csv_xy_lookup GUI (spawn)": (sys.executable, "fncts/csv_xy_lookup_gui.py"),
     "spectral_percent GUI (spawn)": (sys.executable, "fncts/spectral_percent_gui.py"),
     "plot_hist&normality_gui (spawn)": (sys.executable, "fncts/plot_hist_with_normality_gui.py"),
     "ecolor_vs_distance_gui (spawn)": (sys.executable, "fncts/ecolor_vs_distance_gui.py"),
@@ -77,7 +101,17 @@ ACTIONS = {
     "ebv_map_gui (spawn)": (sys.executable, "fncts/ebv_map_gui.py"),
     "De-skew Img (spawn)": (sys.executable, "fncts/deskew_book_gui.py"),
     "PmVtr Img (spawn)": (sys.executable, "fncts/PmVtr.py"),
-    # Add more mappings as needed
+}
+
+# Optional per-action hints
+ACTION_HINTS = {
+    "Align Images By Dir (spawn)": "Input1 = input folder; Input2 = pattern (e.g. *.fit*); Output = output folder",
+    "Combine Weighted GUI (spawn)": "Input1 = input folder; Input2 = pattern (e.g. *.fit*); Output = out.fits",
+    "Centroid / Ratio GUI (spawn)": "No inputs required; launches cent_ratio_gui.py",
+    "AffineTransform (exec file)": "Executes the affine_transform.py script in fncts/",
+    "Dust WCS LkUp (spawn)": "Input1 = input CSV; Output = output CSV; runs apConsoleWcs.py csv --out out.csv",
+    "Dust Gaia LkUp (spawn)": "Input1 = input CSV; Output = output CSV; runs apConsole.py csv --catalog gaia --radius 5.0 --out out.csv",
+    "Exit": "Close the launcher",
 }
 
 # -----------------------
@@ -103,7 +137,7 @@ class Launcher(QWidget):
             self.action_combo.addItem(label)
         layout.addWidget(self.action_combo, 1, 1, 1, 2)
 
-        # Input boxes (re-usable for many commands)
+        # Input boxes
         layout.addWidget(QLabel("Input 1 (file/folder):"), 2, 0)
         self.input1 = QLineEdit()
         layout.addWidget(self.input1, 2, 1)
@@ -125,12 +159,11 @@ class Launcher(QWidget):
         btn3.clicked.connect(lambda: self._browse_save(self.output))
         layout.addWidget(btn3, 4, 2)
 
-        # Extra small entry for numeric/string param
         layout.addWidget(QLabel("Param:"), 5, 0)
         self.param = QLineEdit()
         layout.addWidget(self.param, 5, 1, 1, 2)
 
-        # Run / Clear / Stop
+        # Run / Clear
         btn_run = QPushButton("Run Selected Action")
         btn_run.clicked.connect(self._on_run)
         btn_clear = QPushButton("Clear Log")
@@ -140,19 +173,18 @@ class Launcher(QWidget):
         h.addWidget(btn_clear)
         layout.addLayout(h, 6, 0, 1, 3)
 
-        # Files found area (useful for pattern scans)
+        # Files / Status
         layout.addWidget(QLabel("Files / Status:"), 7, 0)
         self.files_box = QTextEdit()
         self.files_box.setReadOnly(True)
         layout.addWidget(self.files_box, 8, 0, 1, 3)
 
-        # Log area
+        # Log
         layout.addWidget(QLabel("Log:"), 9, 0)
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         layout.addWidget(self.log, 10, 0, 1, 3)
 
-        # Connect combo change to helpful hints
         self.action_combo.currentTextChanged.connect(self._on_action_change)
         self._on_action_change(self.action_combo.currentText())
 
@@ -175,21 +207,90 @@ class Launcher(QWidget):
             lineedit.setText(fn)
 
     def _on_action_change(self, text):
-        # Provide quick guidance in files_box for the selected action
-        hints = {
-            "Align Images By Dir (spawn)": "Use Input1 = input folder ; Input2 = file pattern (eg *.fit*) ; Output = output folder",
-            "Combine Weighted GUI (spawn)": "Use Input1 = input folder ; Input2 = pattern (eg *.fit*) ; Output = out.fits",
-            "Centroid / Ratio GUI (spawn)": "No inputs required; launches cent_ratio_gui.py",
-            "AffineTransform (exec file)": "Executes the affine_transform.py script in fncts/",
-            "Exit": "Close the launcher",
-        }
         self.files_box.clear()
-        hint = hints.get(text, "")
+        hint = ACTION_HINTS.get(text, "")
         if hint:
             self.files_box.append(hint)
         else:
-            self.files_box.append("Select action and click Run. If the action spawns a script, ensure script path exists under 'fncts/'.")
+            self.files_box.append(
+                "Select action and click Run. If the action spawns a script, "
+                "ensure script path exists under 'fncts/'."
+            )
         self._log(f"Selected: {text}")
+
+    def _build_args_from_template(self, mapping):
+        """
+        Build argument list from a template-aware mapping:
+        mapping = (pyexe, script_path, arg1_source, arg2_source, ...)
+        """
+        pyexe = mapping[0]
+        script = mapping[1]
+        script_path = Path(script)
+
+        # allow scripts referenced relative to this file
+        if not script_path.exists():
+            alt = Path("fncts") / script_path.name
+            if alt.exists():
+                script_path = alt
+
+        if not script_path.exists():
+            raise FileNotFoundError(f"Script not found: {script_path}")
+
+        args = [pyexe, str(script_path)]
+
+        # If mapping contains argument templates, use them
+        if len(mapping) > 2:
+            for item in mapping[2:]:
+                if item == "input1":
+                    args.append(self.input1.text().strip())
+                elif item == "input2":
+                    args.append(self.input2.text().strip())
+                elif item == "output":
+                    args.append(self.output.text().strip())
+                elif item == "param":
+                    args.append(self.param.text().strip())
+                else:
+                    # literal argument like "--out", "--catalog", "gaia", "5.0"
+                    args.append(item)
+        else:
+            # fallback to old behavior
+            if self.input1.text().strip():
+                args.append(self.input1.text().strip())
+            if self.input2.text().strip():
+                args.append(self.input2.text().strip())
+            if self.output.text().strip():
+                args.append(self.output.text().strip())
+            if self.param.text().strip():
+                args.append(self.param.text().strip())
+
+        return args
+
+    def _validate_required_fields(self, action_label, mapping):
+        """
+        Simple validation: if template references input1/output/etc,
+        ensure those fields are not empty.
+        """
+        missing = []
+        if len(mapping) > 2:
+            items = mapping[2:]
+            if "input1" in items and not self.input1.text().strip():
+                missing.append("Input 1")
+            if "input2" in items and not self.input2.text().strip():
+                missing.append("Input 2")
+            if "output" in items and not self.output.text().strip():
+                missing.append("Output")
+            if "param" in items and not self.param.text().strip():
+                missing.append("Param")
+
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Missing input",
+                f"The following fields are required for '{action_label}': "
+                + ", ".join(missing),
+            )
+            return False
+        return True
 
     def _on_run(self):
         action_label = self.action_combo.currentText()
@@ -203,33 +304,24 @@ class Launcher(QWidget):
             QApplication.quit()
             return
 
-        # If mapping is a spawn command tuple
+        # Spawn command tuple
         if isinstance(mapping, tuple) and len(mapping) >= 2 and mapping[0] == sys.executable:
-            pyexe = mapping[0]
-            script = mapping[1]
-            script_path = Path(script)
-            # allow scripts referenced relative to this file
-            if not script_path.exists():
-                # try relative fncts/ folder
-                alt = Path("fncts") / script_path.name
-                if alt.exists():
-                    script_path = alt
-            if not script_path.exists():
-                self._log(f"Script not found: {script_path}")
-                QMessageBox.critical(self, "Script not found", f"{script_path} does not exist")
+            if not self._validate_required_fields(action_label, mapping):
                 return
 
-            # Build argument list from UI entries when useful
-            args = [pyexe, str(script_path)]
-            # Common patterns: some scripts accept input1, input2, output, pattern, param
-            if self.input1.text().strip():
-                args.append(self.input1.text().strip())
-            if self.input2.text().strip():
-                args.append(self.input2.text().strip())
-            if self.output.text().strip():
-                args.append(self.output.text().strip())
-            if self.param.text().strip():
-                args.append(self.param.text().strip())
+            try:
+                args = self._build_args_from_template(mapping)
+            except FileNotFoundError as e:
+                self._log(str(e))
+                QMessageBox.critical(self, "Script not found", str(e))
+                return
+            except Exception as e:
+                self._log(f"Error building args: {e}")
+                QMessageBox.critical(self, "Argument error", str(e))
+                return
+
+            # Preview command
+            self._log("Command:", " ".join(args))
 
             # Launch subprocess detached so GUI remains responsive
             try:
@@ -240,8 +332,7 @@ class Launcher(QWidget):
                 QMessageBox.critical(self, "Spawn error", str(e))
             return
 
-        # If mapping was intended to be run by exec inside the launcher (rare)
-        # mapping could be a callable; call it with the inputs dict
+        # Callable mapping (rare)
         if callable(mapping):
             inputs = {
                 "input1": self.input1.text().strip(),
@@ -257,7 +348,6 @@ class Launcher(QWidget):
                 QMessageBox.critical(self, "Action error", str(e))
             return
 
-        # Unknown mapping format
         QMessageBox.warning(self, "Unsupported action", f"Action mapping for '{action_label}' is not supported")
 
 # -----------------------
