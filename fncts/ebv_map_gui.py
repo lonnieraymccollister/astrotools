@@ -172,10 +172,10 @@ def map_worker(params, signals: WorkerSignals):
             pct_b = (10.0**(0.4 * mean_A_b) - 1.0) * 100.0
 
             # build a compact title fragment
-            title_corr = (f"E(B-V)={mean_ebv:.3f} mag  "
-                          f"A_R={mean_A_r:.3f} mag (+{pct_r:.1f}%)  "
-                          f"A_G={mean_A_g:.3f} mag (+{pct_g:.1f}%)  "
-                          f"A_B={mean_A_b:.3f} mag (+{pct_b:.1f}%)")
+            title_corr = (f"dust-  "
+                          f"A_R={mean_A_r:.3f} mag (+{pct_r:.4f}%)  "
+                          f"A_G={mean_A_g:.3f} mag (+{pct_g:.4f}%)  "
+                          f"A_B={mean_A_b:.3f} mag (+{pct_b:.4f}%)")
             signals.status.emit(f"Average extinction summary: {title_corr}")
         except Exception as e:
             title_corr = "Mean extinction: N/A"
