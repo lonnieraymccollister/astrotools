@@ -164,7 +164,18 @@ def fmt_empty_or(value, fmt="{:.4f}"):
 
 
 def build_output_lines(results, catalog):
-    """Convert list of result dicts into CSV lines (strings)."""
+    """Convert list of result dicts into CSV lines (strings) with safe formatting."""
+
+    def fmt_float(val, fmt="{:.6f}"):
+        """Safely format floats; return empty string for anything non-numeric."""
+        try:
+            if val is None:
+                return ""
+            return fmt.format(float(val))
+        except Exception:
+            return ""
+
+    # Column order
     if catalog == 'apass':
         mag_labels = ['Bmag', 'gmag', 'rmag', 'imag', 'Vmag']
     else:
@@ -175,29 +186,35 @@ def build_output_lines(results, catalog):
 
     for item in results:
         if item is None:
-            # parser failure or query fail already encoded as dict in main; keep blank line
             continue
+
+        # Always preserve input coords as strings
         ra_in = item.get('input_ra', '')
         dec_in = item.get('input_dec', '')
-        cat_ra = (f"{item.get('cat_ra'):.8f}" if item.get('cat_ra') is not None else "")
-        cat_dec = (f"{item.get('cat_dec'):.8f}" if item.get('cat_dec') is not None else "")
-        sep = (f"{item.get('sep_arcsec'):.3f}" if item.get('sep_arcsec') is not None else "")
 
-        if catalog == 'apass':
-            mags = [item.get('Bmag'), item.get('gmag'), item.get('rmag'), item.get('imag'), item.get('Vmag')]
-            mags_fmt = [fmt_empty_or(m) for m in mags]
-        else:
-            g = item.get('Gmag')
-            bp = item.get('BPmag')
-            rp = item.get('RPmag')
-            plx = item.get('parallax')
-            e_plx = item.get('parallax_error')
-            ruwe = item.get('ruwe')
-            mags_fmt = [fmt_empty_or(g), fmt_empty_or(bp), fmt_empty_or(rp),
-                        fmt_empty_or(plx), fmt_empty_or(e_plx), fmt_empty_or(ruwe)]
+        # Safe formatting for numeric fields
+        cat_ra = fmt_float(item.get('cat_ra'), "{:.8f}")
+        cat_dec = fmt_float(item.get('cat_dec'), "{:.8f}")
+        sep = fmt_float(item.get('sep_arcsec'), "{:.3f}")
+
+        # Magnitudes and other numeric fields
+        mags_fmt = []
+        for key in mag_labels:
+            val = item.get(key)
+            # Try numeric formatting first
+            out = fmt_float(val)
+            if out == "":
+                # If not numeric, keep strings like "ERR" or leave blank
+                if isinstance(val, str) and val not in ("", "None"):
+                    mags_fmt.append(val)
+                else:
+                    mags_fmt.append("")
+            else:
+                mags_fmt.append(out)
 
         row = [ra_in, dec_in, cat_ra, cat_dec, sep] + mags_fmt
         lines.append(",".join(map(str, row)))
+
     return lines
 
 

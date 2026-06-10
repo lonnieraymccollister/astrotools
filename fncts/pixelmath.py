@@ -491,7 +491,10 @@ class PixelMathWindow(QMainWindow):
                 result_image = np.clip(result_image, 0.0, None)
 
             elif op == "Subtract":
-                result_image = im1 - im2 + inputs["brightness"]
+                im1_safe = np.nan_to_num(im1, nan=0.0)
+                im2_safe = np.nan_to_num(im2, nan=0.0)
+                result_image = im1_safe - im2_safe + inputs["brightness"]
+                result_image = np.clip(result_image, 0.0, None)
 
             elif op == "Subtract-2nd nan":
                 im2_safe = np.nan_to_num(im2, nan=0.0)

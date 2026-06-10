@@ -67,6 +67,7 @@ ACTIONS = {
     "Analyze FITS Roundness & Trails (spawn)": (sys.executable, "analyze_fits_roundness_trails.py"),
     "Normalize GUI (spawn)": (sys.executable, "fncts/normalize_gui.py"),
     "RaDec->2pt Angle GUI (spawn)": (sys.executable, "fncts/radectwoptang_gui.py"),
+    "Mosaic (spawn)": (sys.executable, "fncts/mosaic_gui.py"),
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
 
     # Template-aware dust tools
@@ -79,7 +80,7 @@ ACTIONS = {
         "output"
     ),
 
-    # apConsole.py csv --catalog gaia --radius 5.0 --out out.csv
+    # apConsole.py csv --catalog gaia --radius 5.0 --output out.csv
     "Dust Gaia LkUp (spawn)": (
         sys.executable,
         "fncts/apConsole.py",
@@ -88,7 +89,7 @@ ACTIONS = {
         "gaia",
         "--radius",
         "5.0",
-        "--out",
+        "--output",
         "output"
     ),
 
@@ -110,7 +111,7 @@ ACTION_HINTS = {
     "Centroid / Ratio GUI (spawn)": "No inputs required; launches cent_ratio_gui.py",
     "AffineTransform (exec file)": "Executes the affine_transform.py script in fncts/",
     "Dust WCS LkUp (spawn)": "Input1 = input CSV; Output = output CSV; runs apConsoleWcs.py csv --out out.csv",
-    "Dust Gaia LkUp (spawn)": "Input1 = input CSV; Output = output CSV; runs apConsole.py csv --catalog gaia --radius 5.0 --out out.csv",
+    "Dust Gaia LkUp (spawn)": "Input1 = input CSV; Output = output CSV; runs apConsole.py csv --catalog gaia --radius 5.0 --output out.csv",
     "Exit": "Close the launcher",
 }
 
