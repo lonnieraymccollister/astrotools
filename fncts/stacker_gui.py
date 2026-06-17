@@ -1,39 +1,47 @@
 #!/usr/bin/env python3
 """
-stacker_gui_fixed.py
+stacker_gui.py
 
-Corrected PyQt6 GUI for stacking FITS images with optional reprojection,
-fast sigma-clipped mean, robust shape handling, header sanitization,
-background worker, and an optional weighted combine (per-pixel counts + sqrt scaling).
+Dust-map–oriented FITS stacker with:
+ - Optional reprojection to a mosaic WCS using find_optimal_celestial_wcs (oldest API)
+ - Fallback to first-frame WCS if mosaicking is unavailable
+ - Flux-linear weighted combine (no sqrt scaling)
+ - Primary HDU = stacked image, WEIGHTS extension = per-pixel counts
+ - Optional masking of low-coverage pixels (weight < 2)
 """
 
 import sys
 import os
 import glob
 import traceback
-import math
 import numpy as np
 
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.stats import sigma_clip
+from astropy.wcs.utils import proj_plane_pixel_scales
+
+# --- Reproject imports with safe fallback ---
 from reproject import reproject_interp
+try:
+    from reproject.mosaicking import find_optimal_celestial_wcs
+except Exception:
+    find_optimal_celestial_wcs = None
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton,
     QFileDialog, QGridLayout, QComboBox, QCheckBox, QTextEdit, QMessageBox,
-    QHBoxLayout, QVBoxLayout, QDoubleSpinBox, QProgressBar
+    QDoubleSpinBox, QProgressBar
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 # -------------------------
-# FITS helpers (robust)
+# FITS helpers
 # -------------------------
 def load_fits(path):
-    """Return (data, header) for the first HDU that contains data."""
     with fits.open(path, memmap=False) as hdul:
         for hdu in hdul:
             if hdu.data is not None:
@@ -41,47 +49,34 @@ def load_fits(path):
     raise ValueError(f"No image data in {path}")
 
 def sanitize_header_for_float32(header):
-    """Return a copy of header with BITPIX set to -32 and scaling keys removed."""
     hdr = header.copy()
-    hdr['BITPIX'] = -32
-    for k in ('BZERO', 'BSCALE'):
+    hdr["BITPIX"] = -32
+    for k in ("BZERO", "BSCALE"):
         if k in hdr:
             hdr.pop(k)
     return hdr
 
 def normalize_fits_shape(arr):
-    """
-    Normalize FITS data to either:
-      - 2D array: (H, W) for mono
-      - 3D array: (3, H, W) for RGB (channels-first)
-    Accepts common shapes: (H,W), (H,W,1), (1,H,W), (H,W,3), (3,H,W).
-    """
     a = np.asarray(arr)
     if a.ndim == 2:
         return a
     if a.ndim == 3:
-        # (H,W,1) or (H,W,3)
         if a.shape[2] == 1:
             return a[:, :, 0]
         if a.shape[2] == 3:
             return np.transpose(a, (2, 0, 1))
-        # (1,H,W) or (3,H,W)
         if a.shape[0] == 1:
             return a[0]
         if a.shape[0] == 3:
             return a
-    # fallback: squeeze and re-evaluate
     s = np.squeeze(a)
     if s.ndim == 2:
         return s
     if s.ndim == 3 and s.shape[0] in (1, 3):
-        if s.shape[0] == 1:
-            return s[0]
-        return s
+        return s[0] if s.shape[0] == 1 else s
     raise ValueError(f"Unsupported FITS shape: {a.shape}")
 
 def to_luma(arr):
-    """Return 2D luma for alignment/reprojection decisions."""
     a = np.asarray(arr)
     if a.ndim == 2:
         return a.astype(np.float64)
@@ -99,94 +94,63 @@ def compute_stack_median(cube):
     return np.nanmedian(cube, axis=0)
 
 def compute_stack_sigma_clip(cube, sigma=3.0, maxiters=5):
-    """
-    Vectorized sigma-clipped mean along axis 0.
-    Uses astropy.stats.sigma_clip which supports axis parameter.
-    """
-    # sigma_clip returns a MaskedArray; compute mean over unmasked values
     clipped = sigma_clip(cube, sigma=sigma, maxiters=maxiters, axis=0, masked=True)
-    # Convert masked array to float with NaNs where masked
     arr = clipped.filled(np.nan)
     return np.nanmean(arr, axis=0)
 
 def weighted_combine_from_cube(cube, mask_threshold=0.0):
-    """
-    Implements the combine behavior from the second program:
-      - For each pixel, count contributions where pixel > mask_threshold
-      - Compute per-pixel average = sum / count
-      - Multiply per-pixel average by sqrt(max_count) where max_count is the
-        maximum contributions across the canvas
-    Returns final_image (float64), weight_map (float64)
-    """
-    # cube shape: (N, Y, X) or (N, 3, Y, X) - we only support mono cube here
     if cube.ndim != 3:
-        raise ValueError("weighted_combine_from_cube expects a mono cube with shape (N, Y, X)")
-    # mask contributions
+        raise ValueError("weighted_combine_from_cube expects (N, Y, X)")
     finite_mask = np.isfinite(cube)
     contrib_mask = finite_mask & (cube > mask_threshold)
-    weights = contrib_mask.sum(axis=0).astype(np.float64)  # shape (Y, X)
-    # sum contributions (ignore non-contributors)
+    weights = contrib_mask.sum(axis=0).astype(np.float64)
     sum_vals = np.where(contrib_mask, cube, 0.0).sum(axis=0)
-    # avoid divide by zero
     valid = weights > 0
     avg = np.full_like(sum_vals, np.nan, dtype=np.float64)
     avg[valid] = sum_vals[valid] / weights[valid]
-    max_weight = float(np.max(weights)) if weights.size else 0.0
-    if max_weight <= 0:
-        raise RuntimeError("No valid contributions found across inputs (all weights zero)")
-    scaled = np.full_like(avg, np.nan, dtype=np.float64)
-    scaled[valid] = avg[valid] * math.sqrt(max_weight)
-    return scaled, weights
+    return avg, weights
 
-def save_as_float32(data64, header, output_file, overwrite=True):
-    data32 = data64.astype(np.float32)
-    hdr = sanitize_header_for_float32(header) if header is not None else fits.Header()
-    hdu = fits.PrimaryHDU(data=data32, header=hdr)
-    hdu.writeto(output_file, overwrite=overwrite)
+def save_stack_and_weights(stack, weights, header, outpath, overwrite=True):
+    hdr_out = sanitize_header_for_float32(header) if header is not None else fits.Header()
+    primary = fits.PrimaryHDU(stack.astype(np.float32), header=hdr_out)
+    hdu_weights = fits.ImageHDU(weights.astype(np.float32), name="WEIGHTS")
+    fits.HDUList([primary, hdu_weights]).writeto(outpath, overwrite=overwrite)
 
 # -------------------------
-# Preview canvas (fixed)
+# Preview canvas
 # -------------------------
 class PreviewCanvas(FigureCanvas):
     def __init__(self, parent=None):
-        fig = Figure(figsize=(6,4))
+        fig = Figure(figsize=(6, 4))
         super().__init__(fig)
-        # create axes once and reuse
-        self.ax_img = fig.add_subplot(1,2,1)
-        self.ax_hist = fig.add_subplot(1,2,2)
+        self.ax_img = fig.add_subplot(1, 2, 1)
+        self.ax_hist = fig.add_subplot(1, 2, 2)
         fig.tight_layout()
-        self._img_artist = None
         self._cbar = None
 
     def plot(self, image, header=None, hist_bins=256):
-        # clear existing axes content but keep axes objects
         self.ax_img.clear()
         self.ax_hist.clear()
 
         if image is None:
             self.ax_img.set_title("No image")
         else:
-            # If WCS header provided, attempt WCS projection; fallback to normal imshow
             try:
                 if header is not None:
                     wcs = WCS(header)
-                    # replace ax_img with a WCSAxes if possible
                     self.figure.delaxes(self.ax_img)
-                    self.ax_img = self.figure.add_subplot(1,2,1, projection=wcs)
+                    self.ax_img = self.figure.add_subplot(1, 2, 1, projection=wcs)
                 else:
-                    # ensure ax_img is a normal Axes
                     self.figure.delaxes(self.ax_img)
-                    self.ax_img = self.figure.add_subplot(1,2,1)
+                    self.ax_img = self.figure.add_subplot(1, 2, 1)
             except Exception:
-                # fallback: ensure a normal axes
                 try:
                     self.figure.delaxes(self.ax_img)
                 except Exception:
                     pass
-                self.ax_img = self.figure.add_subplot(1,2,1)
+                self.ax_img = self.figure.add_subplot(1, 2, 1)
 
             im = self.ax_img.imshow(image, origin="lower", cmap="gray")
-            # remove old colorbar if present
             if self._cbar:
                 try:
                     self._cbar.remove()
@@ -203,14 +167,17 @@ class PreviewCanvas(FigureCanvas):
         self.draw()
 
 # -------------------------
-# Worker thread for reprojection/stacking
+# Worker thread
 # -------------------------
 class StackWorker(QThread):
     log = pyqtSignal(str)
-    progress = pyqtSignal(int)  # percent
-    finished = pyqtSignal(bool, str, object, object)  # success, message, stack_result, header
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(bool, str, object, object)
 
-    def __init__(self, files, reproject_flag, method, sigma, weighted_combine_flag, mask_threshold, outpath, overwrite):
+    def __init__(self, files, reproject_flag, method, sigma,
+                 weighted_combine_flag, mask_threshold,
+                 mask_lowcov_flag, lowcov_threshold,
+                 outpath, overwrite):
         super().__init__()
         self.files = files
         self.reproject_flag = reproject_flag
@@ -218,6 +185,8 @@ class StackWorker(QThread):
         self.sigma = sigma
         self.weighted_combine_flag = weighted_combine_flag
         self.mask_threshold = float(mask_threshold)
+        self.mask_lowcov_flag = mask_lowcov_flag
+        self.lowcov_threshold = int(lowcov_threshold)
         self.outpath = outpath
         self.overwrite = overwrite
         self._abort = False
@@ -232,47 +201,83 @@ class StackWorker(QThread):
         try:
             N = len(self.files)
             self._emit(f"Processing {N} files...")
-            # Determine reference WCS and shape if reprojection requested
-            if self.reproject_flag:
-                # Validate WCS on first file
+
+            frames = []
+            for i, fn in enumerate(self.files, start=1):
+                if self._abort:
+                    self._emit("Aborted by user.")
+                    self.finished.emit(False, "Aborted", None, None)
+                    return
+                self._emit(f"[{i}/{N}] Reading: {os.path.basename(fn)}")
                 try:
-                    data0, hdr0 = load_fits(self.files[0])
-                    wcs0 = WCS(hdr0)
-                    ny, nx = int(hdr0.get("NAXIS2")), int(hdr0.get("NAXIS1"))
+                    data, hdr = load_fits(fn)
+                    data = normalize_fits_shape(data)
+                    if data.ndim == 3 and data.shape[0] == 3:
+                        data_for_wcs = np.mean(data.astype(np.float64), axis=0)
+                    else:
+                        data_for_wcs = data.astype(np.float64)
+                    wcs = WCS(hdr)
+                    frames.append((data_for_wcs, hdr, wcs))
                 except Exception as e:
-                    raise RuntimeError(f"Failed to read reference WCS from {self.files[0]}: {e}")
-                # Reproject each file into ref grid and build cube
+                    self._emit(f"Failed to read {fn}: {e}; skipping")
+                self.progress.emit(int(100.0 * i / N))
+
+            if not frames:
+                raise RuntimeError("No valid input files loaded.")
+
+            # -------------------------
+            # WCS selection
+            # -------------------------
+            if self.reproject_flag:
+                if find_optimal_celestial_wcs is None:
+                    self._emit("find_optimal_celestial_wcs not available; using first-frame WCS.")
+                    data0, hdr0 = load_fits(self.files[0])
+                    data0 = normalize_fits_shape(data0)
+                    if data0.ndim == 3 and data0.shape[0] == 3:
+                        data0 = np.mean(data0.astype(np.float64), axis=0)
+                    else:
+                        data0 = data0.astype(np.float64)
+                    mosaic_wcs = WCS(hdr0)
+                    ny, nx = data0.shape
+                    shape_out = (ny, nx)
+                else:
+                    self._emit("Computing optimal mosaic WCS for all inputs...")
+                    pairs = [(f[0], f[2]) for f in frames]
+                    mosaic_wcs, shape_out = find_optimal_celestial_wcs(pairs)
+                    ny, nx = shape_out
+
+                # -------------------------
+                # Reproject frames
+                # -------------------------
                 cube_list = []
-                for i, fn in enumerate(self.files, start=1):
+                for i, (data_for_wcs, hdr, wcs_in) in enumerate(frames, start=1):
                     if self._abort:
                         self._emit("Aborted by user.")
                         self.finished.emit(False, "Aborted", None, None)
                         return
-                    self._emit(f"[{i}/{N}] Reprojecting: {os.path.basename(fn)}")
+                    self._emit(f"[{i}/{N}] Reprojecting: {os.path.basename(self.files[i-1])}")
                     try:
-                        data, hdr = load_fits(fn)
-                        # normalize shape and convert to mono if needed
-                        data = normalize_fits_shape(data)
-                        # require 2D mono for weighted combine; if 3-channel, convert to luma for stacking
-                        if data.ndim == 3 and data.shape[0] == 3:
-                            data_for_reproj = np.mean(data.astype(np.float64), axis=0)
-                        else:
-                            data_for_reproj = data.astype(np.float64)
-                        wcs_in = WCS(hdr)
-                        reprojected, footprint = reproject_interp((data_for_reproj, wcs_in), wcs0, shape_out=(ny, nx))
-                        # replace non-finite with NaN
+                        reprojected, footprint = reproject_interp(
+                            (data_for_wcs, wcs_in),
+                            mosaic_wcs,
+                            shape_out=shape_out
+                        )
                         reprojected = np.asarray(reprojected, dtype=np.float64)
                         reprojected[~np.isfinite(reprojected)] = np.nan
                         cube_list.append(reprojected)
                     except Exception as e:
-                        self._emit(f"Failed to reproject {fn}: {e}; skipping")
+                        self._emit(f"Failed to reproject frame {i}: {e}; skipping")
                     self.progress.emit(int(100.0 * i / N))
+
                 if not cube_list:
-                    raise RuntimeError("No files successfully reprojected.")
-                cube = np.stack(cube_list, axis=0)  # shape (M, Y, X)
-                header_out = hdr0  # use reference header for output
+                    raise RuntimeError("No frames successfully reprojected.")
+                cube = np.stack(cube_list, axis=0)
+                header_out = mosaic_wcs.to_header()
+
             else:
-                # load all without reprojection; ensure shapes match
+                # -------------------------
+                # No reprojection
+                # -------------------------
                 shapes = set()
                 arrs = []
                 header_out = None
@@ -285,7 +290,6 @@ class StackWorker(QThread):
                     try:
                         data, hdr = load_fits(fn)
                         data = normalize_fits_shape(data)
-                        # convert 3-channel to luma for stacking (this GUI focuses on mono stacks)
                         if data.ndim == 3 and data.shape[0] == 3:
                             data = np.mean(data.astype(np.float64), axis=0)
                         else:
@@ -302,26 +306,30 @@ class StackWorker(QThread):
                 if len(shapes) != 1:
                     raise RuntimeError("Input FITS files have differing shapes. Enable reprojection or make shapes equal.")
                 cube = np.stack(arrs, axis=0)
-            # At this point we have a mono cube (N, Y, X)
+                ny, nx = cube.shape[1], cube.shape[2]
+
             self._emit(f"Cube shape: {cube.shape}, dtype={cube.dtype}")
 
-            # Choose stacking method or weighted combine
+            # -------------------------
+            # Weighted combine
+            # -------------------------
             if self.weighted_combine_flag:
-                self._emit("Performing weighted combine (per-pixel contribution count + sqrt scaling)...")
+                self._emit("Performing flux-linear weighted combine...")
                 final, weight_map = weighted_combine_from_cube(cube, mask_threshold=self.mask_threshold)
-                # Save both final and weight map as separate HDUs (primary=final, extension=weights)
-                hdr_out = sanitize_header_for_float32(header_out) if header_out is not None else fits.Header()
-                primary = fits.PrimaryHDU(final.astype(np.float32), header=hdr_out)
-                hdu_weights = fits.ImageHDU(weight_map.astype(np.float32), name="WEIGHTS")
-                hdul = fits.HDUList([primary, hdu_weights])
+                if self.mask_lowcov_flag:
+                    self._emit(f"Masking pixels with weight < {self.lowcov_threshold}")
+                    mask = weight_map < self.lowcov_threshold
+                    final[mask] = np.nan
                 if os.path.exists(self.outpath) and not self.overwrite:
                     raise FileExistsError(f"Output exists and overwrite disabled: {self.outpath}")
-                hdul.writeto(self.outpath, overwrite=self.overwrite)
+                save_stack_and_weights(final, weight_map, header_out, self.outpath, overwrite=self.overwrite)
                 self._emit(f"Wrote weighted composite and weight map to {self.outpath}")
                 self.finished.emit(True, f"Wrote {self.outpath}", final, header_out)
                 return
 
+            # -------------------------
             # Standard stacking
+            # -------------------------
             self._emit(f"Computing stack with method: {self.method}")
             if self.method == "mean":
                 result = compute_stack_mean(cube)
@@ -332,10 +340,9 @@ class StackWorker(QThread):
             else:
                 raise ValueError(f"Unknown stacking method: {self.method}")
 
-            # Save result
             if os.path.exists(self.outpath) and not self.overwrite:
                 raise FileExistsError(f"Output exists and overwrite disabled: {self.outpath}")
-            save_as_float32(result, header_out, self.outpath, overwrite=self.overwrite)
+            save_stack_and_weights(result, np.ones_like(result), header_out, self.outpath, overwrite=self.overwrite)
             self._emit(f"Saved stacked image to {self.outpath}")
             self.finished.emit(True, f"Wrote {self.outpath}", result, header_out)
 
@@ -350,7 +357,7 @@ class StackWorker(QThread):
 class StackerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("FITS Stacker (fixed + weighted combine)")
+        self.setWindowTitle("FITS Stacker (dust-map optimized)")
         self._build_ui()
         self.resize(1100, 760)
         self.stack_result = None
@@ -363,7 +370,6 @@ class StackerWindow(QMainWindow):
         grid = QGridLayout()
         central.setLayout(grid)
 
-        # Input directory
         grid.addWidget(QLabel("Input FITS directory:"), 0, 0)
         self.input_dir_edit = QLineEdit()
         grid.addWidget(self.input_dir_edit, 0, 1, 1, 3)
@@ -371,7 +377,6 @@ class StackerWindow(QMainWindow):
         btn_dir.clicked.connect(self._browse_dir)
         grid.addWidget(btn_dir, 0, 4)
 
-        # Output filename
         grid.addWidget(QLabel("Output FITS file:"), 1, 0)
         self.output_edit = QLineEdit("stacked_output.fits")
         grid.addWidget(self.output_edit, 1, 1, 1, 3)
@@ -379,26 +384,22 @@ class StackerWindow(QMainWindow):
         btn_out.clicked.connect(self._browse_save)
         grid.addWidget(btn_out, 1, 4)
 
-        # Method dropdown
         grid.addWidget(QLabel("Stack method:"), 2, 0)
         self.method_combo = QComboBox()
         self.method_combo.addItems(["mean", "median", "sigma-clipped mean"])
         grid.addWidget(self.method_combo, 2, 1)
 
-        # Sigma parameter (for sigma-clipped mean)
         grid.addWidget(QLabel("Sigma (for sigma-clipped):"), 2, 2)
         self.sigma_edit = QLineEdit("3.0")
         grid.addWidget(self.sigma_edit, 2, 3)
 
-        # Reproject toggle
-        self.reproject_chk = QCheckBox("Reproject to first FITS WCS")
+        self.reproject_chk = QCheckBox("Reproject to mosaic WCS (if available)")
+        self.reproject_chk.setChecked(True)
         grid.addWidget(self.reproject_chk, 3, 0, 1, 3)
 
-        # Weighted combine option (per-pixel counts + sqrt scaling)
-        self.weighted_chk = QCheckBox("Weighted combine (per-pixel count + sqrt(max_count) scaling)")
+        self.weighted_chk = QCheckBox("Weighted combine (per-pixel average, flux-linear)")
         grid.addWidget(self.weighted_chk, 4, 0, 1, 4)
 
-        # Mask threshold for weighted combine
         grid.addWidget(QLabel("Mask threshold (for weighted combine):"), 5, 0)
         self.mask_spin = QDoubleSpinBox()
         self.mask_spin.setRange(-1e12, 1e12)
@@ -406,36 +407,39 @@ class StackerWindow(QMainWindow):
         self.mask_spin.setValue(0.0)
         grid.addWidget(self.mask_spin, 5, 1)
 
-        # Run / preview / log
+        self.lowcov_chk = QCheckBox("Mask low-coverage pixels (weight < 2)")
+        self.lowcov_chk.setChecked(True)
+        grid.addWidget(self.lowcov_chk, 6, 0, 1, 3)
+
         self.run_btn = QPushButton("Run Stack")
         self.run_btn.clicked.connect(self._on_run)
-        grid.addWidget(self.run_btn, 6, 0)
+        grid.addWidget(self.run_btn, 7, 0)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self._on_cancel)
         self.cancel_btn.setEnabled(False)
-        grid.addWidget(self.cancel_btn, 6, 1)
+        grid.addWidget(self.cancel_btn, 7, 1)
 
         self.preview_btn = QPushButton("Preview Last Result")
         self.preview_btn.clicked.connect(self._on_preview)
-        grid.addWidget(self.preview_btn, 6, 2)
+        grid.addWidget(self.preview_btn, 7, 2)
 
         self.load_output_btn = QPushButton("Plot Output File")
         self.load_output_btn.clicked.connect(self._plot_output_file)
-        grid.addWidget(self.load_output_btn, 6, 3)
+        grid.addWidget(self.load_output_btn, 7, 3)
 
         # Progress bar and log
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
-        grid.addWidget(self.progress, 7, 0, 1, 5)
+        grid.addWidget(self.progress, 8, 0, 1, 5)
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        grid.addWidget(self.log_box, 8, 0, 1, 5)
+        grid.addWidget(self.log_box, 9, 0, 1, 5)
 
         # Preview canvas
         self.canvas = PreviewCanvas()
-        grid.addWidget(self.canvas, 9, 0, 6, 5)
+        grid.addWidget(self.canvas, 10, 0, 6, 5)
 
     def _log(self, *args):
         self.log_box.append(" ".join(str(a) for a in args))
@@ -464,6 +468,8 @@ class StackerWindow(QMainWindow):
 
             reproject_flag = self.reproject_chk.isChecked()
             weighted_flag = self.weighted_chk.isChecked()
+            mask_lowcov_flag = self.lowcov_chk.isChecked()
+
             method_text = self.method_combo.currentText()
             if method_text == "mean":
                 method = "mean"
@@ -471,19 +477,25 @@ class StackerWindow(QMainWindow):
                 method = "median"
             else:
                 method = "sigma"
+
             sigma = float(self.sigma_edit.text().strip() or 3.0)
             mask_thresh = float(self.mask_spin.value())
-            outpath = self.output_edit.text().strip() or "stacked_output.fits"
-            overwrite = True  # always allow overwrite via save dialog; could add checkbox
+            lowcov_threshold = 2
 
-            # disable UI while running
+            outpath = self.output_edit.text().strip() or "stacked_output.fits"
+            overwrite = True
+
             self.run_btn.setEnabled(False)
             self.cancel_btn.setEnabled(True)
             self._log("Starting worker thread for reprojection/stacking...")
             self.progress.setValue(0)
 
-            # start worker
-            self.worker = StackWorker(files, reproject_flag, method, sigma, weighted_flag, mask_thresh, outpath, overwrite)
+            self.worker = StackWorker(
+                files, reproject_flag, method, sigma,
+                weighted_flag, mask_thresh,
+                mask_lowcov_flag, lowcov_threshold,
+                outpath, overwrite
+            )
             self.worker.log.connect(self._log)
             self.worker.progress.connect(self.progress.setValue)
             self.worker.finished.connect(self._on_finished)
@@ -534,12 +546,10 @@ class StackerWindow(QMainWindow):
             data, hdr = load_fits(outpath)
             if data is None:
                 raise ValueError("No data in primary HDU")
-            # normalize and convert to 2D for preview
             data = normalize_fits_shape(data)
             if data.ndim == 3 and data.shape[0] == 3:
                 data2 = np.mean(data.astype(np.float64), axis=0)
-            elif data.ndim == 3 and data.shape[0] != 3:
-                # unexpected cube; take first plane
+            elif data.ndim == 3:
                 data2 = data[0].astype(np.float64)
             else:
                 data2 = data.astype(np.float64)
@@ -550,7 +560,6 @@ class StackerWindow(QMainWindow):
             QMessageBox.critical(self, "Plot error", str(e))
             self._log("Plot error:", e)
 
-# ---------- small helper used by preview logging ----------
 def compute_stats(arr):
     a = np.asarray(arr).ravel()
     a = a[~np.isnan(a)]
@@ -558,7 +567,6 @@ def compute_stats(arr):
         return {"min": np.nan, "max": np.nan, "mean": np.nan, "std": np.nan}
     return {"min": float(a.min()), "max": float(a.max()), "mean": float(a.mean()), "std": float(a.std())}
 
-# ---------- entry ----------
 def main():
     app = QApplication(sys.argv)
     w = StackerWindow()
