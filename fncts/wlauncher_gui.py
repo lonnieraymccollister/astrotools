@@ -32,6 +32,7 @@ ACTIONS = {
     "Mask tool GUI (spawn)": (sys.executable, "fncts/mask_tool_gui.py"),
     "Remove NaN tool GUI (spawn)": (sys.executable, "fncts/remove_nan.py"),
     "Siril Batch Plate Solve (spawn)": (sys.executable, "fncts/batchPlatesolve.py"),
+    "BckGround_Extraction (spawn)": (sys.executable, "fncts/BckGround_Extraction.py"),
     "Fits Splitter (spawn)": (sys.executable, "fncts/fits_splitter.py"),
     "Align JPG GUI (spawn)": (sys.executable, "fncts/align_jpg_gui.py"),
     "Align & Stack (spawn)": (sys.executable, "fncts/align_and_stack_gui.py"),
