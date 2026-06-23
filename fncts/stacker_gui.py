@@ -5,9 +5,13 @@ stacker_gui.py
 Dust-map–oriented FITS stacker with:
  - Optional reprojection to a mosaic WCS using find_optimal_celestial_wcs (oldest API)
  - Fallback to first-frame WCS if mosaicking is unavailable
+ - Per-frame background normalization (median subtraction, S/N-safe)
+ - Optionally add synthetic background noise back into the stacked image
  - Flux-linear weighted combine (no sqrt scaling)
  - Primary HDU = stacked image, WEIGHTS extension = per-pixel counts
  - Optional masking of low-coverage pixels (weight < 2)
+ - Optional writing of extended plate-solve metadata into output header
+ - Header normalization for Siril/MaxIm compatibility
 """
 
 import sys
@@ -110,8 +114,120 @@ def weighted_combine_from_cube(cube, mask_threshold=0.0):
     avg[valid] = sum_vals[valid] / weights[valid]
     return avg, weights
 
-def save_stack_and_weights(stack, weights, header, outpath, overwrite=True):
+# -------------------------
+# Header normalization helpers (Siril-friendly)
+# -------------------------
+def ensure_cd_or_pc(hdr):
+    if 'CD1_1' in hdr or 'PC1_1' in hdr:
+        return hdr
+    if 'CDELT1' in hdr and 'CDELT2' in hdr:
+        try:
+            cd1 = float(hdr['CDELT1'])
+            cd2 = float(hdr['CDELT2'])
+            hdr['CD1_1'] = cd1
+            hdr['CD1_2'] = 0.0
+            hdr['CD2_1'] = 0.0
+            hdr['CD2_2'] = cd2
+        except Exception:
+            pass
+    return hdr
+
+def clean_radesys(hdr):
+    if 'RADESYS' in hdr:
+        try:
+            hdr['RADESYS'] = str(hdr['RADESYS']).strip()
+        except Exception:
+            hdr['RADESYS'] = 'ICRS'
+    else:
+        hdr['RADESYS'] = 'ICRS'
+    if 'RADECSYS' not in hdr:
+        hdr['RADECSYS'] = hdr['RADESYS']
+    else:
+        try:
+            hdr['RADECSYS'] = str(hdr['RADECSYS']).strip()
+        except Exception:
+            hdr['RADECSYS'] = hdr['RADESYS']
+    return hdr
+
+def ensure_ctypes_upper(hdr):
+    for k in ('CTYPE1', 'CTYPE2'):
+        if k in hdr:
+            try:
+                hdr[k] = str(hdr[k]).upper()
+            except Exception:
+                pass
+    return hdr
+
+def add_plate_solve_metadata(header_out, mosaic_wcs, pixel_size_um=None):
+    try:
+        header_out['WCSAXES'] = 2
+        header_out['RADESYS'] = 'ICRS'
+        header_out['EQUINOX'] = 2000.0
+        try:
+            scales = proj_plane_pixel_scales(mosaic_wcs) * 3600.0
+            pixscale = float(np.mean(scales))
+            header_out['PIXSCALE'] = (pixscale, 'arcsec/pixel')
+        except Exception:
+            pass
+        cd11 = header_out.get('CD1_1')
+        cd12 = header_out.get('CD1_2')
+        cd21 = header_out.get('CD2_1')
+        cd22 = header_out.get('CD2_2')
+        if cd11 is not None and cd12 is not None and cd21 is not None and cd22 is not None:
+            try:
+                orient = np.degrees(np.arctan2(-float(cd12), float(cd22)))
+                header_out['ORIENTAT'] = (orient, 'Orientation angle (deg)')
+            except Exception:
+                pass
+        if 'CRVAL1' in header_out and 'CRVAL2' in header_out:
+            header_out['OBJCTRA'] = (header_out['CRVAL1'], 'Field center RA')
+            header_out['OBJCTDEC'] = (header_out['CRVAL2'], 'Field center Dec')
+        if pixel_size_um is not None:
+            try:
+                pixscale = float(header_out.get('PIXSCALE', np.nan))
+                if np.isfinite(pixscale) and pixscale != 0.0:
+                    focal_mm = 206.265 * float(pixel_size_um) / pixscale
+                    header_out['FOCALLEN'] = (float(focal_mm), 'Derived focal length (mm)')
+                    header_out['PIXSIZE'] = (float(pixel_size_um), 'Pixel size (um)')
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def normalize_header_for_siril(header_out, mosaic_wcs=None, pixel_size_um=None):
+    hdr = header_out.copy()
+    hdr = ensure_ctypes_upper(hdr)
+    hdr = clean_radesys(hdr)
+    hdr = ensure_cd_or_pc(hdr)
+    if mosaic_wcs is not None:
+        try:
+            wcs_hdr = mosaic_wcs.to_header()
+            for k, v in wcs_hdr.items():
+                hdr[k] = v
+        except Exception:
+            pass
+    try:
+        add_plate_solve_metadata(hdr, mosaic_wcs if mosaic_wcs is not None else WCS(hdr), pixel_size_um=pixel_size_um)
+    except Exception:
+        pass
+    for k in list(hdr.keys()):
+        try:
+            if isinstance(hdr[k], str):
+                hdr[k] = hdr[k].strip()
+        except Exception:
+            pass
+    return hdr
+
+def save_stack_and_weights(stack, weights, header, outpath, overwrite=True, mosaic_wcs=None, write_full_plate=False, pixel_size_um=None):
     hdr_out = sanitize_header_for_float32(header) if header is not None else fits.Header()
+    if write_full_plate and mosaic_wcs is not None:
+        try:
+            wcs_hdr = mosaic_wcs.to_header()
+            for k, v in wcs_hdr.items():
+                hdr_out[k] = v
+        except Exception:
+            pass
+    hdr_out = normalize_header_for_siril(hdr_out, mosaic_wcs=mosaic_wcs, pixel_size_um=pixel_size_um)
     primary = fits.PrimaryHDU(stack.astype(np.float32), header=hdr_out)
     hdu_weights = fits.ImageHDU(weights.astype(np.float32), name="WEIGHTS")
     fits.HDUList([primary, hdu_weights]).writeto(outpath, overwrite=overwrite)
@@ -177,7 +293,8 @@ class StackWorker(QThread):
     def __init__(self, files, reproject_flag, method, sigma,
                  weighted_combine_flag, mask_threshold,
                  mask_lowcov_flag, lowcov_threshold,
-                 outpath, overwrite):
+                 outpath, overwrite,
+                 normalize_background, write_full_plate=False, pixel_size_um=None, add_synthetic_bg=False):
         super().__init__()
         self.files = files
         self.reproject_flag = reproject_flag
@@ -189,7 +306,14 @@ class StackWorker(QThread):
         self.lowcov_threshold = int(lowcov_threshold)
         self.outpath = outpath
         self.overwrite = overwrite
+        self.normalize_background = normalize_background
+        self.write_full_plate = write_full_plate
+        self.pixel_size_um = pixel_size_um
+        self.add_synthetic_bg = add_synthetic_bg
         self._abort = False
+
+        # For estimating background noise to re-inject
+        self._per_frame_bg_stds = []
 
     def abort(self):
         self._abort = True
@@ -203,23 +327,50 @@ class StackWorker(QThread):
             self._emit(f"Processing {N} files...")
 
             frames = []
+            self._per_frame_bg_stds = []
+
             for i, fn in enumerate(self.files, start=1):
                 if self._abort:
                     self._emit("Aborted by user.")
                     self.finished.emit(False, "Aborted", None, None)
                     return
+
                 self._emit(f"[{i}/{N}] Reading: {os.path.basename(fn)}")
+
                 try:
                     data, hdr = load_fits(fn)
                     data = normalize_fits_shape(data)
+
                     if data.ndim == 3 and data.shape[0] == 3:
                         data_for_wcs = np.mean(data.astype(np.float64), axis=0)
                     else:
                         data_for_wcs = data.astype(np.float64)
+
+                    # Estimate per-frame background std BEFORE subtraction
+                    try:
+                        clipped = sigma_clip(data_for_wcs, sigma=3.0, maxiters=3)
+                        bg_std = float(np.nanstd(clipped.filled(np.nan)))
+                        if not np.isfinite(bg_std) or bg_std <= 0:
+                            bg_std = float(np.nanstd(data_for_wcs[np.isfinite(data_for_wcs)]))
+                    except Exception:
+                        bg_std = float(np.nanstd(data_for_wcs[np.isfinite(data_for_wcs)]))
+                    if np.isfinite(bg_std) and bg_std > 0:
+                        self._per_frame_bg_stds.append(bg_std)
+
+                    # Per-frame background normalization (S/N-safe)
+                    if self.normalize_background:
+                        try:
+                            bg = float(np.nanmedian(sigma_clip(data_for_wcs, sigma=3.0)))
+                        except Exception:
+                            bg = float(np.nanmedian(data_for_wcs[np.isfinite(data_for_wcs)]))
+                        data_for_wcs = data_for_wcs - bg
+
                     wcs = WCS(hdr)
                     frames.append((data_for_wcs, hdr, wcs))
+
                 except Exception as e:
                     self._emit(f"Failed to read {fn}: {e}; skipping")
+
                 self.progress.emit(int(100.0 * i / N))
 
             if not frames:
@@ -228,6 +379,9 @@ class StackWorker(QThread):
             # -------------------------
             # WCS selection
             # -------------------------
+            mosaic_wcs = None
+            header_out = None
+
             if self.reproject_flag:
                 if find_optimal_celestial_wcs is None:
                     self._emit("find_optimal_celestial_wcs not available; using first-frame WCS.")
@@ -255,7 +409,9 @@ class StackWorker(QThread):
                         self._emit("Aborted by user.")
                         self.finished.emit(False, "Aborted", None, None)
                         return
+
                     self._emit(f"[{i}/{N}] Reprojecting: {os.path.basename(self.files[i-1])}")
+
                     try:
                         reprojected, footprint = reproject_interp(
                             (data_for_wcs, wcs_in),
@@ -267,10 +423,12 @@ class StackWorker(QThread):
                         cube_list.append(reprojected)
                     except Exception as e:
                         self._emit(f"Failed to reproject frame {i}: {e}; skipping")
+
                     self.progress.emit(int(100.0 * i / N))
 
                 if not cube_list:
                     raise RuntimeError("No frames successfully reprojected.")
+
                 cube = np.stack(cube_list, axis=0)
                 header_out = mosaic_wcs.to_header()
 
@@ -281,30 +439,60 @@ class StackWorker(QThread):
                 shapes = set()
                 arrs = []
                 header_out = None
+
                 for i, fn in enumerate(self.files, start=1):
                     if self._abort:
                         self._emit("Aborted by user.")
                         self.finished.emit(False, "Aborted", None, None)
                         return
+
                     self._emit(f"[{i}/{N}] Loading: {os.path.basename(fn)}")
+
                     try:
                         data, hdr = load_fits(fn)
                         data = normalize_fits_shape(data)
+
                         if data.ndim == 3 and data.shape[0] == 3:
                             data = np.mean(data.astype(np.float64), axis=0)
                         else:
                             data = data.astype(np.float64)
+
+                        # Estimate per-frame background std BEFORE subtraction
+                        try:
+                            clipped = sigma_clip(data, sigma=3.0, maxiters=3)
+                            bg_std = float(np.nanstd(clipped.filled(np.nan)))
+                            if not np.isfinite(bg_std) or bg_std <= 0:
+                                bg_std = float(np.nanstd(data[np.isfinite(data)]))
+                        except Exception:
+                            bg_std = float(np.nanstd(data[np.isfinite(data)]))
+                        if np.isfinite(bg_std) and bg_std > 0:
+                            self._per_frame_bg_stds.append(bg_std)
+
+                        # Per-frame background normalization
+                        if self.normalize_background:
+                            try:
+                                bg = float(np.nanmedian(sigma_clip(data, sigma=3.0)))
+                            except Exception:
+                                bg = float(np.nanmedian(data[np.isfinite(data)]))
+                            data = data - bg
+
                         arrs.append(data)
                         shapes.add(data.shape)
+
                         if header_out is None:
                             header_out = hdr
+
                     except Exception as e:
                         self._emit(f"Failed to read {fn}: {e}; skipping")
+
                     self.progress.emit(int(100.0 * i / N))
+
                 if not arrs:
                     raise RuntimeError("No valid input files loaded.")
+
                 if len(shapes) != 1:
                     raise RuntimeError("Input FITS files have differing shapes. Enable reprojection or make shapes equal.")
+
                 cube = np.stack(arrs, axis=0)
                 ny, nx = cube.shape[1], cube.shape[2]
 
@@ -316,13 +504,49 @@ class StackWorker(QThread):
             if self.weighted_combine_flag:
                 self._emit("Performing flux-linear weighted combine...")
                 final, weight_map = weighted_combine_from_cube(cube, mask_threshold=self.mask_threshold)
+
                 if self.mask_lowcov_flag:
                     self._emit(f"Masking pixels with weight < {self.lowcov_threshold}")
                     mask = weight_map < self.lowcov_threshold
                     final[mask] = np.nan
+
+                # Optionally add synthetic background noise back in
+                if self.add_synthetic_bg:
+                    try:
+                        if len(self._per_frame_bg_stds) >= 1:
+                            sigma_med = float(np.median(self._per_frame_bg_stds))
+                            nframes = max(1, len(self._per_frame_bg_stds))
+                            stacked_noise_std = sigma_med / np.sqrt(nframes)
+                        else:
+                            # fallback: estimate from final image clipped
+                            clipped_final = sigma_clip(final, sigma=3.0, maxiters=3)
+                            stacked_noise_std = float(np.nanstd(clipped_final.filled(np.nan)))
+                            if not np.isfinite(stacked_noise_std) or stacked_noise_std <= 0:
+                                stacked_noise_std = 0.0
+                        if stacked_noise_std > 0:
+                            rng = np.random.default_rng()
+                            noise = rng.normal(loc=0.0, scale=stacked_noise_std, size=final.shape)
+                            # Optionally scale noise by coverage (more noise where fewer frames)
+                            try:
+                                cov = np.where(np.isfinite(weight_map) & (weight_map > 0), weight_map, 0.0)
+                                cov_factor = np.sqrt(np.maximum(1.0, np.nanmax(cov)) / np.maximum(1.0, cov))
+                                noise = noise * cov_factor
+                            except Exception:
+                                pass
+                            final = final + noise
+                            self._emit(f"Added synthetic background noise (sigma ~ {stacked_noise_std:.4g}) to stacked image.")
+                        else:
+                            self._emit("Synthetic background noise not added: estimated stacked noise <= 0.")
+                    except Exception as e:
+                        self._emit(f"Failed to add synthetic background noise: {e}")
+
                 if os.path.exists(self.outpath) and not self.overwrite:
                     raise FileExistsError(f"Output exists and overwrite disabled: {self.outpath}")
-                save_stack_and_weights(final, weight_map, header_out, self.outpath, overwrite=self.overwrite)
+
+                save_stack_and_weights(final, weight_map, header_out, self.outpath, overwrite=self.overwrite,
+                                       mosaic_wcs=(mosaic_wcs if self.reproject_flag else None),
+                                       write_full_plate=self.write_full_plate,
+                                       pixel_size_um=self.pixel_size_um)
                 self._emit(f"Wrote weighted composite and weight map to {self.outpath}")
                 self.finished.emit(True, f"Wrote {self.outpath}", final, header_out)
                 return
@@ -331,6 +555,7 @@ class StackWorker(QThread):
             # Standard stacking
             # -------------------------
             self._emit(f"Computing stack with method: {self.method}")
+
             if self.method == "mean":
                 result = compute_stack_mean(cube)
             elif self.method == "median":
@@ -340,9 +565,35 @@ class StackWorker(QThread):
             else:
                 raise ValueError(f"Unknown stacking method: {self.method}")
 
+            # Optionally add synthetic background noise back in for standard stack
+            if self.add_synthetic_bg:
+                try:
+                    if len(self._per_frame_bg_stds) >= 1:
+                        sigma_med = float(np.median(self._per_frame_bg_stds))
+                        nframes = max(1, len(self._per_frame_bg_stds))
+                        stacked_noise_std = sigma_med / np.sqrt(nframes)
+                    else:
+                        clipped_res = sigma_clip(result, sigma=3.0, maxiters=3)
+                        stacked_noise_std = float(np.nanstd(clipped_res.filled(np.nan)))
+                        if not np.isfinite(stacked_noise_std) or stacked_noise_std <= 0:
+                            stacked_noise_std = 0.0
+                    if stacked_noise_std > 0:
+                        rng = np.random.default_rng()
+                        noise = rng.normal(loc=0.0, scale=stacked_noise_std, size=result.shape)
+                        result = result + noise
+                        self._emit(f"Added synthetic background noise (sigma ~ {stacked_noise_std:.4g}) to stacked image.")
+                    else:
+                        self._emit("Synthetic background noise not added: estimated stacked noise <= 0.")
+                except Exception as e:
+                    self._emit(f"Failed to add synthetic background noise: {e}")
+
             if os.path.exists(self.outpath) and not self.overwrite:
                 raise FileExistsError(f"Output exists and overwrite disabled: {self.outpath}")
-            save_stack_and_weights(result, np.ones_like(result), header_out, self.outpath, overwrite=self.overwrite)
+
+            save_stack_and_weights(result, np.ones_like(result), header_out, self.outpath, overwrite=self.overwrite,
+                                   mosaic_wcs=(mosaic_wcs if self.reproject_flag else None),
+                                   write_full_plate=self.write_full_plate,
+                                   pixel_size_um=self.pixel_size_um)
             self._emit(f"Saved stacked image to {self.outpath}")
             self.finished.emit(True, f"Wrote {self.outpath}", result, header_out)
 
@@ -400,46 +651,65 @@ class StackerWindow(QMainWindow):
         self.weighted_chk = QCheckBox("Weighted combine (per-pixel average, flux-linear)")
         grid.addWidget(self.weighted_chk, 4, 0, 1, 4)
 
-        grid.addWidget(QLabel("Mask threshold (for weighted combine):"), 5, 0)
+        # NEW: Background normalization checkbox
+        self.norm_bg_chk = QCheckBox("Normalize background per frame (median subtraction)")
+        self.norm_bg_chk.setChecked(True)
+        grid.addWidget(self.norm_bg_chk, 5, 0, 1, 4)
+
+        grid.addWidget(QLabel("Mask threshold (for weighted combine):"), 6, 0)
         self.mask_spin = QDoubleSpinBox()
         self.mask_spin.setRange(-1e12, 1e12)
         self.mask_spin.setDecimals(6)
         self.mask_spin.setValue(0.0)
-        grid.addWidget(self.mask_spin, 5, 1)
+        grid.addWidget(self.mask_spin, 6, 1)
 
         self.lowcov_chk = QCheckBox("Mask low-coverage pixels (weight < 2)")
         self.lowcov_chk.setChecked(True)
-        grid.addWidget(self.lowcov_chk, 6, 0, 1, 3)
+        grid.addWidget(self.lowcov_chk, 6, 2, 1, 2)
+
+        # Option to write full plate-solve metadata into output header
+        self.plate_chk = QCheckBox("Write full plate-solve metadata into output header")
+        self.plate_chk.setChecked(True)
+        grid.addWidget(self.plate_chk, 7, 0, 1, 4)
+
+        grid.addWidget(QLabel("Pixel size (um) for focal length derivation (optional):"), 8, 0)
+        self.pixsize_edit = QLineEdit("")
+        grid.addWidget(self.pixsize_edit, 8, 1, 1, 2)
+
+        # NEW: Add synthetic background noise checkbox (default unchecked)
+        self.add_bg_noise_chk = QCheckBox("Add synthetic background noise after stacking (for StarNet/SyQon)")
+        self.add_bg_noise_chk.setChecked(False)
+        grid.addWidget(self.add_bg_noise_chk, 9, 0, 1, 4)
 
         self.run_btn = QPushButton("Run Stack")
         self.run_btn.clicked.connect(self._on_run)
-        grid.addWidget(self.run_btn, 7, 0)
+        grid.addWidget(self.run_btn, 10, 0)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self._on_cancel)
         self.cancel_btn.setEnabled(False)
-        grid.addWidget(self.cancel_btn, 7, 1)
+        grid.addWidget(self.cancel_btn, 10, 1)
 
         self.preview_btn = QPushButton("Preview Last Result")
         self.preview_btn.clicked.connect(self._on_preview)
-        grid.addWidget(self.preview_btn, 7, 2)
+        grid.addWidget(self.preview_btn, 10, 2)
 
         self.load_output_btn = QPushButton("Plot Output File")
         self.load_output_btn.clicked.connect(self._plot_output_file)
-        grid.addWidget(self.load_output_btn, 7, 3)
+        grid.addWidget(self.load_output_btn, 10, 3)
 
         # Progress bar and log
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
-        grid.addWidget(self.progress, 8, 0, 1, 5)
+        grid.addWidget(self.progress, 11, 0, 1, 5)
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        grid.addWidget(self.log_box, 9, 0, 1, 5)
+        grid.addWidget(self.log_box, 12, 0, 1, 5)
 
         # Preview canvas
         self.canvas = PreviewCanvas()
-        grid.addWidget(self.canvas, 10, 0, 6, 5)
+        grid.addWidget(self.canvas, 13, 0, 6, 5)
 
     def _log(self, *args):
         self.log_box.append(" ".join(str(a) for a in args))
@@ -469,6 +739,9 @@ class StackerWindow(QMainWindow):
             reproject_flag = self.reproject_chk.isChecked()
             weighted_flag = self.weighted_chk.isChecked()
             mask_lowcov_flag = self.lowcov_chk.isChecked()
+            normalize_bg_flag = self.norm_bg_chk.isChecked()
+            write_plate_flag = self.plate_chk.isChecked()
+            add_bg_noise_flag = self.add_bg_noise_chk.isChecked()
 
             method_text = self.method_combo.currentText()
             if method_text == "mean":
@@ -485,6 +758,14 @@ class StackerWindow(QMainWindow):
             outpath = self.output_edit.text().strip() or "stacked_output.fits"
             overwrite = True
 
+            pixel_size_um = None
+            ps_text = self.pixsize_edit.text().strip()
+            if ps_text:
+                try:
+                    pixel_size_um = float(ps_text)
+                except Exception:
+                    pixel_size_um = None
+
             self.run_btn.setEnabled(False)
             self.cancel_btn.setEnabled(True)
             self._log("Starting worker thread for reprojection/stacking...")
@@ -494,7 +775,9 @@ class StackerWindow(QMainWindow):
                 files, reproject_flag, method, sigma,
                 weighted_flag, mask_thresh,
                 mask_lowcov_flag, lowcov_threshold,
-                outpath, overwrite
+                outpath, overwrite,
+                normalize_bg_flag, write_full_plate=write_plate_flag, pixel_size_um=pixel_size_um,
+                add_synthetic_bg=add_bg_noise_flag
             )
             self.worker.log.connect(self._log)
             self.worker.progress.connect(self.progress.setValue)
