@@ -7,6 +7,7 @@ Dust-map–oriented FITS stacker with:
  - Fallback to first-frame WCS if mosaicking is unavailable
  - Per-frame background normalization (median subtraction, S/N-safe)
  - Optionally add synthetic background noise back into the stacked image
+ - Optionally match synthetic noise to the weight map (physically correct)
  - Flux-linear weighted combine (no sqrt scaling)
  - Primary HDU = stacked image, WEIGHTS extension = per-pixel counts
  - Optional masking of low-coverage pixels (weight < 2)
@@ -294,7 +295,8 @@ class StackWorker(QThread):
                  weighted_combine_flag, mask_threshold,
                  mask_lowcov_flag, lowcov_threshold,
                  outpath, overwrite,
-                 normalize_background, write_full_plate=False, pixel_size_um=None, add_synthetic_bg=False):
+                 normalize_background, write_full_plate=False, pixel_size_um=None,
+                 add_synthetic_bg=False, match_noise_to_weight=False):
         super().__init__()
         self.files = files
         self.reproject_flag = reproject_flag
@@ -310,6 +312,7 @@ class StackWorker(QThread):
         self.write_full_plate = write_full_plate
         self.pixel_size_um = pixel_size_um
         self.add_synthetic_bg = add_synthetic_bg
+        self.match_noise_to_weight = match_noise_to_weight
         self._abort = False
 
         # For estimating background noise to re-inject
@@ -526,13 +529,17 @@ class StackWorker(QThread):
                         if stacked_noise_std > 0:
                             rng = np.random.default_rng()
                             noise = rng.normal(loc=0.0, scale=stacked_noise_std, size=final.shape)
-                            # Optionally scale noise by coverage (more noise where fewer frames)
-                            try:
-                                cov = np.where(np.isfinite(weight_map) & (weight_map > 0), weight_map, 0.0)
-                                cov_factor = np.sqrt(np.maximum(1.0, np.nanmax(cov)) / np.maximum(1.0, cov))
-                                noise = noise * cov_factor
-                            except Exception:
-                                pass
+
+                            # If matching noise to weight map, scale noise by 1/sqrt(W)
+                            if self.match_noise_to_weight:
+                                try:
+                                    W = np.where(np.isfinite(weight_map) & (weight_map > 0), weight_map, 1.0)
+                                    scale = 1.0 / np.sqrt(W)
+                                    noise = noise * scale
+                                    self._emit("Matched synthetic noise to weight map (sigma scaled by 1/sqrt(W)).")
+                                except Exception as e:
+                                    self._emit(f"Failed to match noise to weight map: {e}")
+
                             final = final + noise
                             self._emit(f"Added synthetic background noise (sigma ~ {stacked_noise_std:.4g}) to stacked image.")
                         else:
@@ -651,7 +658,7 @@ class StackerWindow(QMainWindow):
         self.weighted_chk = QCheckBox("Weighted combine (per-pixel average, flux-linear)")
         grid.addWidget(self.weighted_chk, 4, 0, 1, 4)
 
-        # NEW: Background normalization checkbox
+        # Background normalization checkbox
         self.norm_bg_chk = QCheckBox("Normalize background per frame (median subtraction)")
         self.norm_bg_chk.setChecked(True)
         grid.addWidget(self.norm_bg_chk, 5, 0, 1, 4)
@@ -676,40 +683,46 @@ class StackerWindow(QMainWindow):
         self.pixsize_edit = QLineEdit("")
         grid.addWidget(self.pixsize_edit, 8, 1, 1, 2)
 
-        # NEW: Add synthetic background noise checkbox (default unchecked)
+        # Add synthetic background noise checkbox (default unchecked)
         self.add_bg_noise_chk = QCheckBox("Add synthetic background noise after stacking (for StarNet/SyQon)")
         self.add_bg_noise_chk.setChecked(False)
         grid.addWidget(self.add_bg_noise_chk, 9, 0, 1, 4)
 
+        # Match synthetic noise to weight map checkbox
+        self.match_noise_weight_chk = QCheckBox("Match synthetic noise to weight map (physically correct)")
+        self.match_noise_weight_chk.setChecked(False)
+        grid.addWidget(self.match_noise_weight_chk, 10, 0, 1, 4)
+
+        # Run / Cancel / Preview / Plot buttons
         self.run_btn = QPushButton("Run Stack")
         self.run_btn.clicked.connect(self._on_run)
-        grid.addWidget(self.run_btn, 10, 0)
+        grid.addWidget(self.run_btn, 11, 0)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self._on_cancel)
         self.cancel_btn.setEnabled(False)
-        grid.addWidget(self.cancel_btn, 10, 1)
+        grid.addWidget(self.cancel_btn, 11, 1)
 
         self.preview_btn = QPushButton("Preview Last Result")
         self.preview_btn.clicked.connect(self._on_preview)
-        grid.addWidget(self.preview_btn, 10, 2)
+        grid.addWidget(self.preview_btn, 11, 2)
 
         self.load_output_btn = QPushButton("Plot Output File")
         self.load_output_btn.clicked.connect(self._plot_output_file)
-        grid.addWidget(self.load_output_btn, 10, 3)
+        grid.addWidget(self.load_output_btn, 11, 3)
 
         # Progress bar and log
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
-        grid.addWidget(self.progress, 11, 0, 1, 5)
+        grid.addWidget(self.progress, 12, 0, 1, 5)
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        grid.addWidget(self.log_box, 12, 0, 1, 5)
+        grid.addWidget(self.log_box, 13, 0, 1, 5)
 
         # Preview canvas
         self.canvas = PreviewCanvas()
-        grid.addWidget(self.canvas, 13, 0, 6, 5)
+        grid.addWidget(self.canvas, 14, 0, 6, 5)
 
     def _log(self, *args):
         self.log_box.append(" ".join(str(a) for a in args))
@@ -742,6 +755,7 @@ class StackerWindow(QMainWindow):
             normalize_bg_flag = self.norm_bg_chk.isChecked()
             write_plate_flag = self.plate_chk.isChecked()
             add_bg_noise_flag = self.add_bg_noise_chk.isChecked()
+            match_noise_weight_flag = self.match_noise_weight_chk.isChecked()
 
             method_text = self.method_combo.currentText()
             if method_text == "mean":
@@ -777,7 +791,8 @@ class StackerWindow(QMainWindow):
                 mask_lowcov_flag, lowcov_threshold,
                 outpath, overwrite,
                 normalize_bg_flag, write_full_plate=write_plate_flag, pixel_size_um=pixel_size_um,
-                add_synthetic_bg=add_bg_noise_flag
+                add_synthetic_bg=add_bg_noise_flag,
+                match_noise_to_weight=match_noise_weight_flag
             )
             self.worker.log.connect(self._log)
             self.worker.progress.connect(self.progress.setValue)
