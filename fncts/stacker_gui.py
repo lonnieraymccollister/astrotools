@@ -14,7 +14,6 @@ Dust-map–oriented FITS stacker with:
  - Optional writing of extended plate-solve metadata into output header
  - Header normalization for Siril/MaxIm compatibility
  - Chunked, RAM-safe processing (tile-based reprojection + stacking)
- - Optional pedestal offset for MaxIm/Siril compatibility
 """
 
 import sys
@@ -190,7 +189,7 @@ def add_plate_solve_metadata(header_out, mosaic_wcs, pixel_size_um=None):
             try:
                 pixscale = float(header_out.get('PIXSCALE', np.nan))
                 if np.isfinite(pixscale) and pixscale != 0.0:
-                    focal_mm = 206.265 * float(pixel_size_um) / pixscale
+                    focal_mm = 206.265 * float(pixel_size_um) / pixcale
                     header_out['FOCALLEN'] = (float(focal_mm), 'Derived focal length (mm)')
                     header_out['PIXSIZE'] = (float(pixel_size_um), 'Pixel size (um)')
             except Exception:
@@ -276,7 +275,12 @@ class PreviewCanvas(FigureCanvas):
 # Utility: create tile WCS from mosaic WCS
 # -------------------------
 def tile_wcs_from_mosaic(mosaic_wcs, tile_x0, tile_y0):
+    """
+    Create a WCS for a tile whose origin is (tile_x0, tile_y0) in mosaic pixel coordinates.
+    This adjusts CRPIX so that reproject_interp will produce an array aligned to the tile.
+    """
     hdr = mosaic_wcs.to_header()
+    # CRPIX in header is 1-based; adjust by tile origin
     try:
         crpix1 = float(hdr.get('CRPIX1', 0.0))
         crpix2 = float(hdr.get('CRPIX2', 0.0))
@@ -287,7 +291,7 @@ def tile_wcs_from_mosaic(mosaic_wcs, tile_x0, tile_y0):
     return WCS(hdr)
 
 # -------------------------
-# Worker thread (chunked + pedestal)
+# Worker thread (chunked)
 # -------------------------
 class StackWorker(QThread):
     log = pyqtSignal(str)
@@ -300,8 +304,7 @@ class StackWorker(QThread):
                  outpath, overwrite,
                  normalize_background, write_full_plate=False, pixel_size_um=None,
                  add_synthetic_bg=False, match_noise_to_weight=False,
-                 chunked=False, tile_size=512,
-                 add_pedestal=False, pedestal_value=500.0):
+                 chunked=False, tile_size=512):
         super().__init__()
         self.files = files
         self.reproject_flag = reproject_flag
@@ -320,10 +323,9 @@ class StackWorker(QThread):
         self.match_noise_to_weight = match_noise_to_weight
         self.chunked = chunked
         self.tile_size = int(tile_size)
-        self.add_pedestal = bool(add_pedestal)
-        self.pedestal_value = float(pedestal_value)
         self._abort = False
 
+        # For estimating background noise to re-inject
         self._per_frame_bg_stds = []
 
     def abort(self):
@@ -333,27 +335,39 @@ class StackWorker(QThread):
         self.log.emit(" ".join(str(a) for a in args))
 
     def _create_empty_output(self, header_out, shape_out):
+        """
+        Create an output FITS file with PrimaryHDU zeros and WEIGHTS extension zeros.
+        Overwrite behavior controlled by self.overwrite.
+        """
         ny, nx = shape_out
         hdr_out = sanitize_header_for_float32(header_out) if header_out is not None else fits.Header()
         hdr_out = normalize_header_for_siril(hdr_out, mosaic_wcs=(WCS(header_out) if header_out is not None else None), pixel_size_um=self.pixel_size_um)
-        if self.add_pedestal:
-            hdr_out["PEDESTAL"] = (self.pedestal_value, "Pedestal offset applied (ADU)")
         primary = fits.PrimaryHDU(np.zeros((ny, nx), dtype=np.float32), header=hdr_out)
         hdu_weights = fits.ImageHDU(np.zeros((ny, nx), dtype=np.float32), name="WEIGHTS")
         hdul = fits.HDUList([primary, hdu_weights])
         hdul.writeto(self.outpath, overwrite=self.overwrite)
         hdul.close()
 
-    def _update_tile_in_output(self, tile_y0, tile_x0, tile_sum, tile_counts):
+    def _update_tile_in_output(self, tile_y0, tile_x0, tile_arr, tile_weights):
+        """
+        Write tile_arr and tile_weights into the output FITS at the given origin.
+        This function opens the output in update mode and writes the slice.
+        """
         with fits.open(self.outpath, mode='update', memmap=True) as hdul:
             data = hdul[0].data
             weights = hdul['WEIGHTS'].data
-            y0, y1 = tile_y0, tile_y0 + tile_sum.shape[0]
-            x0, x1 = tile_x0, tile_x0 + tile_sum.shape[1]
+            y0, y1 = tile_y0, tile_y0 + tile_arr.shape[0]
+            x0, x1 = tile_x0, tile_x0 + tile_arr.shape[1]
+            # accumulate: existing sum stored in data, existing counts in weights
+            # We store sums in primary and counts in WEIGHTS (consistent with weighted combine)
+            # tile_arr contains sum contributions for this tile; tile_weights contains counts
+            # Use float32 storage but compute in float64
             data_slice = data[y0:y1, x0:x1].astype(np.float64)
             weights_slice = weights[y0:y1, x0:x1].astype(np.float64)
-            data_slice += tile_sum.astype(np.float64)
-            weights_slice += tile_counts.astype(np.float64)
+            # accumulate
+            data_slice += tile_arr.astype(np.float64)
+            weights_slice += tile_weights.astype(np.float64)
+            # write back
             data[y0:y1, x0:x1] = data_slice.astype(np.float32)
             weights[y0:y1, x0:x1] = weights_slice.astype(np.float32)
             hdul.flush()
@@ -366,6 +380,7 @@ class StackWorker(QThread):
             frames_meta = []
             self._per_frame_bg_stds = []
 
+            # First pass: read headers, estimate per-frame bg std, and prepare frames metadata
             for i, fn in enumerate(self.files, start=1):
                 if self._abort:
                     self._emit("Aborted by user.")
@@ -379,6 +394,7 @@ class StackWorker(QThread):
                         data_for_wcs = np.mean(data.astype(np.float64), axis=0)
                     else:
                         data_for_wcs = data.astype(np.float64)
+                    # Estimate per-frame background std BEFORE subtraction
                     try:
                         clipped = sigma_clip(data_for_wcs, sigma=3.0, maxiters=3)
                         bg_std = float(np.nanstd(clipped.filled(np.nan)))
@@ -396,6 +412,7 @@ class StackWorker(QThread):
             if not frames_meta:
                 raise RuntimeError("No valid input files loaded.")
 
+            # Determine mosaic WCS and output shape
             mosaic_wcs = None
             header_out = None
             shape_out = None
@@ -429,6 +446,7 @@ class StackWorker(QThread):
                     header_out = mosaic_wcs.to_header()
                 ny, nx = shape_out
             else:
+                # No reprojection: ensure all shapes equal and use first header
                 shapes = set()
                 for fn, hdr in frames_meta:
                     data, _ = load_fits(fn)
@@ -447,11 +465,13 @@ class StackWorker(QThread):
 
             self._emit(f"Output mosaic shape: {shape_out}")
 
+            # Create empty output FITS (Primary = sum, WEIGHTS = counts)
             if os.path.exists(self.outpath) and not self.overwrite:
                 raise FileExistsError(f"Output exists and overwrite disabled: {self.outpath}")
             self._create_empty_output(header_out, shape_out)
             self._emit(f"Created output file: {self.outpath}")
 
+            # Tile loop
             tile_h = min(self.tile_size, shape_out[0])
             tile_w = min(self.tile_size, shape_out[1])
             tiles = []
@@ -463,6 +483,7 @@ class StackWorker(QThread):
             total_tiles = len(tiles)
             self._emit(f"Processing in {total_tiles} tiles of up to {tile_h}x{tile_w} pixels")
 
+            # Precompute stacked_noise_std global estimate (used when adding synthetic noise)
             if len(self._per_frame_bg_stds) >= 1:
                 sigma_med = float(np.median(self._per_frame_bg_stds))
                 nframes = max(1, len(self._per_frame_bg_stds))
@@ -479,11 +500,14 @@ class StackWorker(QThread):
                     return
                 self._emit(f"[tile {tile_index}/{total_tiles}] origin=({tile_x0},{tile_y0}) size=({tw},{th})")
 
+                # Accumulators for this tile: sum and counts
                 tile_sum = np.zeros((th, tw), dtype=np.float64)
                 tile_counts = np.zeros((th, tw), dtype=np.float64)
 
+                # Build tile WCS (adjust CRPIX so reproject_interp maps to tile coordinates)
                 tile_wcs = tile_wcs_from_mosaic(mosaic_wcs, tile_x0, tile_y0)
 
+                # For each frame, reproject only to this tile and accumulate
                 for i, (fn, hdr) in enumerate(frames_meta, start=1):
                     if self._abort:
                         self._emit("Aborted by user.")
@@ -498,6 +522,7 @@ class StackWorker(QThread):
                         else:
                             data = data.astype(np.float64)
 
+                        # Per-frame background normalization (S/N-safe)
                         if self.normalize_background:
                             try:
                                 bg = float(np.nanmedian(sigma_clip(data, sigma=3.0)))
@@ -507,42 +532,48 @@ class StackWorker(QThread):
                         else:
                             data_proc = data
 
+                        # Reproject to tile using tile_wcs and shape_out=(th, tw)
                         try:
-                            reprojected, footprint = reproject_interp(
-                                (data_proc, WCS(hdr_full)),
-                                tile_wcs,
-                                shape_out=(th, tw),
-                                return_footprint=True
-                            )
+                            reprojected, footprint = reproject_interp((data_proc, WCS(hdr_full)), tile_wcs, shape_out=(th, tw), return_footprint=True)
                         except Exception as e:
                             self._emit(f"Reprojection failed for {fn} on tile: {e}; skipping frame for this tile")
                             continue
 
                         reprojected = np.asarray(reprojected, dtype=np.float64)
+                        # footprint indicates where the frame contributed; treat footprint>0 as 1 contribution
                         footprint = np.asarray(footprint, dtype=np.float64)
                         footprint_mask = (footprint > 0.0).astype(np.float64)
 
+                        # Apply mask threshold if requested (treat values <= mask_threshold as no contribution)
                         if self.mask_threshold != 0.0:
                             contrib_mask = (reprojected > self.mask_threshold).astype(np.float64)
                             footprint_mask *= contrib_mask
 
+                        # Accumulate sum and counts
+                        # For weighted combine we treat each contributing frame as weight=1 (flux-linear average)
                         tile_sum += np.where(np.isfinite(reprojected), reprojected * footprint_mask, 0.0)
                         tile_counts += footprint_mask
 
                     except Exception as e:
                         self._emit(f"Failed processing frame {fn} for tile: {e}; skipping")
+                    # update progress roughly per frame within tile
                     self.progress.emit(int(100.0 * ((tile_index - 1) + (i / max(1, N))) / total_tiles))
 
+                # After all frames processed for this tile, compute final tile values
                 valid = tile_counts > 0
                 tile_final = np.full((th, tw), np.nan, dtype=np.float64)
                 tile_final[valid] = tile_sum[valid] / tile_counts[valid]
 
+                # Mask low coverage if requested
                 if self.mask_lowcov_flag:
                     lowcov_mask = tile_counts < self.lowcov_threshold
                     tile_final[lowcov_mask] = np.nan
 
+                # Optionally add synthetic background noise (per-tile)
                 if self.add_synthetic_bg:
                     try:
+                        # Determine stacked noise std for this tile: use global estimate if available,
+                        # otherwise estimate from tile_final clipped
                         if global_stacked_noise_std is not None:
                             stacked_noise_std = global_stacked_noise_std
                         else:
@@ -553,6 +584,8 @@ class StackWorker(QThread):
                         if stacked_noise_std > 0:
                             rng = np.random.default_rng()
                             noise = rng.normal(loc=0.0, scale=stacked_noise_std, size=tile_final.shape)
+
+                            # If matching noise to weight map, scale noise by 1/sqrt(W)
                             if self.match_noise_to_weight:
                                 try:
                                     W = np.where(np.isfinite(tile_counts) & (tile_counts > 0), tile_counts, 1.0)
@@ -561,6 +594,8 @@ class StackWorker(QThread):
                                     self._emit("Matched synthetic noise to weight map for tile.")
                                 except Exception as e:
                                     self._emit(f"Failed to match noise to weight map for tile: {e}")
+
+                            # Add noise only where tile_final is finite (preserve NaNs)
                             finite_mask = np.isfinite(tile_final)
                             tile_final[finite_mask] = tile_final[finite_mask] + noise[finite_mask]
                             self._emit(f"Added synthetic background noise to tile (sigma ~ {stacked_noise_std:.4g}).")
@@ -569,27 +604,35 @@ class StackWorker(QThread):
                     except Exception as e:
                         self._emit(f"Failed to add synthetic background noise for tile: {e}")
 
-                if self.add_pedestal:
-                    tile_final = tile_final + self.pedestal_value
-                    self._emit(f"Applied pedestal offset of {self.pedestal_value} ADU to tile.")
-
-                tile_sum = np.where(np.isfinite(tile_final), tile_final * (tile_counts > 0), 0.0)
-
+                # Convert tile_final and tile_counts into sums and counts to store in output
+                # Our output primary stores accumulated sums; WEIGHTS stores counts
+                # tile_sum currently holds the accumulated sums; tile_counts holds counts
+                # But we must write the current accumulators into the output file (accumulate with existing)
+                # We'll write tile_sum and tile_counts (both float64) into output using update function
                 try:
+                    # tile_sum and tile_counts are the accumulators we computed earlier
+                    # Write them into the output (accumulation handled in _update_tile_in_output)
                     self._update_tile_in_output(tile_y0, tile_x0, tile_sum, tile_counts)
                     self._emit(f"Wrote tile {tile_index}/{total_tiles} to output.")
                 except Exception as e:
                     self._emit(f"Failed to write tile to output: {e}")
 
+            # After all tiles processed, convert accumulated sums/counts into final average image
+            # Open output and compute final = sum / counts where counts>0, else NaN
             with fits.open(self.outpath, mode='update', memmap=True) as hdul:
                 data = hdul[0].data.astype(np.float64)
                 weights = hdul['WEIGHTS'].data.astype(np.float64)
                 final = np.full_like(data, np.nan, dtype=np.float64)
                 valid = weights > 0
                 final[valid] = data[valid] / weights[valid]
+
+                # Optionally mask low coverage globally (already applied per tile, but reapply)
                 if self.mask_lowcov_flag:
                     final[weights < self.lowcov_threshold] = np.nan
+
+                # Save final into primary HDU (overwrite sums with averaged final)
                 hdul[0].data[:, :] = final.astype(np.float32)
+                # Update header normalization if needed
                 if self.write_full_plate and mosaic_wcs is not None:
                     try:
                         wcs_hdr = mosaic_wcs.to_header()
@@ -657,6 +700,7 @@ class StackerWindow(QMainWindow):
         self.weighted_chk = QCheckBox("Weighted combine (per-pixel average, flux-linear)")
         grid.addWidget(self.weighted_chk, 4, 0, 1, 4)
 
+        # Background normalization checkbox
         self.norm_bg_chk = QCheckBox("Normalize background per frame (median subtraction)")
         self.norm_bg_chk.setChecked(True)
         grid.addWidget(self.norm_bg_chk, 5, 0, 1, 4)
@@ -672,6 +716,7 @@ class StackerWindow(QMainWindow):
         self.lowcov_chk.setChecked(True)
         grid.addWidget(self.lowcov_chk, 6, 2, 1, 2)
 
+        # Option to write full plate-solve metadata into output header
         self.plate_chk = QCheckBox("Write full plate-solve metadata into output header")
         self.plate_chk.setChecked(True)
         grid.addWidget(self.plate_chk, 7, 0, 1, 4)
@@ -680,14 +725,17 @@ class StackerWindow(QMainWindow):
         self.pixsize_edit = QLineEdit("")
         grid.addWidget(self.pixsize_edit, 8, 1, 1, 2)
 
+        # Add synthetic background noise checkbox (default unchecked)
         self.add_bg_noise_chk = QCheckBox("Add synthetic background noise after stacking (for StarNet/SyQon)")
         self.add_bg_noise_chk.setChecked(False)
         grid.addWidget(self.add_bg_noise_chk, 9, 0, 1, 4)
 
+        # Match synthetic noise to weight map checkbox
         self.match_noise_weight_chk = QCheckBox("Match synthetic noise to weight map (physically correct)")
         self.match_noise_weight_chk.setChecked(False)
         grid.addWidget(self.match_noise_weight_chk, 10, 0, 1, 4)
 
+        # Chunked processing controls
         self.chunked_chk = QCheckBox("Enable chunked (RAM-safe) processing (Option A)")
         self.chunked_chk.setChecked(True)
         grid.addWidget(self.chunked_chk, 11, 0, 1, 3)
@@ -698,44 +746,36 @@ class StackerWindow(QMainWindow):
         self.tile_spin.setValue(512)
         grid.addWidget(self.tile_spin, 11, 4)
 
-        self.pedestal_chk = QCheckBox("Add pedestal offset before saving (MaxIm/Siril compatibility)")
-        self.pedestal_chk.setChecked(False)
-        grid.addWidget(self.pedestal_chk, 12, 0, 1, 3)
-
-        grid.addWidget(QLabel("Pedestal value (ADU):"), 12, 3)
-        self.pedestal_spin = QDoubleSpinBox()
-        self.pedestal_spin.setRange(-1e9, 1e9)
-        self.pedestal_spin.setDecimals(2)
-        self.pedestal_spin.setValue(500.0)
-        grid.addWidget(self.pedestal_spin, 12, 4)
-
+        # Run / Cancel / Preview / Plot buttons
         self.run_btn = QPushButton("Run Stack")
         self.run_btn.clicked.connect(self._on_run)
-        grid.addWidget(self.run_btn, 13, 0)
+        grid.addWidget(self.run_btn, 12, 0)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self._on_cancel)
         self.cancel_btn.setEnabled(False)
-        grid.addWidget(self.cancel_btn, 13, 1)
+        grid.addWidget(self.cancel_btn, 12, 1)
 
         self.preview_btn = QPushButton("Preview Last Result")
         self.preview_btn.clicked.connect(self._on_preview)
-        grid.addWidget(self.preview_btn, 13, 2)
+        grid.addWidget(self.preview_btn, 12, 2)
 
         self.load_output_btn = QPushButton("Plot Output File")
         self.load_output_btn.clicked.connect(self._plot_output_file)
-        grid.addWidget(self.load_output_btn, 13, 3)
+        grid.addWidget(self.load_output_btn, 12, 3)
 
+        # Progress bar and log
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
-        grid.addWidget(self.progress, 14, 0, 1, 5)
+        grid.addWidget(self.progress, 13, 0, 1, 5)
 
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        grid.addWidget(self.log_box, 15, 0, 1, 5)
+        grid.addWidget(self.log_box, 14, 0, 1, 5)
 
+        # Preview canvas
         self.canvas = PreviewCanvas()
-        grid.addWidget(self.canvas, 16, 0, 6, 5)
+        grid.addWidget(self.canvas, 15, 0, 6, 5)
 
     def _log(self, *args):
         self.log_box.append(" ".join(str(a) for a in args))
@@ -771,8 +811,6 @@ class StackerWindow(QMainWindow):
             match_noise_weight_flag = self.match_noise_weight_chk.isChecked()
             chunked_flag = self.chunked_chk.isChecked()
             tile_size = int(self.tile_spin.value())
-            pedestal_flag = self.pedestal_chk.isChecked()
-            pedestal_value = float(self.pedestal_spin.value())
 
             method_text = self.method_combo.currentText()
             if method_text == "mean":
@@ -810,8 +848,7 @@ class StackerWindow(QMainWindow):
                 normalize_bg_flag, write_full_plate=write_plate_flag, pixel_size_um=pixel_size_um,
                 add_synthetic_bg=add_bg_noise_flag,
                 match_noise_to_weight=match_noise_weight_flag,
-                chunked=chunked_flag, tile_size=tile_size,
-                add_pedestal=pedestal_flag, pedestal_value=pedestal_value
+                chunked=chunked_flag, tile_size=tile_size
             )
             self.worker.log.connect(self._log)
             self.worker.progress.connect(self.progress.setValue)

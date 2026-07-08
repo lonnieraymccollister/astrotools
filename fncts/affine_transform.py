@@ -404,29 +404,409 @@ class FitsWidget(QtWidgets.QWidget):
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", str(e))
 
+class EllipseWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.image = None
+        self.points = []
+
+        # Image display
+        self.imgLabel = ImageLabel()
+        self.imgScroll = QtWidgets.QScrollArea()
+        self.imgScroll.setWidget(self.imgLabel)
+        self.imgScroll.setWidgetResizable(True)
+        self.imgScroll.setFixedSize(500, 500)
+
+        # Buttons
+        self.btnLoad = QtWidgets.QPushButton("Load Image")
+        self.btnClear = QtWidgets.QPushButton("Clear Points")
+        self.btnFit = QtWidgets.QPushButton("Fit Ellipse")
+        self.btnSave = QtWidgets.QPushButton("Save Result")
+
+        # Layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.imgScroll)
+
+        btnLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(self.btnLoad)
+        btnLayout.addWidget(self.btnClear)
+        btnLayout.addWidget(self.btnFit)
+        btnLayout.addWidget(self.btnSave)
+        layout.addLayout(btnLayout)
+
+        # Connections
+        self.btnLoad.clicked.connect(self.loadImage)
+        self.btnClear.clicked.connect(self.clearPoints)
+        self.btnFit.clicked.connect(self.fitEllipse)
+        self.btnSave.clicked.connect(self.saveResult)
+        self.imgLabel.clicked.connect(self.recordPoint)
+
+    def loadImage(self):
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Select Image", "", "Images (*.png *.jpg *.bmp);;All Files (*)"
+        )
+        if fileName:
+            img = cv2.imread(fileName, cv2.IMREAD_COLOR)
+            if img is None:
+                QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
+                return
+            self.image = img
+            self.imgLabel.setImage(img)
+            self.points = []
+
+    def recordPoint(self, point):
+        if self.image is None:
+            return
+        x, y = point.x(), point.y()
+        self.points.append((x, y))
+        print("Point:", x, y)
+
+    def clearPoints(self):
+        self.points = []
+        if self.image is not None:
+            self.imgLabel.setImage(self.image)
+
+    def fitEllipse(self):
+        if self.image is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "Load an image first.")
+            return
+        if len(self.points) < 5:
+            QtWidgets.QMessageBox.warning(self, "Error", "Need at least 5 points.")
+            return
+
+        pts = np.array(self.points, dtype=np.int32)
+        ellipse = cv2.fitEllipse(pts)
+
+        # Draw ellipse and center
+        output = self.image.copy()
+        cv2.ellipse(output, ellipse, (0, 255, 0), 2)
+
+        (cx, cy) = ellipse[0]
+        cv2.circle(output, (int(cx), int(cy)), 6, (0, 0, 255), -1)
+
+        self.result = output
+        self.imgLabel.setImage(output)
+
+    def saveResult(self):
+        if not hasattr(self, "result"):
+            QtWidgets.QMessageBox.warning(self, "Error", "Fit the ellipse first.")
+            return
+
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save Result", "", "PNG Files (*.png);;All Files (*)"
+        )
+        if fileName:
+            out = self.result
+            out16 = (out.astype(np.uint16) * 257) if out.dtype == np.uint8 else out
+            ok = cv2.imwrite(fileName, out16)
+
+            if ok:
+                fits_filename = str(Path(fileName).with_suffix('.fits'))
+                rgb_result = cv2.cvtColor(out16, cv2.COLOR_BGR2RGB)
+                fits_data = rgb_result.astype(np.float32)
+                fits.writeto(fits_filename, fits_data, overwrite=True)
+
+                QtWidgets.QMessageBox.information(
+                    self, "Saved",
+                    f"Saved:\n{fileName}\n{fits_filename}"
+                )
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", "Failed to save image.")
+
+class FitLineWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image = None
+        self.points = []
+        self.imgLabel = ImageLabel()
+        self.imgScroll = QtWidgets.QScrollArea()
+        self.imgScroll.setWidget(self.imgLabel)
+        self.imgScroll.setWidgetResizable(True)
+        self.imgScroll.setFixedSize(500, 500)
+        self.btnLoad = QtWidgets.QPushButton("Load Image")
+        self.btnClear = QtWidgets.QPushButton("Clear Points")
+        self.btnFit = QtWidgets.QPushButton("Fit Line")
+        self.btnSave = QtWidgets.QPushButton("Save Result")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.imgScroll)
+        btnLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(self.btnLoad)
+        btnLayout.addWidget(self.btnClear)
+        btnLayout.addWidget(self.btnFit)
+        btnLayout.addWidget(self.btnSave)
+        layout.addLayout(btnLayout)
+        self.btnLoad.clicked.connect(self.loadImage)
+        self.btnClear.clicked.connect(self.clearPoints)
+        self.btnFit.clicked.connect(self.fitLine)
+        self.btnSave.clicked.connect(self.saveResult)
+        self.imgLabel.clicked.connect(self.recordPoint)
+
+    def loadImage(self):
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.bmp);;All Files (*)")
+        if fileName:
+            img = cv2.imread(fileName, cv2.IMREAD_COLOR)
+            if img is None:
+                QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
+                return
+            self.image = img
+            self.imgLabel.setImage(img)
+            self.points = []
+
+    def recordPoint(self, point):
+        self.points.append((point.x(), point.y()))
+
+    def clearPoints(self):
+        self.points = []
+        if self.image is not None:
+            self.imgLabel.setImage(self.image)
+
+    def fitLine(self):
+        if self.image is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "Load an image first.")
+            return
+        if len(self.points) < 2:
+            QtWidgets.QMessageBox.warning(self, "Error", "Need at least 2 points.")
+            return
+        pts = np.array(self.points, dtype=np.float32)
+        vx, vy, x0, y0 = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
+        h, w = self.image.shape[:2]
+        left_y = int((-x0 * vy / vx) + y0)
+        right_y = int(((w - x0) * vy / vx) + y0)
+        output = self.image.copy()
+        cv2.line(output, (0, left_y), (w, right_y), (0, 255, 0), 2)
+        self.result = output
+        self.imgLabel.setImage(output)
+
+    def saveResult(self):
+        if not hasattr(self, "result"):
+            QtWidgets.QMessageBox.warning(self, "Error", "Fit the line first.")
+            return
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save Result", "", "PNG Files (*.png);;All Files (*)")
+        if fileName:
+            out = self.result
+            out16 = (out.astype(np.uint16) * 257) if out.dtype == np.uint8 else out
+            ok = cv2.imwrite(fileName, out16)
+            if ok:
+                fits_filename = str(Path(fileName).with_suffix('.fits'))
+                rgb_result = cv2.cvtColor(out16, cv2.COLOR_BGR2RGB)
+                fits.writeto(fits_filename, rgb_result.astype(np.float32), overwrite=True)
+                QtWidgets.QMessageBox.information(self, "Saved", f"Saved:\n{fileName}\n{fits_filename}")
+
+class FitRectangleWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image = None
+        self.points = []
+        self.imgLabel = ImageLabel()
+        self.imgScroll = QtWidgets.QScrollArea()
+        self.imgScroll.setWidget(self.imgLabel)
+        self.imgScroll.setWidgetResizable(True)
+        self.imgScroll.setFixedSize(500, 500)
+        self.btnLoad = QtWidgets.QPushButton("Load Image")
+        self.btnClear = QtWidgets.QPushButton("Clear Points")
+        self.btnFit = QtWidgets.QPushButton("Fit Rectangle")
+        self.btnSave = QtWidgets.QPushButton("Save Result")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.imgScroll)
+        btnLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(self.btnLoad)
+        btnLayout.addWidget(self.btnClear)
+        btnLayout.addWidget(self.btnFit)
+        btnLayout.addWidget(self.btnSave)
+        layout.addLayout(btnLayout)
+        self.btnLoad.clicked.connect(self.loadImage)
+        self.btnClear.clicked.connect(self.clearPoints)
+        self.btnFit.clicked.connect(self.fitRectangle)
+        self.btnSave.clicked.connect(self.saveResult)
+        self.imgLabel.clicked.connect(self.recordPoint)
+
+    def loadImage(self):
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.bmp);;All Files (*)")
+        if fileName:
+            img = cv2.imread(fileName, cv2.IMREAD_COLOR)
+            if img is None:
+                QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
+                return
+            self.image = img
+            self.imgLabel.setImage(img)
+            self.points = []
+
+    def recordPoint(self, point):
+        self.points.append((point.x(), point.y()))
+
+    def clearPoints(self):
+        self.points = []
+        if self.image is not None:
+            self.imgLabel.setImage(self.image)
+
+    def fitRectangle(self):
+        if self.image is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "Load an image first.")
+            return
+        if len(self.points) < 3:
+            QtWidgets.QMessageBox.warning(self, "Error", "Need at least 3 points.")
+            return
+        pts = np.array(self.points, dtype=np.float32)
+        rect = cv2.minAreaRect(pts)
+        box = cv2.boxPoints(rect)
+        box = np.int0(box)
+        output = self.image.copy()
+        cv2.drawContours(output, [box], 0, (0, 255, 0), 2)
+        self.result = output
+        self.imgLabel.setImage(output)
+
+    def saveResult(self):
+        if not hasattr(self, "result"):
+            QtWidgets.QMessageBox.warning(self, "Error", "Fit the rectangle first.")
+            return
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save Result", "", "PNG Files (*.png);;All Files (*)")
+        if fileName:
+            out = self.result
+            out16 = (out.astype(np.uint16) * 257) if out.dtype == np.uint8 else out
+            ok = cv2.imwrite(fileName, out16)
+            if ok:
+                fits_filename = str(Path(fileName).with_suffix('.fits'))
+                rgb_result = cv2.cvtColor(out16, cv2.COLOR_BGR2RGB)
+                fits.writeto(fits_filename, rgb_result.astype(np.float32), overwrite=True)
+                QtWidgets.QMessageBox.information(self, "Saved", f"Saved:\n{fileName}\n{fits_filename}")
+
+class FitSquareWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image = None
+        self.points = []
+        self.imgLabel = ImageLabel()
+        self.imgScroll = QtWidgets.QScrollArea()
+        self.imgScroll.setWidget(self.imgLabel)
+        self.imgScroll.setWidgetResizable(True)
+        self.imgScroll.setFixedSize(500, 500)
+        self.btnLoad = QtWidgets.QPushButton("Load Image")
+        self.btnClear = QtWidgets.QPushButton("Clear Points")
+        self.btnFit = QtWidgets.QPushButton("Fit Square")
+        self.btnSave = QtWidgets.QPushButton("Save Result")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.imgScroll)
+        btnLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(self.btnLoad)
+        btnLayout.addWidget(self.btnClear)
+        btnLayout.addWidget(self.btnFit)
+        btnLayout.addWidget(self.btnSave)
+        layout.addLayout(btnLayout)
+        self.btnLoad.clicked.connect(self.loadImage)
+        self.btnClear.clicked.connect(self.clearPoints)
+        self.btnFit.clicked.connect(self.fitSquare)
+        self.btnSave.clicked.connect(self.saveResult)
+        self.imgLabel.clicked.connect(self.recordPoint)
+
+    def loadImage(self):
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.bmp);;All Files (*)")
+        if fileName:
+            img = cv2.imread(fileName, cv2.IMREAD_COLOR)
+            if img is None:
+                QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
+                return
+            self.image = img
+            self.imgLabel.setImage(img)
+            self.points = []
+
+    def recordPoint(self, point):
+        self.points.append((point.x(), point.y()))
+
+    def clearPoints(self):
+        self.points = []
+        if self.image is not None:
+            self.imgLabel.setImage(self.image)
+
+    def fitSquare(self):
+        if self.image is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "Load an image first.")
+            return
+        if len(self.points) < 3:
+            QtWidgets.QMessageBox.warning(self, "Error", "Need at least 3 points.")
+            return
+        pts = np.array(self.points, dtype=np.float32)
+        rect = cv2.minAreaRect(pts)
+        center, (w, h), angle = rect
+        side = max(w, h)
+        square_rect = (center, (side, side), angle)
+        box = cv2.boxPoints(square_rect)
+        box = np.int0(box)
+        output = self.image.copy()
+        cv2.drawContours(output, [box], 0, (255, 0, 0), 2)
+        self.result = output
+        self.imgLabel.setImage(output)
+
+    def saveResult(self):
+        if not hasattr(self, "result"):
+            QtWidgets.QMessageBox.warning(self, "Error", "Fit the square first.")
+            return
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save Result", "", "PNG Files (*.png);;All Files (*)")
+        if fileName:
+            out = self.result
+            out16 = (out.astype(np.uint16) * 257) if out.dtype == np.uint8 else out
+            ok = cv2.imwrite(fileName, out16)
+            if ok:
+                fits_filename = str(Path(fileName).with_suffix('.fits'))
+                rgb_result = cv2.cvtColor(out16, cv2.COLOR_BGR2RGB)
+                fits.writeto(fits_filename, rgb_result.astype(np.float32), overwrite=True)
+                QtWidgets.QMessageBox.information(self, "Saved", f"Saved:\n{fileName}\n{fits_filename}")
+
+
+
+
+
+
+
 # ---------- MainWindow ----------------------------------------------------
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Image Transformation: Automatic, Manual, and FITS Modes")
+        self.setWindowTitle("Image Transformation: Automatic, Manual, FITS, and Fit Modes")
         self.resize(1000, 800)
+
         central_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(central_widget)
         main_layout = QtWidgets.QVBoxLayout(central_widget)
+
+        # Mode selector
         self.modeComboBox = QtWidgets.QComboBox()
         self.modeComboBox.addItem("Automatic")
         self.modeComboBox.addItem("Manual")
         self.modeComboBox.addItem("FITS")
-        main_layout.addWidget(self.modeComboBox)
+        self.modeComboBox.addItem("Ellipse Fit")
+        self.modeComboBox.addItem("Fit Line")
+        self.modeComboBox.addItem("Fit Rectangle")
+        self.modeComboBox.addItem("Fit Square")
+
+        # Stacked widget and pages (create stacked widget first)
         self.stackedWidget = QtWidgets.QStackedWidget()
+
+        # Create pages
         self.autoWidget = AutoWidget()
         self.manualWidget = ManualWidget()
         self.fitsWidget = FitsWidget()
-        self.stackedWidget.addWidget(self.autoWidget)
-        self.stackedWidget.addWidget(self.manualWidget)
-        self.stackedWidget.addWidget(self.fitsWidget)
+        self.ellipseWidget = EllipseWidget()
+        self.fitLineWidget = FitLineWidget()
+        self.fitRectangleWidget = FitRectangleWidget()
+        self.fitSquareWidget = FitSquareWidget()
+
+        # Add pages to stacked widget in the same order as combo box
+        self.stackedWidget.addWidget(self.autoWidget)         # index 0
+        self.stackedWidget.addWidget(self.manualWidget)       # index 1
+        self.stackedWidget.addWidget(self.fitsWidget)         # index 2
+        self.stackedWidget.addWidget(self.ellipseWidget)      # index 3
+        self.stackedWidget.addWidget(self.fitLineWidget)      # index 4
+        self.stackedWidget.addWidget(self.fitRectangleWidget) # index 5
+        self.stackedWidget.addWidget(self.fitSquareWidget)    # index 6
+
+        # Add widgets to layout
+        main_layout.addWidget(self.modeComboBox)
         main_layout.addWidget(self.stackedWidget)
+
+        # Connect after pages exist
         self.modeComboBox.currentIndexChanged.connect(self.switchMode)
+
 
     def switchMode(self, index):
         self.stackedWidget.setCurrentIndex(index)
