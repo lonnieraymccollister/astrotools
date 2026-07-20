@@ -2,6 +2,7 @@
 """
 affine_transform.py
 Standalone PyQt6 app: Automatic, Manual, FITS modes (loads/saves images, converts 16-bit PNG -> 32-bit FITS).
+Added: Ellipse, Line, Rectangle, Square, Parabola fit modes.
 """
 
 import sys
@@ -404,6 +405,7 @@ class FitsWidget(QtWidgets.QWidget):
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Error", str(e))
 
+# ---------- EllipseWidget -------------------------------------------------
 class EllipseWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -514,6 +516,7 @@ class EllipseWidget(QtWidgets.QWidget):
             else:
                 QtWidgets.QMessageBox.warning(self, "Error", "Failed to save image.")
 
+# ---------- FitLineWidget -------------------------------------------------
 class FitLineWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -571,6 +574,9 @@ class FitLineWidget(QtWidgets.QWidget):
         pts = np.array(self.points, dtype=np.float32)
         vx, vy, x0, y0 = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
         h, w = self.image.shape[:2]
+        # avoid division by zero
+        if vx == 0:
+            vx = 1e-8
         left_y = int((-x0 * vy / vx) + y0)
         right_y = int(((w - x0) * vy / vx) + y0)
         output = self.image.copy()
@@ -593,6 +599,7 @@ class FitLineWidget(QtWidgets.QWidget):
                 fits.writeto(fits_filename, rgb_result.astype(np.float32), overwrite=True)
                 QtWidgets.QMessageBox.information(self, "Saved", f"Saved:\n{fileName}\n{fits_filename}")
 
+# ---------- FitRectangleWidget --------------------------------------------
 class FitRectangleWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -671,6 +678,7 @@ class FitRectangleWidget(QtWidgets.QWidget):
                 fits.writeto(fits_filename, rgb_result.astype(np.float32), overwrite=True)
                 QtWidgets.QMessageBox.information(self, "Saved", f"Saved:\n{fileName}\n{fits_filename}")
 
+# ---------- FitSquareWidget ------------------------------------------------
 class FitSquareWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -752,11 +760,133 @@ class FitSquareWidget(QtWidgets.QWidget):
                 fits.writeto(fits_filename, rgb_result.astype(np.float32), overwrite=True)
                 QtWidgets.QMessageBox.information(self, "Saved", f"Saved:\n{fileName}\n{fits_filename}")
 
+# ---------- Parabola fitting helper ---------------------------------------
+def fit_parabola(points, img_width, num_samples=500):
+    """
+    Fit y = ax^2 + bx + c to clicked points (least squares).
+    Returns an integer Nx2 array of (x,y) points suitable for cv2.polylines.
+    """
+    pts = np.array(points, dtype=np.float32)
+    X = pts[:,0]
+    Y = pts[:,1]
 
+    # Solve least squares for a, b, c
+    A = np.vstack([X*X, X, np.ones_like(X)]).T
+    coeffs, _, _, _ = np.linalg.lstsq(A, Y, rcond=None)
+    a, b, c = coeffs
 
+    # Generate smooth curve across image width
+    xs = np.linspace(0, img_width-1, num_samples)
+    ys = a*xs*xs + b*xs + c
 
+    # Clip to image coordinates (y may be outside)
+    curve = np.vstack([xs, ys]).T
+    curve[:,0] = np.clip(curve[:,0], 0, img_width-1)
+    curve = np.round(curve).astype(np.int32)
+    return curve
 
+# ---------- FitParabolaWidget ---------------------------------------------
+class FitParabolaWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
+        self.image = None
+        self.points = []
+
+        self.imgLabel = ImageLabel()
+        self.imgScroll = QtWidgets.QScrollArea()
+        self.imgScroll.setWidget(self.imgLabel)
+        self.imgScroll.setWidgetResizable(True)
+        self.imgScroll.setFixedSize(500, 500)
+
+        self.btnLoad = QtWidgets.QPushButton("Load Image")
+        self.btnClear = QtWidgets.QPushButton("Clear Points")
+        self.btnFit = QtWidgets.QPushButton("Fit Parabola")
+        self.btnSave = QtWidgets.QPushButton("Save Result")
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self.imgScroll)
+
+        btnLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(self.btnLoad)
+        btnLayout.addWidget(self.btnClear)
+        btnLayout.addWidget(self.btnFit)
+        btnLayout.addWidget(self.btnSave)
+        layout.addLayout(btnLayout)
+
+        self.btnLoad.clicked.connect(self.loadImage)
+        self.btnClear.clicked.connect(self.clearPoints)
+        self.btnFit.clicked.connect(self.fitParabola)
+        self.btnSave.clicked.connect(self.saveResult)
+        self.imgLabel.clicked.connect(self.recordPoint)
+
+    def loadImage(self):
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Select Image", "", "Images (*.png *.jpg *.bmp);;All Files (*)"
+        )
+        if fileName:
+            img = cv2.imread(fileName, cv2.IMREAD_COLOR)
+            if img is None:
+                QtWidgets.QMessageBox.warning(self, "Error", "Failed to load image.")
+                return
+            self.image = img
+            self.imgLabel.setImage(img)
+            self.points = []
+
+    def recordPoint(self, point):
+        if self.image is None:
+            return
+        x, y = point.x(), point.y()
+        self.points.append((x, y))
+        print("Parabola point:", x, y)
+
+    def clearPoints(self):
+        self.points = []
+        if self.image is not None:
+            self.imgLabel.setImage(self.image)
+
+    def fitParabola(self):
+        if self.image is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "Load an image first.")
+            return
+        if len(self.points) < 3:
+            QtWidgets.QMessageBox.warning(self, "Error", "Need at least 3 points.")
+            return
+
+        curve = fit_parabola(self.points, self.image.shape[1], num_samples=1000)
+        output = self.image.copy()
+        # Clip curve to image height before drawing
+        h = output.shape[0]
+        curve[:,1] = np.clip(curve[:,1], 0, h-1)
+        cv2.polylines(output, [curve], isClosed=False, color=(0,255,0), thickness=2)
+
+        # Optionally draw the control points
+        for (px, py) in self.points:
+            cv2.circle(output, (int(px), int(py)), 4, (0,0,255), -1)
+
+        self.result = output
+        self.imgLabel.setImage(output)
+
+    def saveResult(self):
+        if not hasattr(self, "result"):
+            QtWidgets.QMessageBox.warning(self, "Error", "Fit the parabola first.")
+            return
+
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save Result", "", "PNG Files (*.png);;All Files (*)"
+        )
+        if fileName:
+            out = self.result
+            out16 = (out.astype(np.uint16) * 257) if out.dtype == np.uint8 else out
+            ok = cv2.imwrite(fileName, out16)
+            if ok:
+                fits_filename = str(Path(fileName).with_suffix('.fits'))
+                rgb_result = cv2.cvtColor(out16, cv2.COLOR_BGR2RGB)
+                fits.writeto(fits_filename, rgb_result.astype(np.float32), overwrite=True)
+                QtWidgets.QMessageBox.information(self, "Saved",
+                    f"Saved:\n{fileName}\n{fits_filename}")
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", "Failed to save image.")
 
 # ---------- MainWindow ----------------------------------------------------
 class MainWindow(QtWidgets.QMainWindow):
@@ -778,6 +908,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.modeComboBox.addItem("Fit Line")
         self.modeComboBox.addItem("Fit Rectangle")
         self.modeComboBox.addItem("Fit Square")
+        self.modeComboBox.addItem("Fit Parabola")
 
         # Stacked widget and pages (create stacked widget first)
         self.stackedWidget = QtWidgets.QStackedWidget()
@@ -790,6 +921,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fitLineWidget = FitLineWidget()
         self.fitRectangleWidget = FitRectangleWidget()
         self.fitSquareWidget = FitSquareWidget()
+        self.fitParabolaWidget = FitParabolaWidget()
 
         # Add pages to stacked widget in the same order as combo box
         self.stackedWidget.addWidget(self.autoWidget)         # index 0
@@ -799,6 +931,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stackedWidget.addWidget(self.fitLineWidget)      # index 4
         self.stackedWidget.addWidget(self.fitRectangleWidget) # index 5
         self.stackedWidget.addWidget(self.fitSquareWidget)    # index 6
+        self.stackedWidget.addWidget(self.fitParabolaWidget)  # index 7
 
         # Add widgets to layout
         main_layout.addWidget(self.modeComboBox)
@@ -807,9 +940,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # Connect after pages exist
         self.modeComboBox.currentIndexChanged.connect(self.switchMode)
 
-
     def switchMode(self, index):
-        self.stackedWidget.setCurrentIndex(index)
+        # guard: ensure index is within range
+        if 0 <= index < self.stackedWidget.count():
+            self.stackedWidget.setCurrentIndex(index)
 
 # ---------- entry point ---------------------------------------------------
 def main():
