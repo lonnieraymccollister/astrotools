@@ -1,0 +1,22 @@
+name: maximdl_dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - astropy
+  - photutils
+  - ccdproc
+  - sep
+  - astroalign
+  - reproject
+  - matplotlib
+  - pyqt6
+  - pyqtgraph
+  - opencv
+  - pip
+  - pip:
+      - pyvista
+      - trame
+      - transformers
