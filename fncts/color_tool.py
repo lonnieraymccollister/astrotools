@@ -141,6 +141,289 @@ class ColorWindow(QMainWindow):
 
         self.stack.addWidget(self.luminanceWidget)
 
+        # --- Begin patch: add Narrowband Combine page and logic ---
+
+        # In initUI(), after adding the existing pages, add a new page:
+                # Add "Narrowband Combine" to operation selector
+        self.opCombo.addItem("Narrowband Combine")
+
+        # Page 3: Narrowband Combine
+        self.narrowWidget = QWidget()
+        nbLayout = QVBoxLayout(self.narrowWidget)
+
+        # Controls row: Preset mapping and normalize
+        controlsLayout = QHBoxLayout()
+        controlsLayout.addWidget(QLabel("Preset:"))
+        self.nbPresetCombo = QComboBox()
+        self.nbPresetCombo.addItems([
+            "Custom",
+            "Halpha->R, OIII->G, SII->B (default)",
+            "Halpha->R, OIII->B, SII->G",
+            "Greyscale weighted"
+        ])
+        controlsLayout.addWidget(self.nbPresetCombo)
+        self.nbNormalizeCheck = QCheckBox("Normalize each filter")
+        self.nbNormalizeCheck.setChecked(True)
+        controlsLayout.addWidget(self.nbNormalizeCheck)
+        controlsLayout.addStretch()
+        nbLayout.addLayout(controlsLayout)
+
+        # Header labels for the filter rows
+        headerLayout = QHBoxLayout()
+        headerLayout.addWidget(QLabel("Wavelength (nm)"))
+        headerLayout.addWidget(QLabel("File"))
+        headerLayout.addWidget(QLabel("Map"))
+        headerLayout.addStretch()
+        nbLayout.addLayout(headerLayout)
+
+        # Container for dynamic filter rows
+        self.nbRowsContainer = QVBoxLayout()
+        nbLayout.addLayout(self.nbRowsContainer)
+
+        # Add / Remove buttons
+        btnsLayout = QHBoxLayout()
+        self.nbAddBtn = QPushButton("Add Filter")
+        self.nbAddBtn.clicked.connect(self.nbAddRow)
+        btnsLayout.addWidget(self.nbAddBtn)
+        self.nbRemoveBtn = QPushButton("Remove Last")
+        self.nbRemoveBtn.clicked.connect(self.nbRemoveRow)
+        btnsLayout.addWidget(self.nbRemoveBtn)
+        btnsLayout.addStretch()
+        nbLayout.addLayout(btnsLayout)
+
+        # Output file and mode
+        outLayout = QGridLayout()
+        outLayout.addWidget(QLabel("Output File:"), 0, 0)
+        self.nbOutputLine = QLineEdit()
+        outLayout.addWidget(self.nbOutputLine, 0, 1)
+        self.nbOutputBrowseBtn = QPushButton("Browse")
+        self.nbOutputBrowseBtn.clicked.connect(lambda: self.browseFile(self.nbOutputLine, save=True))
+        outLayout.addWidget(self.nbOutputBrowseBtn, 0, 2)
+        outLayout.addWidget(QLabel("Mode:"), 1, 0)
+        self.nbModeCombo = QComboBox()
+        self.nbModeCombo.addItems(["FITS", "Other"])
+        outLayout.addWidget(self.nbModeCombo, 1, 1)
+        nbLayout.addLayout(outLayout)
+
+        # Add the narrowband page to the stack
+        self.stack.addWidget(self.narrowWidget)
+
+        # Keep an internal list of row widgets
+        self.nb_rows = []
+
+# End of UI additions
+
+# Add these helper methods to the ColorWindow class:
+
+    def nbAddRow(self):
+        """Add a narrowband filter row: wavelength, file, mapping."""
+        rowWidget = QWidget()
+        layout = QHBoxLayout(rowWidget)
+        wlLine = QLineEdit()
+        wlLine.setPlaceholderText("e.g., 656.3")
+        layout.addWidget(wlLine)
+        fileLine = QLineEdit()
+        layout.addWidget(fileLine)
+        browseBtn = QPushButton("Browse")
+        browseBtn.clicked.connect(lambda: self.browseFile(fileLine))
+        layout.addWidget(browseBtn)
+        mapCombo = QComboBox()
+        mapCombo.addItems(["Assign to R", "Assign to G", "Assign to B", "Weighted"])
+        layout.addWidget(mapCombo)
+        self.nbRowsContainer.addWidget(rowWidget)
+        self.nb_rows.append((rowWidget, wlLine, fileLine, mapCombo))
+
+    def nbRemoveRow(self):
+        """Remove last narrowband row."""
+        if not self.nb_rows:
+            return
+        rowWidget, wlLine, fileLine, mapCombo = self.nb_rows.pop()
+        self.nbRowsContainer.removeWidget(rowWidget)
+        rowWidget.setParent(None)
+        rowWidget.deleteLater()
+
+# Modify runOperation to handle the new operation:
+    def runOperation(self):
+        op = self.opCombo.currentText()
+        if op == "Split Tricolor":
+            self.runSplitTricolor()
+        elif op == "Combine Tricolor":
+            self.runCombineTricolor()
+        elif op == "Create Luminance":
+            self.runCreateLuminance()
+        elif op == "Narrowband Combine":
+            self.runNarrowbandCombine()
+        else:
+            self.statusLabel.setText("Unknown operation selected.")
+
+# Add the main processing method:
+
+    def runNarrowbandCombine(self):
+        """Combine multiple narrowband filter images into an RGB image using mappings/presets."""
+        # Collect rows
+        rows = []
+        for (_, wlLine, fileLine, mapCombo) in self.nb_rows:
+            wl_text = wlLine.text().strip()
+            file_text = fileLine.text().strip()
+            map_text = mapCombo.currentText()
+            if not file_text:
+                continue
+            try:
+                wl = float(wl_text) if wl_text else None
+            except:
+                wl = None
+            rows.append({"wl": wl, "file": file_text, "map": map_text})
+
+        if not rows:
+            self.statusLabel.setText("Add at least one narrowband filter (file) to combine.")
+            return
+        outputFile = self.nbOutputLine.text().strip()
+        mode = self.nbModeCombo.currentText()
+        normalize = self.nbNormalizeCheck.isChecked()
+        preset = self.nbPresetCombo.currentText()
+
+        # Preset mapping convenience: if user selected a preset, try to auto-assign by wavelength
+        # Common lines: H-alpha ~656.3, OIII ~500.7, SII ~672.4
+        def assign_preset(rows, preset):
+            if preset.startswith("Halpha->R"):
+                for r in rows:
+                    if r["wl"] is None:
+                        continue
+                    wl = r["wl"]
+                    if abs(wl - 656.3) < 5:
+                        r["map"] = "Assign to R"
+                    elif abs(wl - 500.7) < 5:
+                        r["map"] = "Assign to G"
+                    elif abs(wl - 672.4) < 5:
+                        r["map"] = "Assign to B"
+            # other presets can be added similarly
+
+        if preset != "Custom":
+            assign_preset(rows, preset)
+
+        try:
+            # Read all filter images into float arrays and optionally normalize
+            arrays = []
+            header = None
+            for r in rows:
+                f = r["file"]
+                if mode == "FITS" or f.lower().endswith(".fits"):
+                    hdul = fits.open(f)
+                    data = hdul[0].data.astype(np.float64)
+                    if header is None:
+                        header = hdul[0].header
+                    hdul.close()
+                    # Accept channel-first or channel-last; prefer single-channel
+                    if data.ndim == 3:
+                        # If channel-first with 3 channels, try to collapse to single channel by taking first
+                        if data.shape[0] == 3:
+                            arr = data[0, :, :].astype(np.float64)
+                        elif data.shape[2] == 3:
+                            arr = data[:, :, 0].astype(np.float64)
+                        else:
+                            arr = data.astype(np.float64)
+                    else:
+                        arr = data.astype(np.float64)
+                else:
+                    img = cv2.imread(f, cv2.IMREAD_UNCHANGED)
+                    if img is None:
+                        self.statusLabel.setText(f"Error reading file: {f}")
+                        return
+                    if img.ndim == 3 and img.shape[2] >= 3:
+                        # assume BGR; take first channel as intensity if single-filter image
+                        arr = img[:, :, 0].astype(np.float64)
+                    elif img.ndim == 2:
+                        arr = img.astype(np.float64)
+                    else:
+                        arr = img[:, :, 0].astype(np.float64)
+
+                # Normalize each filter to its max if requested
+                if normalize:
+                    maxv = np.nanmax(arr)
+                    if maxv != 0 and not np.isnan(maxv):
+                        arr = arr / maxv
+                arrays.append((r, arr))
+
+            # Determine output shape from first array
+            base_shape = arrays[0][1].shape
+            # Initialize R,G,B accumulators as float64
+            R = np.zeros(base_shape, dtype=np.float64)
+            G = np.zeros(base_shape, dtype=np.float64)
+            B = np.zeros(base_shape, dtype=np.float64)
+
+            # Distribute arrays according to mapping
+            for (r, arr) in arrays:
+                # If shapes mismatch, try to resize or error out
+                if arr.shape != base_shape:
+                    self.statusLabel.setText("Input filter images have different shapes; resize externally.")
+                    return
+                m = r["map"]
+                if m == "Assign to R":
+                    R += arr
+                elif m == "Assign to G":
+                    G += arr
+                elif m == "Assign to B":
+                    B += arr
+                elif m == "Weighted":
+                    # Weighted: add equally to all channels by default
+                    R += arr
+                    G += arr
+                    B += arr
+                else:
+                    # fallback: add to all
+                    R += arr
+                    G += arr
+                    B += arr
+
+            # Optional post-normalize to prevent overflow when writing integer images
+            # Scale to 0..1 then to dtype range if needed
+            if mode == "FITS":
+                # Stack as (R,G,B) channel-first to match your FITS convention
+                RGB = np.stack((R, G, B))
+                if header is None:
+                    fits.PrimaryHDU(data=RGB).writeto(outputFile, overwrite=True)
+                else:
+                    fits.PrimaryHDU(data=RGB, header=header).writeto(outputFile, overwrite=True)
+                self.statusLabel.setText("Narrowband Combine (FITS) completed successfully.")
+            else:
+                # For Other: map to output dtype similar to runCombineTricolor
+                # Determine dtype from first input file if possible
+                sample_dtype = None
+                # try to infer dtype from first input file on disk
+                first_file = rows[0]["file"]
+                sample_img = cv2.imread(first_file, cv2.IMREAD_UNCHANGED)
+                if sample_img is not None:
+                    sample_dtype = sample_img.dtype
+                else:
+                    sample_dtype = np.uint8
+
+                # If float accumulators, scale to dtype range
+                if np.issubdtype(sample_dtype, np.integer):
+                    info = np.iinfo(sample_dtype)
+                    # Normalize combined channels to 0..max
+                    max_val = max(np.nanmax(R), np.nanmax(G), np.nanmax(B), 1.0)
+                    R_out = np.clip((R / max_val) * info.max, info.min, info.max).astype(sample_dtype)
+                    G_out = np.clip((G / max_val) * info.max, info.min, info.max).astype(sample_dtype)
+                    B_out = np.clip((B / max_val) * info.max, info.min, info.max).astype(sample_dtype)
+                else:
+                    # float output
+                    R_out = R.astype(np.float32)
+                    G_out = G.astype(np.float32)
+                    B_out = B.astype(np.float32)
+
+                merged = cv2.merge((B_out, G_out, R_out))
+                ok = cv2.imwrite(outputFile, merged)
+                if not ok:
+                    self.statusLabel.setText("Failed to write narrowband output image (Other).")
+                    return
+                self.statusLabel.setText("Narrowband Combine (Other) completed successfully.")
+
+        except Exception as e:
+            self.statusLabel.setText(f"Error in Narrowband Combine: {e}")
+
+# --- End patch
+
+
         # Run button + status
         self.runButton = QPushButton("Run")
         self.runButton.clicked.connect(self.runOperation)
