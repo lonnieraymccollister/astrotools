@@ -4,24 +4,23 @@ color_tool.py
 Simple PyQt6 GUI for: Split Tricolor, Combine Tricolor, Create Luminance (FITS or common image files).
 Save this file and run: python color_tool.py
 
-Change:
-- In Combine Tricolor page a checkbox labeled "two" (unchecked by default).
-  When checked, Blue input may be left empty and Blue will be computed as:
-      Blue = 0.5 * R + 0.5 * G
-  The combine then proceeds normally using that computed Blue channel.
+Features:
+- Split Tricolor
+- Combine Tricolor (option "two" to compute Blue = 0.5*R + 0.5*G)
+- Create Luminance (three equation choices)
+- Narrowband Combine with per-filter percentage weights (Maxim DL style)
+- Narrowband page is scrollable so the global Run button remains visible
 """
 
 import sys
 import os
-from pathlib import Path
-
 import numpy as np
 import cv2
 from astropy.io import fits
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QFileDialog, QMessageBox, QComboBox, QStackedWidget,
+    QLabel, QLineEdit, QPushButton, QFileDialog, QComboBox, QStackedWidget,
     QCheckBox, QScrollArea
 )
 from PyQt6.QtCore import Qt
@@ -58,9 +57,7 @@ class ColorWindow(QMainWindow):
         self.stack = QStackedWidget()
         mainLayout.addWidget(self.stack)
 
-        # ---------------------------------------------------------
-        # PAGE 0 — Split Tricolor
-        # ---------------------------------------------------------
+        # ---------------- Page 0: Split Tricolor ----------------
         self.splitWidget = QWidget()
         splitLayout = QGridLayout(self.splitWidget)
 
@@ -82,9 +79,7 @@ class ColorWindow(QMainWindow):
 
         self.stack.addWidget(self.splitWidget)
 
-        # ---------------------------------------------------------
-        # PAGE 1 — Combine Tricolor
-        # ---------------------------------------------------------
+        # ---------------- Page 1: Combine Tricolor ----------------
         self.combineWidget = QWidget()
         combineLayout = QGridLayout(self.combineWidget)
 
@@ -127,9 +122,7 @@ class ColorWindow(QMainWindow):
 
         self.stack.addWidget(self.combineWidget)
 
-        # ---------------------------------------------------------
-        # PAGE 2 — Create Luminance
-        # ---------------------------------------------------------
+        # ---------------- Page 2: Create Luminance ----------------
         self.luminanceWidget = QWidget()
         lumLayout = QGridLayout(self.luminanceWidget)
 
@@ -163,23 +156,17 @@ class ColorWindow(QMainWindow):
 
         self.stack.addWidget(self.luminanceWidget)
 
-        # ---------------------------------------------------------
-        # PAGE 3 — Narrowband Combine (scrollable)
-        # ---------------------------------------------------------
-        # Outer widget for this page
+        # ---------------- Page 3: Narrowband Combine (scrollable) ----------------
         self.narrowPage = QWidget()
         narrowPageLayout = QVBoxLayout(self.narrowPage)
 
-        # Scroll area
         self.narrowScroll = QScrollArea()
         self.narrowScroll.setWidgetResizable(True)
         narrowPageLayout.addWidget(self.narrowScroll)
 
-        # Inner content widget inside scroll area
         self.narrowWidget = QWidget()
         nbLayout = QVBoxLayout(self.narrowWidget)
 
-        # Controls row: Preset mapping and normalize
         controlsLayout = QHBoxLayout()
         controlsLayout.addWidget(QLabel("Preset:"))
         self.nbPresetCombo = QComboBox()
@@ -196,19 +183,17 @@ class ColorWindow(QMainWindow):
         controlsLayout.addStretch()
         nbLayout.addLayout(controlsLayout)
 
-        # Header labels for the filter rows
         headerLayout = QHBoxLayout()
-        headerLayout.addWidget(QLabel("Wavelength (nm)"))
+        headerLayout.addWidget(QLabel("Wavelength"))
         headerLayout.addWidget(QLabel("File"))
+        headerLayout.addWidget(QLabel("Pct"))
         headerLayout.addWidget(QLabel("Map"))
         headerLayout.addStretch()
         nbLayout.addLayout(headerLayout)
 
-        # Container for dynamic filter rows
         self.nbRowsContainer = QVBoxLayout()
         nbLayout.addLayout(self.nbRowsContainer)
 
-        # Add / Remove buttons
         btnsLayout = QHBoxLayout()
         self.nbAddBtn = QPushButton("Add Filter")
         self.nbAddBtn.clicked.connect(self.nbAddRow)
@@ -219,15 +204,12 @@ class ColorWindow(QMainWindow):
         btnsLayout.addStretch()
         nbLayout.addLayout(btnsLayout)
 
-        # Output file and mode
         outLayout = QGridLayout()
         outLayout.addWidget(QLabel("Output File:"), 0, 0)
         self.nbOutputLine = QLineEdit()
         outLayout.addWidget(self.nbOutputLine, 0, 1)
         self.nbOutputBrowseBtn = QPushButton("Browse")
-        self.nbOutputBrowseBtn.clicked.connect(
-            lambda: self.browseFile(self.nbOutputLine, save=True)
-        )
+        self.nbOutputBrowseBtn.clicked.connect(lambda: self.browseFile(self.nbOutputLine, save=True))
         outLayout.addWidget(self.nbOutputBrowseBtn, 0, 2)
         outLayout.addWidget(QLabel("Mode:"), 1, 0)
         self.nbModeCombo = QComboBox()
@@ -235,18 +217,13 @@ class ColorWindow(QMainWindow):
         outLayout.addWidget(self.nbModeCombo, 1, 1)
         nbLayout.addLayout(outLayout)
 
-        # Set inner widget into scroll area
         self.narrowScroll.setWidget(self.narrowWidget)
-
-        # Add the narrowband page (with scroll) to the stack
         self.stack.addWidget(self.narrowPage)
 
-        # Keep an internal list of row widgets
+        # internal list of rows: each entry is (rowWidget, wlLine, fileLine, pctLine, mapCombo)
         self.nb_rows = []
 
-        # ---------------------------------------------------------
-        # Global Run button + status
-        # ---------------------------------------------------------
+        # ---------------- Global Run button + status ----------------
         self.runButton = QPushButton("Run")
         self.runButton.clicked.connect(self.runOperation)
         mainLayout.addWidget(self.runButton)
@@ -254,27 +231,19 @@ class ColorWindow(QMainWindow):
         self.statusLabel = QLabel("")
         mainLayout.addWidget(self.statusLabel)
 
-    # -------------------------------------------------------------
-    # UI helpers
-    # -------------------------------------------------------------
+    # ---------------- UI helpers ----------------
     def operationChanged(self, index):
         self.stack.setCurrentIndex(index)
 
     def browseFile(self, lineEdit, save=False):
         if save:
-            fileName, _ = QFileDialog.getSaveFileName(
-                self, "Select File", "", "All Files (*)"
-            )
+            fileName, _ = QFileDialog.getSaveFileName(self, "Select File", "", "All Files (*)")
         else:
-            fileName, _ = QFileDialog.getOpenFileName(
-                self, "Select File", "", "All Files (*)"
-            )
+            fileName, _ = QFileDialog.getOpenFileName(self, "Select File", "", "All Files (*)")
         if fileName:
             lineEdit.setText(fileName)
 
-    # -------------------------------------------------------------
-    # Run dispatcher
-    # -------------------------------------------------------------
+    # ---------------- Run dispatcher ----------------
     def runOperation(self):
         op = self.opCombo.currentText()
         if op == "Split Tricolor":
@@ -288,9 +257,7 @@ class ColorWindow(QMainWindow):
         else:
             self.statusLabel.setText("Unknown operation selected.")
 
-    # -------------------------------------------------------------
-    # Split Tricolor
-    # -------------------------------------------------------------
+    # ---------------- Split Tricolor ----------------
     def runSplitTricolor(self):
         inputFile = self.splitInputLine.text().strip()
         mode = self.splitModeCombo.currentText()
@@ -307,9 +274,7 @@ class ColorWindow(QMainWindow):
                 data = hdul[0].data.astype(np.float32)
                 hdul.close()
                 if data.ndim != 3 or data.shape[0] != 3:
-                    self.statusLabel.setText(
-                        "FITS file does not appear to have 3 channels in first dimension."
-                    )
+                    self.statusLabel.setText("FITS file does not appear to have 3 channels in first dimension.")
                     return
                 b = data[2, :, :]
                 g = data[1, :, :]
@@ -331,9 +296,7 @@ class ColorWindow(QMainWindow):
         except Exception as e:
             self.statusLabel.setText(f"Error in Split Tricolor: {e}")
 
-    # -------------------------------------------------------------
-    # Combine Tricolor
-    # -------------------------------------------------------------
+    # ---------------- Combine Tricolor ----------------
     def runCombineTricolor(self):
         blueFile = self.combineBlueLine.text().strip()
         greenFile = self.combineGreenLine.text().strip()
@@ -343,9 +306,7 @@ class ColorWindow(QMainWindow):
         two_checked = self.two_checkbox.isChecked()
 
         if not (greenFile and redFile and outputFile):
-            self.statusLabel.setText(
-                "Red, Green and Output files are required for Combine Tricolor."
-            )
+            self.statusLabel.setText("Red, Green and Output files are required for Combine Tricolor.")
             return
 
         try:
@@ -360,37 +321,29 @@ class ColorWindow(QMainWindow):
                     blue = 0.5 * red + 0.5 * green
                 else:
                     if not blueFile:
-                        self.statusLabel.setText(
-                            "Blue file required when 'two' is not checked."
-                        )
+                        self.statusLabel.setText("Blue file required when 'two' is not checked.")
                         return
                     with fits.open(blueFile) as hdul:
                         blue = hdul[0].data.astype(np.float32)
 
                 RGB = np.stack((red, green, blue))
-                hdu = fits.PrimaryHDU(data=RGB, header=header)
-                hdu.writeto(outputFile, overwrite=True)
+                fits.PrimaryHDU(data=RGB, header=header).writeto(outputFile, overwrite=True)
                 if two_checked:
-                    self.statusLabel.setText(
-                        "Combine Tricolor (FITS) completed using computed Blue = 0.5*R + 0.5*G."
-                    )
+                    self.statusLabel.setText("Combine Tricolor (FITS) completed using computed Blue = 0.5*R + 0.5*G.")
                 else:
-                    self.statusLabel.setText(
-                        "Combine Tricolor (FITS) completed successfully."
-                    )
+                    self.statusLabel.setText("Combine Tricolor (FITS) completed successfully.")
             else:
                 red_img = cv2.imread(redFile, cv2.IMREAD_UNCHANGED)
                 green_img = cv2.imread(greenFile, cv2.IMREAD_UNCHANGED)
                 if red_img is None or green_img is None:
-                    self.statusLabel.setText(
-                        "Error reading Red or Green input images (Other)."
-                    )
+                    self.statusLabel.setText("Error reading Red or Green input images (Other).")
                     return
 
                 def extract_channel(img):
                     if img.ndim == 2:
                         return img.astype(np.float64)
                     elif img.ndim == 3 and img.shape[2] >= 3:
+                        # OpenCV BGR: for single-channel inputs we still take channel 0
                         return img[:, :, 0].astype(np.float64)
                     elif img.ndim == 3 and img.shape[2] == 1:
                         return img[:, :, 0].astype(np.float64)
@@ -404,15 +357,11 @@ class ColorWindow(QMainWindow):
                     B = 0.5 * R + 0.5 * G
                 else:
                     if not blueFile:
-                        self.statusLabel.setText(
-                            "Blue file required when 'two' is not checked."
-                        )
+                        self.statusLabel.setText("Blue file required when 'two' is not checked.")
                         return
                     blue_img = cv2.imread(blueFile, cv2.IMREAD_UNCHANGED)
                     if blue_img is None:
-                        self.statusLabel.setText(
-                            "Error reading Blue input image (Other)."
-                        )
+                        self.statusLabel.setText("Error reading Blue input image (Other).")
                         return
                     B = extract_channel(blue_img)
 
@@ -433,28 +382,20 @@ class ColorWindow(QMainWindow):
                     self.statusLabel.setText("Failed to write output image (Other).")
                     return
                 if two_checked:
-                    self.statusLabel.setText(
-                        "Combine Tricolor (Other) completed using computed Blue = 0.5*R + 0.5*G."
-                    )
+                    self.statusLabel.setText("Combine Tricolor (Other) completed using computed Blue = 0.5*R + 0.5*G.")
                 else:
-                    self.statusLabel.setText(
-                        "Combine Tricolor (Other) completed successfully."
-                    )
+                    self.statusLabel.setText("Combine Tricolor (Other) completed successfully.")
         except Exception as e:
             self.statusLabel.setText(f"Error in Combine Tricolor: {e}")
 
-    # -------------------------------------------------------------
-    # Create Luminance
-    # -------------------------------------------------------------
+    # ---------------- Create Luminance ----------------
     def runCreateLuminance(self):
         inputFile = self.lumInputLine.text().strip()
         outputFile = self.lumOutputLine.text().strip()
         mode = self.lumModeCombo.currentText()
         eq_label = self.lumEqCombo.currentText()
         if not (inputFile and outputFile):
-            self.statusLabel.setText(
-                "Both input and output files are required for Create Luminance."
-            )
+            self.statusLabel.setText("Both input and output files are required for Create Luminance.")
             return
 
         if eq_label.startswith("synthetic-luminance"):
@@ -472,14 +413,13 @@ class ColorWindow(QMainWindow):
                 data = hdul[0].data
                 header = hdul[0].header
                 hdul.close()
+                # Accept channel-first (3,H,W) or channel-last (H,W,3)
                 if data.ndim == 3 and data.shape[0] == 3:
-                    img = np.transpose(data, (1, 2, 0))
+                    img = np.transpose(data, (1, 2, 0))  # to H,W,3
                 elif data.ndim == 3 and data.shape[2] == 3:
                     img = data
                 else:
-                    self.statusLabel.setText(
-                        "Unexpected FITS channel layout for luminance."
-                    )
+                    self.statusLabel.setText("Unexpected FITS channel layout for luminance.")
                     return
 
                 R = img[:, :, 0].astype(np.float64)
@@ -487,13 +427,8 @@ class ColorWindow(QMainWindow):
                 B = img[:, :, 2].astype(np.float64)
 
                 luminance = (wR * R) + (wG * G) + (wB * B)
-
-                fits.PrimaryHDU(data=luminance, header=header).writeto(
-                    outputFile, overwrite=True
-                )
-                self.statusLabel.setText(
-                    f"Create Luminance (FITS) completed using: {eq_label}"
-                )
+                fits.PrimaryHDU(data=luminance, header=header).writeto(outputFile, overwrite=True)
+                self.statusLabel.setText(f"Create Luminance (FITS) completed using: {eq_label}")
             else:
                 img = cv2.imread(inputFile, cv2.IMREAD_UNCHANGED)
                 if img is None:
@@ -509,13 +444,10 @@ class ColorWindow(QMainWindow):
                         G = img_f[:, :, 1]
                         R = img_f[:, :, 2]
                     else:
-                        self.statusLabel.setText(
-                            "Unexpected channel count in input image."
-                        )
+                        self.statusLabel.setText("Unexpected channel count in input image.")
                         return
 
                     luminance = (wR * R) + (wG * G) + (wB * B)
-
                     dtype = img.dtype
                     if np.issubdtype(dtype, np.integer):
                         info = np.iinfo(dtype)
@@ -528,46 +460,58 @@ class ColorWindow(QMainWindow):
                 if not ok:
                     self.statusLabel.setText("Failed to write output image (Other).")
                     return
-                self.statusLabel.setText(
-                    f"Create Luminance (Other) completed using: {eq_label}"
-                )
+                self.statusLabel.setText(f"Create Luminance (Other) completed using: {eq_label}")
         except Exception as e:
             self.statusLabel.setText(f"Error in Create Luminance: {e}")
 
-    # -------------------------------------------------------------
-    # Narrowband helpers
-    # -------------------------------------------------------------
+    # ---------------- Narrowband row management ----------------
     def nbAddRow(self):
+        """
+        Add a narrowband filter row with:
+        - wavelength (QLineEdit)
+        - file (QLineEdit + Browse)
+        - percentage (QLineEdit, e.g., 100 or 75%)
+        - mapping (Assign to R/G/B or Weighted)
+        """
         rowWidget = QWidget()
         layout = QHBoxLayout(rowWidget)
+
         wlLine = QLineEdit()
         wlLine.setPlaceholderText("e.g., 656.3")
+        wlLine.setFixedWidth(80)
         layout.addWidget(wlLine)
+
         fileLine = QLineEdit()
         layout.addWidget(fileLine)
+
         browseBtn = QPushButton("Browse")
         browseBtn.clicked.connect(lambda: self.browseFile(fileLine))
         layout.addWidget(browseBtn)
+
+        pctLine = QLineEdit()
+        pctLine.setPlaceholderText("100%")
+        pctLine.setFixedWidth(70)
+        layout.addWidget(pctLine)
+
         mapCombo = QComboBox()
         mapCombo.addItems(["Assign to R", "Assign to G", "Assign to B", "Weighted"])
         layout.addWidget(mapCombo)
+
         self.nbRowsContainer.addWidget(rowWidget)
-        self.nb_rows.append((rowWidget, wlLine, fileLine, mapCombo))
+        self.nb_rows.append((rowWidget, wlLine, fileLine, pctLine, mapCombo))
 
     def nbRemoveRow(self):
         if not self.nb_rows:
             return
-        rowWidget, wlLine, fileLine, mapCombo = self.nb_rows.pop()
+        rowWidget, wlLine, fileLine, pctLine, mapCombo = self.nb_rows.pop()
         self.nbRowsContainer.removeWidget(rowWidget)
         rowWidget.setParent(None)
         rowWidget.deleteLater()
 
-    # -------------------------------------------------------------
-    # Narrowband Combine
-    # -------------------------------------------------------------
+    # ---------------- Narrowband Combine ----------------
     def runNarrowbandCombine(self):
         rows = []
-        for (_, wlLine, fileLine, mapCombo) in self.nb_rows:
+        for (_, wlLine, fileLine, pctLine, mapCombo) in self.nb_rows:
             wl_text = wlLine.text().strip()
             file_text = fileLine.text().strip()
             map_text = mapCombo.currentText()
@@ -577,12 +521,17 @@ class ColorWindow(QMainWindow):
                 wl = float(wl_text) if wl_text else None
             except:
                 wl = None
-            rows.append({"wl": wl, "file": file_text, "map": map_text})
+
+            pct_text = pctLine.text().strip().replace("%", "")
+            try:
+                pct = float(pct_text) / 100.0 if pct_text else 1.0
+            except:
+                pct = 1.0
+
+            rows.append({"wl": wl, "file": file_text, "pct": pct, "map": map_text})
 
         if not rows:
-            self.statusLabel.setText(
-                "Add at least one narrowband filter (file) to combine."
-            )
+            self.statusLabel.setText("Add at least one narrowband filter (file) to combine.")
             return
 
         outputFile = self.nbOutputLine.text().strip()
@@ -590,6 +539,7 @@ class ColorWindow(QMainWindow):
         normalize = self.nbNormalizeCheck.isChecked()
         preset = self.nbPresetCombo.currentText()
 
+        # Preset mapping convenience
         def assign_preset(rows, preset):
             if preset.startswith("Halpha->R"):
                 for r in rows:
@@ -642,6 +592,10 @@ class ColorWindow(QMainWindow):
                     maxv = np.nanmax(arr)
                     if maxv != 0 and not np.isnan(maxv):
                         arr = arr / maxv
+
+                # Apply percentage weight (Maxim DL style)
+                arr = arr * r["pct"]
+
                 arrays.append((r, arr))
 
             base_shape = arrays[0][1].shape
@@ -651,9 +605,7 @@ class ColorWindow(QMainWindow):
 
             for (r, arr) in arrays:
                 if arr.shape != base_shape:
-                    self.statusLabel.setText(
-                        "Input filter images have different shapes; resize externally."
-                    )
+                    self.statusLabel.setText("Input filter images have different shapes; resize externally.")
                     return
                 m = r["map"]
                 if m == "Assign to R":
@@ -676,34 +628,19 @@ class ColorWindow(QMainWindow):
                 if header is None:
                     fits.PrimaryHDU(data=RGB).writeto(outputFile, overwrite=True)
                 else:
-                    fits.PrimaryHDU(data=RGB, header=header).writeto(
-                        outputFile, overwrite=True
-                    )
-                self.statusLabel.setText(
-                    "Narrowband Combine (FITS) completed successfully."
-                )
+                    fits.PrimaryHDU(data=RGB, header=header).writeto(outputFile, overwrite=True)
+                self.statusLabel.setText("Narrowband Combine (FITS) completed successfully.")
             else:
                 first_file = rows[0]["file"]
                 sample_img = cv2.imread(first_file, cv2.IMREAD_UNCHANGED)
-                if sample_img is not None:
-                    sample_dtype = sample_img.dtype
-                else:
-                    sample_dtype = np.uint8
+                sample_dtype = sample_img.dtype if sample_img is not None else np.uint8
 
                 if np.issubdtype(sample_dtype, np.integer):
                     info = np.iinfo(sample_dtype)
-                    max_val = max(
-                        np.nanmax(R), np.nanmax(G), np.nanmax(B), 1.0
-                    )
-                    R_out = np.clip(
-                        (R / max_val) * info.max, info.min, info.max
-                    ).astype(sample_dtype)
-                    G_out = np.clip(
-                        (G / max_val) * info.max, info.min, info.max
-                    ).astype(sample_dtype)
-                    B_out = np.clip(
-                        (B / max_val) * info.max, info.min, info.max
-                    ).astype(sample_dtype)
+                    max_val = max(np.nanmax(R), np.nanmax(G), np.nanmax(B), 1.0)
+                    R_out = np.clip((R / max_val) * info.max, info.min, info.max).astype(sample_dtype)
+                    G_out = np.clip((G / max_val) * info.max, info.min, info.max).astype(sample_dtype)
+                    B_out = np.clip((B / max_val) * info.max, info.min, info.max).astype(sample_dtype)
                 else:
                     R_out = R.astype(np.float32)
                     G_out = G.astype(np.float32)
@@ -712,13 +649,9 @@ class ColorWindow(QMainWindow):
                 merged = cv2.merge((B_out, G_out, R_out))
                 ok = cv2.imwrite(outputFile, merged)
                 if not ok:
-                    self.statusLabel.setText(
-                        "Failed to write narrowband output image (Other)."
-                    )
+                    self.statusLabel.setText("Failed to write narrowband output image (Other).")
                     return
-                self.statusLabel.setText(
-                    "Narrowband Combine (Other) completed successfully."
-                )
+                self.statusLabel.setText("Narrowband Combine (Other) completed successfully.")
         except Exception as e:
             self.statusLabel.setText(f"Error in Narrowband Combine: {e}")
 
