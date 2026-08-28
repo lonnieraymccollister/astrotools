@@ -480,7 +480,7 @@ class SymmetryGUI(QMainWindow):
 
         cv2.imwrite(
             base + "_local_heatmap.jpg",
-            heat2
+            heat
         )
 
         cv2.imwrite(

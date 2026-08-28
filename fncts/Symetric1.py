@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtCore import Qt, QSize
-from skimage.metrics import structural_similarity as ssim
 
 
 class SymmetryGUI(QMainWindow):
@@ -53,213 +52,6 @@ class SymmetryGUI(QMainWindow):
         self.scroll.setWidget(self.label)
 
         self.setCentralWidget(main_widget)
-
-    def compute_symmetry_score(self, gray, sym_gray):
-
-        mask = gray > np.percentile(gray, 20)
-
-        score, ssim_map = ssim(
-            gray,
-            sym_gray,
-            data_range=255,
-            full=True
-        )
-
-        masked_score = float(np.mean(ssim_map[mask]))
-
-        return masked_score, ssim_map
-
-    def local_point_symmetry(self, img, angle, center):
-
-        h, w = img.shape[:2]
-
-        gray = cv2.cvtColor(
-            img,
-            cv2.COLOR_BGR2GRAY
-        ).astype(np.float32)
-
-        rot_angle = 90.0 - angle
-
-        rot_mat = cv2.getRotationMatrix2D(
-            tuple(center),
-            rot_angle,
-            1.0
-        )
-
-        inv_rot = cv2.getRotationMatrix2D(
-            tuple(center),
-            -rot_angle,
-            1.0
-        )
-
-        rotated = cv2.warpAffine(
-            gray,
-            rot_mat,
-            (w, h),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REFLECT
-        )
-
-        mirrored = cv2.flip(rotated, 1)
-
-        sym_local = cv2.warpAffine(
-            mirrored,
-            inv_rot,
-            (w, h),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_REFLECT
-        )
-
-        diff = np.abs(gray - sym_local)
-
-        diff_norm = cv2.normalize(
-            diff,
-            None,
-            0,
-            255,
-            cv2.NORM_MINMAX
-        ).astype(np.uint8)
-
-        heat = cv2.applyColorMap(
-            diff_norm,
-            cv2.COLORMAP_JET
-        )
-
-        overlay = cv2.addWeighted(
-            img,
-            0.7,
-            heat,
-            0.3,
-            0
-        )
-
-        return heat, overlay, diff_norm
-
-    def search_angles(
-            self,
-            img,
-            center,
-            candidate_angles,
-            p1=None,
-            p2=None):
-
-        h, w = img.shape[:2]
-
-        gray = cv2.cvtColor(
-            img,
-            cv2.COLOR_BGR2GRAY
-        )
-
-        best_score = -1.0
-        best_angle = None
-        best_img = None
-
-        for angle in candidate_angles:
-
-            sym_img, rot_mat, inv_rot = self.make_symmetric(
-                img,
-                angle,
-                center,
-                w,
-                h
-            )
-
-            if p1 is not None:
-
-                p2_rot = np.dot(
-                    rot_mat[:, :2],
-                    p2
-                ) + rot_mat[:, 2]
-
-                p2_flip = np.array(
-                    [w - p2_rot[0],
-                     p2_rot[1]],
-                    dtype=np.float32
-                )
-
-                p2_final = np.dot(
-                    inv_rot[:, :2],
-                    p2_flip
-                ) + inv_rot[:, 2]
-
-                delta = p1 - p2_final
-
-                M = np.float32([
-                    [1, 0, delta[0]],
-                    [0, 1, delta[1]]
-                ])
-
-                sym_img = cv2.warpAffine(
-                    sym_img,
-                    M,
-                    (w, h)
-                )
-
-            sym_gray = cv2.cvtColor(
-                sym_img,
-                cv2.COLOR_BGR2GRAY
-            )
-
-            score, _ = self.compute_symmetry_score(
-                gray,
-                sym_gray
-            )
-
-            if score > best_score:
-                best_score = score
-                best_angle = angle
-                best_img = sym_img
-
-        return best_angle, best_score, best_img
-
-    def refine_axis(
-            self,
-            img,
-            center,
-            p1=None,
-            p2=None):
-
-        coarse_angles = np.arange(
-            0,
-            180,
-            1.0
-        )
-
-        best_angle, _, _ = self.search_angles(
-            img,
-            center,
-            coarse_angles,
-            p1,
-            p2
-        )
-
-        medium_angles = np.arange(
-            best_angle - 2,
-            best_angle + 2,
-            0.1
-        )
-
-        best_angle, _, _ = self.search_angles(
-            img,
-            center,
-            medium_angles,
-            p1,
-            p2
-        )
-
-        fine_angles = np.arange(
-            best_angle - 0.2,
-            best_angle + 0.2,
-            0.01
-        )
-
-        return self.search_angles(
-            img,
-            center,
-            fine_angles,
-            p1,
-            p2
-        )
 
     # ---------------- Load Image ----------------
     def load_image(self):
@@ -416,29 +208,93 @@ class SymmetryGUI(QMainWindow):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float64)
         total_signal = float(np.sum(gray)) + 1e-12
     
-        if use_points:
+        angles = np.linspace(0, 180, num=180)
+        results = []  # list of (angle, raw_distance)
+    
+        best_score = float("inf")
+        best_angle = None
+        best_aligned = None
 
-            best_angle, best_score, best_aligned = (
-                self.refine_axis(
-                    img,
-                    center,
-                    p1,
-                    p2
-                )
-            )
-
-        else:
-
-            best_angle, best_score, best_aligned = (
-                self.refine_axis(
-                    img,
-                    center
-                )
-            )
+        for angle in angles:
+            # rotate -> flip -> rotate back
+            sym_img, rot_mat, inv_rot = self.make_symmetric(img, angle, center, w, h)
+    
+            if use_points:
+                # Transform p2 through the same matrices to find where it lands
+                p2_rot = np.dot(rot_mat[:, :2], p2) + rot_mat[:, 2]
+                p2_flip = np.array([w - p2_rot[0], p2_rot[1]], dtype=np.float32)
+                p2_final = np.dot(inv_rot[:, :2], p2_flip) + inv_rot[:, 2]
+    
+                # Translate so p2_final aligns with p1
+                delta = p1 - p2_final
+                M = np.float32([[1, 0, delta[0]], [0, 1, delta[1]]])
+                sym_aligned = cv2.warpAffine(sym_img, M, (w, h))
+            else:
+                # Align center point (fallback)
+                c = np.array([cx, cy], dtype=np.float32)
+                c_rot = np.dot(rot_mat[:, :2], c) + rot_mat[:, 2]
+                c_flip = np.array([w - c_rot[0], c_rot[1]], dtype=np.float32)
+                c_final = np.dot(inv_rot[:, :2], c_flip) + inv_rot[:, 2]
+                delta = np.array([cx, cy], dtype=np.float32) - c_final
+                M = np.float32([[1, 0, delta[0]], [0, 1, delta[1]]])
+                sym_aligned = cv2.warpAffine(sym_img, M, (w, h))
+    
+            # compute raw distance on grayscale (sum absolute differences)
+            sym_gray = cv2.cvtColor(sym_aligned, cv2.COLOR_BGR2GRAY).astype(np.float64)
+            raw_D = float(np.sum(np.abs(gray - sym_gray)))
+    
+            results.append((float(angle), raw_D))
+    
+            if raw_D < best_score:
+                best_score = raw_D
+                best_angle = float(angle)
+                best_aligned = sym_aligned
     
         if best_aligned is None:
             print("Auto-scan found no candidate.")
             return
+    
+        # Convert raw distances to normalized scores and percentiles
+        Ds = np.array([d for _, d in results], dtype=np.float64)
+        angles_arr = np.array([a for a, _ in results], dtype=np.float64)
+    
+        # Normalized score: 1 - (D / total_signal), clipped to [0,1]
+        norm_scores = 1.0 - (Ds / (total_signal + 1e-12))
+        norm_scores = np.clip(norm_scores, 0.0, 1.0)
+    
+        # Percentile: higher percentile = better symmetry (100 = best)
+        ranks = Ds.argsort().argsort()  # 0..N-1 where 0 is best (smallest D)
+        percentiles = 100.0 * (1.0 - ranks / (len(Ds) - 1.0)) if len(Ds) > 1 else np.array([100.0])
+    
+        # --- Save CSV of all angles and scores (raw, normalized, percentile) ---
+        csv_all = self.img_path.rsplit(".", 1)[0] + "_autoscan_scores_with_norm.csv"
+        try:
+            with open(csv_all, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["angle_degrees", "raw_distance", "normalized_score", "percentile"])
+                for ang, d, s, p in zip(angles_arr, Ds, norm_scores, percentiles):
+                    writer.writerow([f"{ang:.6f}", f"{d:.6f}", f"{s:.6f}", f"{p:.2f}"])
+            print(f"Saved full scores CSV: {csv_all}")
+        except Exception as e:
+            print(f"Failed to save CSV {csv_all}: {e}")
+    
+        # --- Save CSV of top N best axes ---
+        top_n = 10
+        order = np.argsort(Ds)
+        csv_top = self.img_path.rsplit(".", 1)[0] + f"_autoscan_top{top_n}_scores.csv"
+        try:
+            with open(csv_top, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["rank", "angle_degrees", "raw_distance", "normalized_score", "percentile"])
+                for i, idx in enumerate(order[:top_n], start=1):
+                    writer.writerow([i,
+                                     f"{angles_arr[idx]:.6f}",
+                                     f"{Ds[idx]:.6f}",
+                                     f"{norm_scores[idx]:.6f}",
+                                     f"{percentiles[idx]:.2f}"])
+            print(f"Saved top {top_n} scores CSV: {csv_top}")
+        except Exception as e:
+            print(f"Failed to save CSV {csv_top}: {e}")
     
         # Save best aligned symmetric image and outputs (same as before)
         out_sym = self.img_path.rsplit(".", 1)[0] + "_autoscan_symmetric.jpg"
@@ -468,36 +324,9 @@ class SymmetryGUI(QMainWindow):
         out_overlay = self.img_path.rsplit(".", 1)[0] + "_autoscan_error_overlay.jpg"
         cv2.imwrite(out_heat, heat)
         cv2.imwrite(out_overlay, overlay)
-
-        # Generate local symmetry maps
-        heat2, local_overlay, diff_norm = self.local_point_symmetry(
-            img,
-            best_angle,
-            center
-        )
-
-        base = self.img_path.rsplit(".",1)[0]
-
-        cv2.imwrite(
-            base + "_local_heatmap.jpg",
-            heat2
-        )
-
-        cv2.imwrite(
-            base + "_local_overlay.jpg",
-            local_overlay
-        )
-
-        cv2.imwrite(
-            base + "_local_diff.jpg",
-            diff_norm
-        )
     
-        print(
-            f"Auto-scan complete\n"
-            f"Best angle = {best_angle:.4f}\n"
-            f"Masked SSIM = {best_score:.5f}"
-        )
+        print(f"Auto-scan complete. Best angle = {best_angle:.2f} degrees. Best raw distance = {best_score:.2f}. Normalized = {1.0 - best_score/total_signal:.3f}")
+            
 
 
 # ---------------- Main ----------------

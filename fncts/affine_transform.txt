@@ -426,10 +426,6 @@ class EllipseWidget(QtWidgets.QWidget):
         self.btnFit = QtWidgets.QPushButton("Fit Ellipse")
         self.btnSave = QtWidgets.QPushButton("Save Result")
 
-        # NEW CHECKBOX
-        self.chkShowFoci = QtWidgets.QCheckBox("Show Foci Instead of Center")
-        self.chkShowFoci.setChecked(False)
-
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self.imgScroll)
@@ -439,12 +435,7 @@ class EllipseWidget(QtWidgets.QWidget):
         btnLayout.addWidget(self.btnClear)
         btnLayout.addWidget(self.btnFit)
         btnLayout.addWidget(self.btnSave)
-
-        # ADD CHECKBOX HERE — after btnLayout exists
-        btnLayout.addWidget(self.chkShowFoci)
-
         layout.addLayout(btnLayout)
-
 
         # Connections
         self.btnLoad.clicked.connect(self.loadImage)
@@ -489,42 +480,15 @@ class EllipseWidget(QtWidgets.QWidget):
         pts = np.array(self.points, dtype=np.int32)
         ellipse = cv2.fitEllipse(pts)
 
-        # Draw ellipse
+        # Draw ellipse and center
         output = self.image.copy()
         cv2.ellipse(output, ellipse, (0, 255, 0), 2)
 
-        # Extract ellipse parameters
-        (cx, cy), (major, minor), angle_deg = ellipse
-        a = major / 2.0
-        b = minor / 2.0
-
-        # Compute foci only if major >= minor
-        if a < b:
-            a, b = b, a  # swap to ensure a >= b
-
-        # Foci distance
-        c = np.sqrt(max(a*a - b*b, 0))
-
-        # Convert angle to radians
-        theta = np.deg2rad(angle_deg)
-
-        # Foci positions
-        fx1 = cx + c * np.cos(theta)
-        fy1 = cy + c * np.sin(theta)
-        fx2 = cx - c * np.cos(theta)
-        fy2 = cy - c * np.sin(theta)
-
-        if self.chkShowFoci.isChecked():
-            # Draw foci (blue)
-            cv2.circle(output, (int(fx1), int(fy1)), 6, (255, 0, 0), -1)
-            cv2.circle(output, (int(fx2), int(fy2)), 6, (255, 0, 0), -1)
-        else:
-            # Draw center (red)
-            cv2.circle(output, (int(cx), int(cy)), 6, (0, 0, 255), -1)
+        (cx, cy) = ellipse[0]
+        cv2.circle(output, (int(cx), int(cy)), 6, (0, 0, 255), -1)
 
         self.result = output
         self.imgLabel.setImage(output)
-
 
     def saveResult(self):
         if not hasattr(self, "result"):
