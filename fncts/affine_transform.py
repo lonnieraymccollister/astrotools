@@ -518,12 +518,18 @@ class EllipseWidget(QtWidgets.QWidget):
             # Draw foci (blue)
             cv2.circle(output, (int(fx1), int(fy1)), 6, (255, 0, 0), -1)
             cv2.circle(output, (int(fx2), int(fy2)), 6, (255, 0, 0), -1)
+
+            # ---- PRINT FOCI TO CONSOLE ----
+            print("\nEllipse Foci:")
+            print(f"  Focus 1: ({fx1:.3f}, {fy1:.3f})")
+            print(f"  Focus 2: ({fx2:.3f}, {fy2:.3f})")
         else:
             # Draw center (red)
             cv2.circle(output, (int(cx), int(cy)), 6, (0, 0, 255), -1)
 
-        self.result = output
-        self.imgLabel.setImage(output)
+            # ---- PRINT CENTER TO CONSOLE ----
+            print("\nEllipse Center (Midpoint):")
+            print(f"  Center: ({cx:.3f}, {cy:.3f})")
 
 
     def saveResult(self):
