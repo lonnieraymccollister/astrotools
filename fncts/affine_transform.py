@@ -232,6 +232,54 @@ class ManualWidget(QtWidgets.QWidget):
         self.transformButton = QtWidgets.QPushButton("Compute Affine Transform")
         self.clearPointsButton = QtWidgets.QPushButton("Clear Points")
         self.saveButton = QtWidgets.QPushButton("Save Result")
+        # --------------------------------------------------
+        # Manual coordinate entry mode
+        # --------------------------------------------------
+        self.manualEntryCheck = QtWidgets.QCheckBox(
+            "Enter coordinates manually (x0=1085.24px, y0=552.72px)"
+        )
+        self.manualEntryCheck.setChecked(False)
+
+        self.coordWidget = QtWidgets.QWidget()
+        coordLayout = QtWidgets.QGridLayout(self.coordWidget)
+
+        self.srcEdits = []
+        self.dstEdits = []
+
+        # Header row
+        coordLayout.addWidget(QtWidgets.QLabel("Source Points"), 0, 0, 1, 3)
+        coordLayout.addWidget(QtWidgets.QLabel("Destination Points"), 0, 4, 1, 3)
+
+        for i in range(3):
+
+            sx = QtWidgets.QLineEdit()
+            sy = QtWidgets.QLineEdit()
+            dx = QtWidgets.QLineEdit()
+            dy = QtWidgets.QLineEdit()
+
+            sx.setPlaceholderText(f"x{i}")
+            sy.setPlaceholderText(f"y{i}")
+            dx.setPlaceholderText(f"x{i}")
+            dy.setPlaceholderText(f"y{i}")
+
+            self.srcEdits.append((sx, sy))
+            self.dstEdits.append((dx, dy))
+
+            row = i + 1
+
+            coordLayout.addWidget(QtWidgets.QLabel(f"Src {i}"), row, 0)
+            coordLayout.addWidget(sx, row, 1)
+            coordLayout.addWidget(sy, row, 2)
+
+            coordLayout.addWidget(QtWidgets.QLabel(f"Dst {i}"), row, 4)
+            coordLayout.addWidget(dx, row, 5)
+            coordLayout.addWidget(dy, row, 6)
+
+        self.coordWidget.setVisible(False)
+
+        self.manualEntryCheck.toggled.connect(
+            self.coordWidget.setVisible
+        )
 
         self.outXEdit = QtWidgets.QLineEdit()
         self.outXEdit.setPlaceholderText("Output width (e.g., 800)")
@@ -272,6 +320,8 @@ class ManualWidget(QtWidgets.QWidget):
 
         mainLayout = QtWidgets.QVBoxLayout()
         mainLayout.addLayout(topLayout)
+        mainLayout.addWidget(self.manualEntryCheck)
+        mainLayout.addWidget(self.coordWidget)
         mainLayout.addLayout(controlLayout)
         self.setLayout(mainLayout)
 
@@ -307,14 +357,16 @@ class ManualWidget(QtWidgets.QWidget):
 
     def recordSrcPoint(self, point):
         x, y = point.x(), point.y()
-        self.src_points.append((x, y))
+        if len(self.src_points) < 3:
+            self.src_points.append((float(x), float(y)))
         print("Source point:", x, y)
         if len(self.src_points) > 3:
             self.src_points = self.src_points[:3]
 
     def recordDstPoint(self, point):
         x, y = point.x(), point.y()
-        self.dst_points.append((x, y))
+        if len(self.dst_points) < 3:
+            self.dst_points.append((float(x), float(y)))
         print("Destination point:", x, y)
         if len(self.dst_points) > 3:
             self.dst_points = self.dst_points[:3]
@@ -327,13 +379,54 @@ class ManualWidget(QtWidgets.QWidget):
         if self.target_image is not None:
             self.dstLabel.setImage(self.target_image)
 
+    def parseCoordinate(self, value):
+        value = value.strip()
+        if value.lower().endswith("px"):
+            value = value[:-2]
+        return float(value)
+
     def computeAffine(self):
         if self.source_image is None or self.target_image is None:
             QtWidgets.QMessageBox.warning(self, "Error", "Load both images before computing transformation.")
             return
-        if len(self.src_points) < 3 or len(self.dst_points) < 3:
-            QtWidgets.QMessageBox.warning(self, "Error", "Click 3 points on each image.")
-            return
+        if self.manualEntryCheck.isChecked():
+
+            try:
+
+                self.src_points = [
+                    (
+                        self.parseCoordinate(self.srcEdits[i][0].text()),
+                        self.parseCoordinate(self.srcEdits[i][1].text())
+                    )
+                    for i in range(3)
+                ]
+
+                self.dst_points = [
+                    (
+                        self.parseCoordinate(self.dstEdits[i][0].text()),
+                        self.parseCoordinate(self.dstEdits[i][1].text())
+                    )
+                    for i in range(3)
+                ]
+
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Error",
+                    f"Invalid coordinate entry:\n{e}"
+                )
+                return
+
+        else:
+
+            if len(self.src_points) < 3 or len(self.dst_points) < 3:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Error",
+                    "Click 3 points on each image."
+                )
+                return
+
         pts1 = np.float32(self.src_points[:3])
         pts2 = np.float32(self.dst_points[:3])
         M = cv2.getAffineTransform(pts1, pts2)
@@ -489,7 +582,7 @@ class EllipseWidget(QtWidgets.QWidget):
         pts = np.array(self.points, dtype=np.int32)
         ellipse = cv2.fitEllipse(pts)
 
-        # Draw ellipse
+        # Always draw ellipse first
         output = self.image.copy()
         cv2.ellipse(output, ellipse, (0, 255, 0), 2)
 
@@ -498,14 +591,12 @@ class EllipseWidget(QtWidgets.QWidget):
         a = major / 2.0
         b = minor / 2.0
 
-        # Compute foci only if major >= minor
+        # Ensure a >= b
         if a < b:
-            a, b = b, a  # swap to ensure a >= b
+            a, b = b, a
 
-        # Foci distance
+        # Compute foci distance
         c = np.sqrt(max(a*a - b*b, 0))
-
-        # Convert angle to radians
         theta = np.deg2rad(angle_deg)
 
         # Foci positions
@@ -514,23 +605,28 @@ class EllipseWidget(QtWidgets.QWidget):
         fx2 = cx - c * np.cos(theta)
         fy2 = cy - c * np.sin(theta)
 
+        # Draw and print based on checkbox
         if self.chkShowFoci.isChecked():
-            # Draw foci (blue)
+            # Draw foci
             cv2.circle(output, (int(fx1), int(fy1)), 6, (255, 0, 0), -1)
             cv2.circle(output, (int(fx2), int(fy2)), 6, (255, 0, 0), -1)
 
-            # ---- PRINT FOCI TO CONSOLE ----
+            # Print foci
             print("\nEllipse Foci:")
             print(f"  Focus 1: ({fx1:.3f}, {fy1:.3f})")
             print(f"  Focus 2: ({fx2:.3f}, {fy2:.3f})")
+
         else:
-            # Draw center (red)
+            # Draw center
             cv2.circle(output, (int(cx), int(cy)), 6, (0, 0, 255), -1)
 
-            # ---- PRINT CENTER TO CONSOLE ----
+            # Print center
             print("\nEllipse Center (Midpoint):")
             print(f"  Center: ({cx:.3f}, {cy:.3f})")
 
+        # ALWAYS update display
+        self.result = output
+        self.imgLabel.setImage(output)
 
     def saveResult(self):
         if not hasattr(self, "result"):
