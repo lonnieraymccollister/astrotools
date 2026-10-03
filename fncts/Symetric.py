@@ -59,6 +59,9 @@ class SymmetryGUI(QMainWindow):
         self.img = None
         self.img_path = None
 
+        self.center_point = None
+        self.selecting_center = False
+
         # --- Main Layout ---
         main_widget = QWidget()
         main_layout = QVBoxLayout(main_widget)
@@ -82,6 +85,14 @@ class SymmetryGUI(QMainWindow):
         self.manual_btn = QPushButton("Enter Points Manually")
         self.manual_btn.clicked.connect(self.enter_points_manually)
         btn_layout.addWidget(self.manual_btn)
+
+        self.center_btn = QPushButton(
+            "Select Symmetry Center"
+        )
+        self.center_btn.clicked.connect(
+            self.enable_center_selection
+        )
+        btn_layout.addWidget(self.center_btn)
 
         main_layout.addLayout(btn_layout)
 
@@ -116,6 +127,20 @@ class SymmetryGUI(QMainWindow):
             self.show_image(temp)
 
             print(f"Manual points set: ({x1}, {y1}) and ({x2}, {y2})")
+
+    # ---------------- Select Center Mode ----------------
+    def enable_center_selection(self):
+
+        if self.img is None:
+            print("Load an image first.")
+            return
+
+        self.selecting_center = True
+
+        print(
+            "Click a pixel to become the "
+            "symmetry center."
+        )
 
     # ---------------- Symmetry Score ----------------
     def compute_symmetry_score(self, gray, sym_gray):
@@ -158,6 +183,121 @@ class SymmetryGUI(QMainWindow):
         overlay = cv2.addWeighted(img, 0.7, heat, 0.3, 0)
 
         return heat, overlay, diff_norm
+
+    # ---------------- Top N Angle Search ----------------
+    def search_angles_top_n(
+            self,
+            img,
+            center,
+            candidate_angles,
+            n=5,
+            p1=None,
+            p2=None):
+
+        h, w = img.shape[:2]
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        results = []
+
+        for angle in candidate_angles:
+
+            sym_img, rot_mat, inv_rot = self.make_symmetric(
+                img,
+                angle,
+                center,
+                w,
+                h
+            )
+
+            if p1 is not None:
+
+                p2_rot = np.dot(
+                    rot_mat[:, :2],
+                    p2
+                ) + rot_mat[:, 2]
+
+                p2_flip = np.array(
+                    [w - p2_rot[0], p2_rot[1]],
+                    dtype=np.float32
+                )
+
+                p2_final = np.dot(
+                    inv_rot[:, :2],
+                    p2_flip
+                ) + inv_rot[:, 2]
+
+                delta = p1 - p2_final
+
+                M = np.float32([
+                    [1, 0, delta[0]],
+                    [0, 1, delta[1]]
+                ])
+
+                sym_img = cv2.warpAffine(
+                    sym_img,
+                    M,
+                    (w, h)
+                )
+
+            sym_gray = cv2.cvtColor(
+                sym_img,
+                cv2.COLOR_BGR2GRAY
+            )
+
+            score, _ = self.compute_symmetry_score(
+                gray,
+                sym_gray
+            )
+
+            results.append({
+                "angle": float(angle),
+                "score": float(score),
+                "image": sym_img
+            })
+
+        results.sort(
+            key=lambda x: x["score"],
+            reverse=True
+        )
+
+        selected = []
+
+        MIN_PEAK_SEPARATION = 10.0
+
+        for candidate in results:
+
+            keep = True
+
+            for existing in selected:
+
+                angle_diff = abs(
+                    candidate["angle"] -
+                    existing["angle"]
+                )
+
+                angle_diff = min(
+                    angle_diff,
+                    180.0 - angle_diff
+                )
+
+                if angle_diff < MIN_PEAK_SEPARATION:
+                    keep = False
+                    break
+
+            if keep:
+                selected.append(candidate)
+
+            if len(selected) >= n:
+                break
+            print("\nFINAL PEAK LIST")
+
+            for p in selected:
+
+                print(
+                    f"{p['angle']:.3f}  "
+                    f"{p['score']:.5f}"
+                )
+        return selected
 
     # ---------------- Angle Search ----------------
     def search_angles(self, img, center, candidate_angles, p1=None, p2=None):
@@ -231,16 +371,67 @@ class SymmetryGUI(QMainWindow):
 
     # ---------------- Mouse Click Handler ----------------
     def get_click(self, event):
+
         if self.img is None:
             return
 
         x = int(event.position().x())
         y = int(event.position().y())
+
+        # ----- CENTER SELECTION -----
+
+        if self.selecting_center:
+
+            self.center_point = (x, y)
+
+            self.selecting_center = False
+
+            temp = self.img.copy()
+
+            cv2.drawMarker(
+                temp,
+                (x, y),
+                (0,255,255),
+                cv2.MARKER_CROSS,
+                30,
+                2
+            )
+
+            self.show_image(temp)
+
+            print(
+                f"Symmetry center set to "
+                f"({x}, {y})"
+            )
+
+            return
+
+        # ----- EXISTING POINT LOGIC -----
+
         self.points.append((x, y))
 
         temp = self.img.copy()
+
+        if self.center_point is not None:
+
+            cv2.drawMarker(
+                temp,
+                self.center_point,
+                (0,255,255),
+                cv2.MARKER_CROSS,
+                30,
+                2
+            )
+
         for px, py in self.points:
-            cv2.circle(temp, (px, py), 5, (0, 0, 255), -1)
+
+            cv2.circle(
+                temp,
+                (px, py),
+                5,
+                (0,0,255),
+                -1
+            )
 
         self.show_image(temp)
 
@@ -334,8 +525,54 @@ class SymmetryGUI(QMainWindow):
             center = np.array([(p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0], dtype=np.float32)
             cx, cy = int(center[0]), int(center[1])
         else:
-            cx, cy = w // 2, h // 2
-            center = np.array([cx, cy], dtype=np.float32)
+            if self.center_point is not None:
+
+                cx, cy = self.center_point
+
+            else:
+
+                cx, cy = w // 2, h // 2
+
+            center = np.array(
+                [cx, cy],
+                dtype=np.float32
+            )
+
+        candidate_angles = np.arange(
+            0,
+            180,
+            0.25
+        )
+
+        if use_points:
+
+            top5 = self.search_angles_top_n(
+                img,
+                center,
+                candidate_angles,
+                n=5,
+                p1=p1,
+                p2=p2
+            )
+
+        else:
+
+            top5 = self.search_angles_top_n(
+                img,
+                center,
+                candidate_angles,
+                n=5
+            )
+
+        print("\nTop 5 Peaks:")
+
+        for i, entry in enumerate(top5, start=1):
+
+            print(
+                f"{i}: "
+                f"Angle={entry['angle']:.3f} "
+                f"Score={entry['score']:.5f}"
+            )
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float64)
         total_signal = float(np.sum(gray)) + 1e-12
@@ -375,18 +612,37 @@ class SymmetryGUI(QMainWindow):
         cv2.imwrite(out_heat, heat)
         cv2.imwrite(out_overlay, overlay)
 
-        heat2, local_overlay, diff_norm = self.local_point_symmetry(img, best_angle, center)
+        base = self.img_path.rsplit(".",1)[0]
 
-        base = self.img_path.rsplit(".", 1)[0]
-        cv2.imwrite(base + "_local_heatmap.jpg", heat2)
-        cv2.imwrite(base + "_local_overlay.jpg", local_overlay)
-        cv2.imwrite(base + "_local_diff.jpg", diff_norm)
+        diff_stack = []
 
-        print(
-            f"Auto-scan complete\n"
-            f"Best angle = {best_angle:.4f}\n"
-            f"Masked SSIM = {best_score:.5f}"
-        )
+        for idx, entry in enumerate(top5, start=1):
+
+            angle = entry["angle"]
+
+            angle_str = f"{angle:.2f}".replace(".", "_")
+
+            heat2, local_overlay, diff_norm = \
+                self.local_point_symmetry(
+                    img,
+                    angle,
+                    center
+                )
+
+            cv2.imwrite(
+                f"{base}_local_heatmap_{idx:02d}_{angle_str}.jpg",
+                heat2
+            )
+
+            cv2.imwrite(
+                f"{base}_local_overlay_{idx:02d}_{angle_str}.jpg",
+                local_overlay
+            )
+
+            cv2.imwrite(
+                f"{base}_local_diff_{idx:02d}_{angle_str}.jpg",
+                diff_norm
+            )
 
 
 # ---------------- Main ----------------
