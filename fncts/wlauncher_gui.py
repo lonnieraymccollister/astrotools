@@ -71,6 +71,8 @@ ACTIONS = {
     "RaDec->2pt Angle GUI (spawn)": (sys.executable, "fncts/radectwoptang_gui.py"),
     "Mosaic (spawn)": (sys.executable, "fncts/mosaic_gui.py"),
     "Dust reddening GUI (spawn)": (sys.executable, "fncts/dust_gui.py"),
+    "Screen Stretch GUI (spawn)": (sys.executable, "fncts/screenstretch.py"),
+
 
     # Template-aware dust tools
     # apConsoleWcs.py csv --out out.csv
