@@ -39,7 +39,6 @@ class HistogramCanvas(FigureCanvasQTAgg):
         self.p99 = None
         self.fig.patch.set_facecolor("black")
         self.ax.set_facecolor("black")
-        super().__init__(self.fig)
 
         self.mean = None
         self.std = None
@@ -173,35 +172,24 @@ class HistogramCanvas(FigureCanvasQTAgg):
                 linewidth=3
             )
 
-            self.ax.text(
-                self.pixel_value,
-                self.ax.get_ylim()[1] * 0.75,
-                f"{self.pixel_value:.3f}",
-                color="magenta",
-                rotation=90
-            )
+            if self.black_point is not None:
+
+                self.ax.axvline(
+                    self.black_point,
+                    color="yellow",
+                    linewidth=10
+                )
+
+            if self.white_point is not None:
+
+                self.ax.axvline(
+                    self.white_point,
+                    color="yellow",
+                    linewidth=10
+                )
 
         self.draw()
 
-        #
-        # Pixel Under Mouse
-        #
-
-        if self.pixel_value is not None:
-
-            self.ax.axvline(
-                self.pixel_value,
-                color="magenta",
-                linewidth=2
-            )
-
-            self.ax.text(
-                self.pixel_value,
-                self.ax.get_ylim()[1] * 0.60,
-                f"{self.pixel_value:.3f}",
-                color="magenta",
-                rotation=90
-            )
 
 class StretchWindow(QMainWindow):
 
@@ -249,6 +237,9 @@ class StretchWindow(QMainWindow):
         )
 
         self.gamma_edit.setText("1.0")
+
+        self.hist.black_point = black
+        self.hist.white_point = white
 
         self.apply_stretch()
     
@@ -317,9 +308,6 @@ class StretchWindow(QMainWindow):
         layout.addWidget(self.stats)
 
     def set_image(self, data):
-
-        print("shape =", data.shape)
-        print("ndim =", data.ndim)
 
         self.data = data
 
@@ -397,15 +385,28 @@ class StretchWindow(QMainWindow):
     def apply_stretch(self):
 
         try:
-            black = float(self.black_edit.text())
-            white = float(self.white_edit.text())
+
+            black = float(
+                self.black_edit.text()
+            )
+
+            white = float(
+                self.white_edit.text()
+            )
 
             if white <= black:
                 return
 
+            self.hist.black_point = black
+            self.hist.white_point = white
+
             self.stretch_changed.emit(
                 black,
                 white
+            )
+
+            self.hist.draw_histogram(
+                self.data
             )
 
         except Exception:
@@ -423,19 +424,73 @@ class StretchWindow(QMainWindow):
         if self.data is None:
             return
 
-        nz = self.data[self.data > 0]
+        d = self.data.astype(np.float64)
 
-        if len(nz) == 0:
+        dmin = np.min(d)
+        dmax = np.max(d)
+
+        if dmax <= dmin:
             return
 
-        black = np.percentile(nz, 0.1)
-        white = np.percentile(nz, 99.9)
+        norm = (
+            d - dmin
+        ) / (
+            dmax - dmin
+        )
 
-        self.black_edit.setText(f"{black:.6f}")
-        self.white_edit.setText(f"{white:.6f}")
+        flat = norm.ravel()
+
+        flat = flat[np.isfinite(flat)]
+
+        nonzero = flat[flat > 0]
+
+        if len(nonzero):
+
+            black = np.percentile(
+                nonzero,
+                1
+            )
+
+            white = np.percentile(
+                nonzero,
+                99
+            )
+
+        else:
+
+            black = 0.0
+            white = 1.0
+
+        black = np.percentile(
+            flat,
+            1
+        )
+
+        white = np.percentile(
+            flat,
+            99
+        )
+
+        self.black_edit.setText(
+            f"{black:.6f}"
+        )
+
+        self.white_edit.setText(
+            f"{white:.6f}"
+        )
+
+        self.gamma_edit.setText(
+            "1.0"
+        )
+
+        self.hist.black_point = black
+        self.hist.white_point = white
+
+        self.hist.draw_histogram(
+            self.data
+        )
 
         self.apply_stretch()
-
 
 # ============================================================
 # Image Window
@@ -579,12 +634,6 @@ class ImageWindow(QMainWindow):
                 self.stretch_window.data
             )
 
-            self.stretch_window.hist.pixel_value = norm_value
-
-            self.stretch_window.hist.draw_histogram(
-                self.stretch_window.data
-            )
-
         rgb = self.data[iy, ix]
 
     def load_image(self):
@@ -641,19 +690,6 @@ class ImageWindow(QMainWindow):
                         data,
                         cv2.COLOR_BGR2RGB
                     )
-
-            #print("data exists:", 'data' in locals())
-            #print("shape =", data.shape)
-
-            print("dtype =", data.dtype)
-            print("shape =", data.shape)
-
-            print("min =", np.min(data))
-            print("max =", np.max(data))
-
-            nz = data[data > 0]
-
-            print("min_nonzero =", np.min(nz))
 
             self.data = data.astype(np.float64)
 
@@ -759,9 +795,6 @@ class ImageWindow(QMainWindow):
 
             img = np.ascontiguousarray(img)
 
-            #print(img.shape)
-            #print(img.dtype)
-
             qimg = QImage(
                 img.tobytes(),
                 w,
@@ -775,17 +808,6 @@ class ImageWindow(QMainWindow):
             h, w, ch = img.shape
 
             img = np.ascontiguousarray(img)
-
-            #print(img.shape)
-            #print(img.dtype)
-
-            qimg = QImage(
-                img.tobytes(),
-                w,
-                h,
-                3 * w,
-                QImage.Format.Format_RGB888
-            )
 
             qimg = QImage(
                 img.tobytes(),
