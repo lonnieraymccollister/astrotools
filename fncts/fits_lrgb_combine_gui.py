@@ -10,6 +10,8 @@ from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
+from astropy.wcs import WCS
+from reproject import reproject_interp
 
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton, QFileDialog,
@@ -37,6 +39,29 @@ def safe_normalize(arr):
         return np.zeros_like(a)
     return (a - mn) / (mx - mn)
 
+def has_celestial_wcs(header):
+    try:
+        wcs = WCS(header)
+        return wcs.has_celestial
+    except Exception:
+        return False
+
+
+def reproject_to_luminance(data, src_header, lum_header):
+    reproj, footprint = reproject_interp(
+        (data, WCS(src_header)),
+        lum_header
+    )
+
+    reproj = np.nan_to_num(
+        reproj,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0
+    )
+
+    return reproj
+
 def make_rgb_cube(lum, r, g, b, mode="L*RGB", l_weight=1.0):
     """
     Returns cube shaped (3, Y, X), dtype float32 in 0..1 range (or close).
@@ -63,8 +88,7 @@ def make_rgb_cube(lum, r, g, b, mode="L*RGB", l_weight=1.0):
     R = ensure2d(r)
     G = ensure2d(g)
     B = ensure2d(b)
-    if L.shape != R.shape or L.shape != G.shape or L.shape != B.shape:
-        raise ValueError("All images must share the same Y,X shape")
+
     # normalize
     Ln = safe_normalize(L)
     Rn = safe_normalize(R)
@@ -191,11 +215,17 @@ class FitsCombinerGUI(QWidget):
 
     def _on_preview_stats(self):
         try:
-            paths = self._validate_paths()
-            lum, _ = read_primary_fits(paths["Luminance"])
-            r, _ = read_primary_fits(paths["Red"])
-            g, _ = read_primary_fits(paths["Green"])
-            b, _ = read_primary_fits(paths["Blue"])
+            lum, lum_hdr = read_primary_fits(paths["Luminance"])
+            r, r_hdr = read_primary_fits(paths["Red"])
+            g, g_hdr = read_primary_fits(paths["Green"])
+            b, b_hdr = read_primary_fits(paths["Blue"])
+            self._log(
+                f"WCS present: "
+                f"L={has_celestial_wcs(lum_hdr)} "
+                f"R={has_celestial_wcs(r_hdr)} "
+                f"G={has_celestial_wcs(g_hdr)} "
+                f"B={has_celestial_wcs(b_hdr)}"
+            )
             self._log("Shapes: L={}, R={}, G={}, B={}".format(lum.shape, r.shape, g.shape, b.shape))
             # basic stats
             def stats(a):
@@ -224,11 +254,59 @@ class FitsCombinerGUI(QWidget):
 
             # read inputs
             lum, header = read_primary_fits(paths["Luminance"])
-            blue, _ = read_primary_fits(paths["Blue"])
-            green, _ = read_primary_fits(paths["Green"])
-            red, _ = read_primary_fits(paths["Red"])
 
-            self._log("Read inputs. shapes: L={}, R={}, G={}, B={}".format(lum.shape, red.shape, green.shape, blue.shape))
+            red, red_hdr = read_primary_fits(paths["Red"])
+            green, green_hdr = read_primary_fits(paths["Green"])
+            blue, blue_hdr = read_primary_fits(paths["Blue"])
+
+            self._log(
+                "Read inputs. shapes: "
+                f"L={lum.shape}, "
+                f"R={red.shape}, "
+                f"G={green.shape}, "
+                f"B={blue.shape}"
+            )
+
+            if not has_celestial_wcs(header):
+                raise ValueError(
+                    "Luminance image is not plate solved."
+                )
+
+            for name, hdr in [
+                ("Red", red_hdr),
+                ("Green", green_hdr),
+                ("Blue", blue_hdr),
+            ]:
+                if not has_celestial_wcs(hdr):
+                    raise ValueError(
+                        f"{name} image is not plate solved."
+                    )
+
+            self._log("Using luminance as master WCS frame")
+
+            red = reproject_to_luminance(
+                red,
+                red_hdr,
+                header
+            )
+
+            green = reproject_to_luminance(
+                green,
+                green_hdr,
+                header
+            )
+
+            blue = reproject_to_luminance(
+                blue,
+                blue_hdr,
+                header
+            )
+
+            self._log(
+                "Reprojected RGB channels to luminance frame. "
+                f"Shape={lum.shape}"
+            )
+
 
             cube = make_rgb_cube(lum, red, green, blue, mode=mode, l_weight=l_weight)
 
