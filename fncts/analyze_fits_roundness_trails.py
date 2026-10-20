@@ -1,173 +1,461 @@
-#!/usr/bin/env python3
-
-import csv
+import sys
+import traceback
 from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
-from photutils.segmentation import detect_threshold, detect_sources, SourceCatalog
-from skimage.feature import canny
-from skimage.transform import probabilistic_hough_line
-import matplotlib.pyplot as plt
+from photutils.segmentation import (
+    detect_threshold,
+    detect_sources,
+    SourceCatalog,
+)
 
-# Configuration
-ROUNDNESS_THRESHOLD   = 0.5
-NSIGMA                = 3.0
-MIN_AREA              = 5
+from PyQt6.QtCore import QObject, pyqtSignal, QThread
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    QHBoxLayout,
+    QDoubleSpinBox,
+    QProgressBar,
+    QSpinBox,
+)
 
-def contrast_stretch(image, p_low=1, p_high=99):
-    lo, hi = np.percentile(image[np.isfinite(image)], (p_low, p_high))
-    stretched = (image - lo) / (hi - lo)
-    return np.clip(stretched, 0.0, 1.0)
+ROUNDNESS_THRESHOLD_DEFAULT = 0.5
+NSIGMA_DEFAULT = 3.0
+MIN_PIXELS_DEFAULT = 5
 
-def display_trails(norm, lines, title="Detected Trails"):
-    plt.figure(figsize=(8, 8))
-    plt.imshow(norm, cmap='gray', origin='lower')
-    for p0, p1 in lines:
-        plt.plot([p0[0], p1[0]], [p0[1], p1[1]], 'r-', linewidth=1.5)
-    plt.title(title)
-    plt.axis('off')
-    plt.show()
 
-def analyze_fits_photutils(fits_path, show_plot=True):
-    # Load raw data
-    with fits.open(fits_path) as hdul:
-        data = hdul[0].data.astype('float64')
+def analyze_fits_roundness(
+    fits_path,
+    roundness_threshold,
+    nsigma,
+    min_pixels,
+):
+    """
+    Returns:
+        total_count
+        pass_count
+        fail_count
+        ratio (pass_count / fail_count)
+    """
 
-    # Contrast stretch & normalize
-    norm = contrast_stretch(data)
+    with fits.open(fits_path, memmap=False) as hdul:
+        data = hdul[0].data
 
-    # Star detection via segmentation + moments
-    thresh = detect_threshold(data, nsigma=NSIGMA)
-    segm   = detect_sources(data, thresh, npixels=MIN_AREA)
-    catalog = SourceCatalog(data, segm) if segm is not None else None
+    if data is None:
+        return 0, 0, 0, 0.0
 
-    stars_flags = []
-    tbl = None
-    if catalog is not None and len(catalog) > 0:
-        tbl = catalog.to_table(columns=[
-            'xcentroid', 'ycentroid',
-            'semimajor_sigma', 'semiminor_sigma'
-        ])
-        # Roundness: b/a
-        tbl['roundness'] = tbl['semiminor_sigma'] / tbl['semimajor_sigma']
+    data = np.asarray(data, dtype=np.float64)
 
-        for row in tbl:
-            # Current convention: flagged = fail (roundness <= ROUNDNESS_THRESHOLD)
-            if row['roundness'] <= ROUNDNESS_THRESHOLD:
-                stars_flags.append({
-                    'x': float(row['xcentroid']),
-                    'y': float(row['ycentroid']),
-                    'roundness': float(row['roundness'])
-                })
+    finite_mask = np.isfinite(data)
 
-    # --- Adaptive Hough tuning for trail detection ---
-    edges = canny(norm, sigma=1.0)
-    edge_count = int(np.sum(edges))
-    total_pixels = edges.size
-    edge_ratio = edge_count / total_pixels if total_pixels > 0 else 0.0
+    if not finite_mask.any():
+        return 0, 0, 0, 0.0
 
-    # Adaptive threshold: base + scaled by edge density
-    hough_threshold = int(max(5, 10 + edge_ratio * 200))
-
-    # Adaptive minimum line length based on image diagonal
-    height, width = data.shape
-    diag = np.sqrt(height**2 + width**2)
-    hough_min_length = int(max(20, diag * 0.02))   # 2% of diagonal
-
-    # Adaptive line gap
-    hough_line_gap = int(max(5, diag * 0.005))     # 0.5% of diagonal
-
-    lines = probabilistic_hough_line(
-        edges,
-        threshold=hough_threshold,
-        line_length=hough_min_length,
-        line_gap=hough_line_gap
+    threshold = detect_threshold(
+        data,
+        nsigma=nsigma,
+        mask=~finite_mask,
     )
 
-    trails = [{'x0': p0[0], 'y0': p0[1], 'x1': p1[0], 'y1': p1[1]}
-              for p0, p1 in lines]
-
-    if show_plot:
-        display_trails(norm, lines, title=fits_path.name)
-
-    # Return flagged stars, trails, the full table (or None), and Hough diagnostics
-    return stars_flags, trails, tbl, {
-        'hough_threshold': hough_threshold,
-        'hough_min_length': hough_min_length,
-        'hough_line_gap': hough_line_gap,
-        'edge_count': edge_count,
-        'edge_ratio': edge_ratio
-    }
-
-def main():
-    input_dir = Path(input("Enter the directory containing FITS files --> ").strip())
-    if not input_dir.is_dir():
-        print(f"Directory not found: {input_dir}")
-        return
-
-    fits_files = sorted(
-        [f for f in input_dir.iterdir()
-         if f.is_file() and f.suffix.lower() in ('.fit', '.fits')]
+    segmentation = detect_sources(
+        data,
+        threshold,
+        npixels=min_pixels,
     )
-    if not fits_files:
-        print("No FIT or FITS files found in directory.")
-        return
 
-    star_csv  = input_dir / "flagged_stars_report.csv"
-    trail_csv = input_dir / "detected_trails_report.csv"
+    if segmentation is None:
+        return 0, 0, 0, 0.0
 
-    with star_csv.open("w", newline="") as sf, trail_csv.open("w", newline="") as tf:
-        star_writer  = csv.DictWriter(sf, fieldnames=["filename","x","y","roundness"])
-        trail_writer = csv.DictWriter(tf, fieldnames=["filename","x0","y0","x1","y1"])
-        star_writer.writeheader()
-        trail_writer.writeheader()
+    catalog = SourceCatalog(data, segmentation)
 
-        for fits_file in fits_files:
-            # unpack the returned values
-            stars, trails, tbl, hough_info = analyze_fits_photutils(fits_file, show_plot=True)
+    if len(catalog) == 0:
+        return 0, 0, 0, 0.0
 
-            # write flagged stars (no per-star console print)
-            for s in stars:
-                star_writer.writerow({"filename": fits_file.name, **s})
+    table = catalog.to_table(
+        columns=[
+            "semimajor_sigma",
+            "semiminor_sigma",
+        ]
+    )
 
-            # write trails
-            for t in trails:
-                trail_writer.writerow({"filename": fits_file.name, **t})
+    semimajor = np.asarray(
+        table["semimajor_sigma"],
+        dtype=np.float64,
+    )
 
-            # Compute totals and ratio
-            total_detected = len(tbl) if tbl is not None else 0
-            flagged_count = len(stars)   # flagged = roundness <= ROUNDNESS_THRESHOLD (fail)
-            passed_count = total_detected - flagged_count
+    semiminor = np.asarray(
+        table["semiminor_sigma"],
+        dtype=np.float64,
+    )
 
-            if total_detected > 0:
-                if flagged_count > 0:
-                    ratio_passed_to_flagged = passed_count / flagged_count
-                    ratio_str = f"{ratio_passed_to_flagged:.3f}"
-                else:
-                    ratio_str = "inf"  # all passed
+    valid = (
+        np.isfinite(semimajor)
+        & np.isfinite(semiminor)
+        & (semimajor > 0)
+    )
 
-                print(
-                    f"{fits_file.name}: total_detected={total_detected}, "
-                    f"passed={passed_count}, flagged(fail)={flagged_count}, trails={len(trails)}, "
-                    f"passed:flagged={ratio_str}"
-                )
-            else:
-                print(
-                    f"{fits_file.name}: total_detected=0, passed=0, flagged=0, trails={len(trails)}, "
-                    f"no roundness measured"
-                )
+    if not np.any(valid):
+        return 0, 0, 0, 0.0
 
-            # Print adaptive Hough parameters for diagnostics
-            print(
-                f"  Hough params: threshold={hough_info['hough_threshold']}, "
-                f"min_length={hough_info['hough_min_length']}, gap={hough_info['hough_line_gap']}, "
-                f"edge_count={hough_info['edge_count']}, edge_ratio={hough_info['edge_ratio']:.4f}"
+    roundness = semiminor[valid] / semimajor[valid]
+
+    total_count = len(roundness)
+
+    fail_count = int(
+        np.sum(roundness <= roundness_threshold)
+    )
+
+    pass_count = total_count - fail_count
+
+    if fail_count == 0:
+        ratio = float("inf")
+    else:
+        ratio = pass_count / fail_count
+
+    return (
+        int(total_count),
+        int(pass_count),
+        int(fail_count),
+        float(ratio),
+    )
+
+
+class Worker(QObject):
+
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
+    log = pyqtSignal(str)
+
+    def __init__(
+        self,
+        folder,
+        roundness_threshold,
+        nsigma,
+        min_pixels,
+    ):
+        super().__init__()
+
+        self.folder = Path(folder)
+        self.roundness_threshold = roundness_threshold
+        self.nsigma = nsigma
+        self.min_pixels = min_pixels
+
+    def run(self):
+
+        try:
+
+            fits_files = sorted(
+                [
+                    f
+                    for f in self.folder.iterdir()
+                    if f.suffix.lower()
+                    in (".fit", ".fits")
+                ]
             )
 
-    print("\nReports generated:")
-    print(" -", star_csv.name)
-    print(" -", trail_csv.name)
+            total_files = len(fits_files)
+
+            if total_files == 0:
+                self.log.emit(
+                    "No FITS files found."
+                )
+                self.finished.emit()
+                return
+
+            low_ratio_count = 0
+            very_low_ratio_count = 0
+
+            for index, fits_file in enumerate(fits_files):
+
+                try:
+
+                    (
+                        stars,
+                        passed,
+                        failed,
+                        ratio,
+                    ) = analyze_fits_roundness(
+                        fits_file,
+                        self.roundness_threshold,
+                        self.nsigma,
+                        self.min_pixels,
+                    )
+
+                    ratio_str = (
+                        f"{ratio:.3f}"
+                        if np.isfinite(ratio)
+                        else "INF"
+                    )
+
+                    self.log.emit(
+                        f"{fits_file.name} | "
+                        f"Stars={stars} | "
+                        f"Pass={passed} | "
+                        f"Fail={failed} | "
+                        f"Ratio={ratio_str}"
+                    )
+
+                    if np.isfinite(ratio):
+
+                        if ratio < 1.0:
+                            low_ratio_count += 1
+
+                        if ratio < 0.5:
+                            very_low_ratio_count += 1
+
+                except Exception as e:
+
+                    self.log.emit(
+                        f"{fits_file.name} | "
+                        f"ERROR | {e}"
+                    )
+
+                    traceback.print_exc()
+
+                pct = int(
+                    ((index + 1) / total_files) * 100
+                )
+
+                self.progress.emit(pct)
+
+            self.log.emit("")
+            self.log.emit(
+                "=============================="
+            )
+            self.log.emit(
+                "Analysis Complete"
+            )
+            self.log.emit(
+                f"Images Processed: {total_files}"
+            )
+            self.log.emit(
+                f"Images With Ratio < 1.0 : {low_ratio_count}"
+            )
+            self.log.emit(
+                f"Images With Ratio < 0.5 : {very_low_ratio_count}"
+            )
+            self.log.emit(
+                "=============================="
+            )
+
+        except Exception as e:
+
+            self.log.emit(
+                f"Fatal Error: {e}"
+            )
+
+            traceback.print_exc()
+
+        self.finished.emit()
+
+
+class MainWindow(QMainWindow):
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.folder = ""
+
+        self.setWindowTitle(
+            "FITS Roundness Analyzer"
+        )
+
+        self.resize(900, 700)
+
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        layout = QVBoxLayout(central)
+
+        folder_layout = QHBoxLayout()
+
+        self.folder_label = QLabel(
+            "No folder selected"
+        )
+
+        self.btn_browse = QPushButton(
+            "Select Folder"
+        )
+
+        self.btn_browse.clicked.connect(
+            self.select_folder
+        )
+
+        folder_layout.addWidget(
+            self.folder_label
+        )
+
+        folder_layout.addWidget(
+            self.btn_browse
+        )
+
+        layout.addLayout(folder_layout)
+
+        layout.addWidget(
+            QLabel("Roundness Threshold")
+        )
+
+        self.roundness_spin = QDoubleSpinBox()
+        self.roundness_spin.setDecimals(3)
+        self.roundness_spin.setRange(
+            0.01,
+            1.0,
+        )
+        self.roundness_spin.setSingleStep(
+            0.01
+        )
+        self.roundness_spin.setValue(
+            ROUNDNESS_THRESHOLD_DEFAULT
+        )
+
+        layout.addWidget(
+            self.roundness_spin
+        )
+
+        layout.addWidget(
+            QLabel("Detection Sigma")
+        )
+
+        self.nsigma_spin = QDoubleSpinBox()
+        self.nsigma_spin.setDecimals(1)
+        self.nsigma_spin.setRange(
+            0.5,
+            20.0,
+        )
+        self.nsigma_spin.setSingleStep(
+            0.5
+        )
+        self.nsigma_spin.setValue(
+            NSIGMA_DEFAULT
+        )
+
+        layout.addWidget(
+            self.nsigma_spin
+        )
+
+        layout.addWidget(
+            QLabel("Minimum Pixels")
+        )
+
+        self.min_pixels_spin = QSpinBox()
+        self.min_pixels_spin.setRange(
+            1,
+            1000,
+        )
+        self.min_pixels_spin.setValue(
+            MIN_PIXELS_DEFAULT
+        )
+
+        layout.addWidget(
+            self.min_pixels_spin
+        )
+
+        self.btn_start = QPushButton(
+            "Analyze"
+        )
+
+        self.btn_start.clicked.connect(
+            self.start_analysis
+        )
+
+        layout.addWidget(
+            self.btn_start
+        )
+
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+
+        layout.addWidget(
+            self.progress
+        )
+
+        self.log_window = QTextEdit()
+        self.log_window.setReadOnly(True)
+
+        layout.addWidget(
+            self.log_window
+        )
+
+    def select_folder(self):
+
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select FITS Folder",
+        )
+
+        if folder:
+            self.folder = folder
+            self.folder_label.setText(folder)
+
+    def start_analysis(self):
+
+        if not self.folder:
+
+            QMessageBox.warning(
+                self,
+                "No Folder",
+                "Please select a FITS folder first.",
+            )
+
+            return
+
+        self.log_window.clear()
+        self.progress.setValue(0)
+
+        self.thread = QThread()
+
+        self.worker = Worker(
+            self.folder,
+            self.roundness_spin.value(),
+            self.nsigma_spin.value(),
+            self.min_pixels_spin.value(),
+        )
+
+        self.worker.moveToThread(
+            self.thread
+        )
+
+        self.thread.started.connect(
+            self.worker.run
+        )
+
+        self.worker.log.connect(
+            self.log_window.append
+        )
+
+        self.worker.progress.connect(
+            self.progress.setValue
+        )
+
+        self.worker.finished.connect(
+            self.thread.quit
+        )
+
+        self.worker.finished.connect(
+            self.worker.deleteLater
+        )
+
+        self.thread.finished.connect(
+            self.thread.deleteLater
+        )
+
+        self.thread.start()
+
 
 if __name__ == "__main__":
-    main()
+
+    app = QApplication(sys.argv)
+
+    window = MainWindow()
+    window.show()
+
+    sys.exit(app.exec())
