@@ -35,19 +35,36 @@ class ColorWindow(QMainWindow):
     def initUI(self):
         centralWidget = QWidget()
         self.setCentralWidget(centralWidget)
+
         mainLayout = QVBoxLayout(centralWidget)
 
         # Operation selection
         opLayout = QHBoxLayout()
-        opLabel = QLabel("Select Operation:")
+
+        opLabel = QLabel("Operation:")
+
         self.opCombo = QComboBox()
         self.opCombo.addItems([
             "Split Tricolor",
             "Combine Tricolor",
             "Create Luminance",
+            "Convert Color FITS to Mono FITS",
             "Narrowband Combine"
         ])
-        self.opCombo.currentIndexChanged.connect(self.operationChanged)
+
+        self.opCombo.currentIndexChanged.connect(
+            self.operationChanged
+        )
+
+        opLayout.addWidget(opLabel)
+        opLayout.addWidget(self.opCombo)
+        opLayout.addStretch()
+
+        mainLayout.addLayout(opLayout)
+
+        # Stacked widget
+        self.stack = QStackedWidget()
+        mainLayout.addWidget(self.stack)
         opLayout.addWidget(opLabel)
         opLayout.addWidget(self.opCombo)
         opLayout.addStretch()
@@ -156,6 +173,43 @@ class ColorWindow(QMainWindow):
 
         self.stack.addWidget(self.luminanceWidget)
 
+        # ---------------- Page 3: Convert Color FITS to Mono FITS ----------------
+
+        self.monoWidget = QWidget()
+        monoLayout = QGridLayout(self.monoWidget)
+
+        monoLayout.addWidget(QLabel("Input Color FITS:"), 0, 0)
+
+        self.monoInputLine = QLineEdit()
+        monoLayout.addWidget(self.monoInputLine, 0, 1)
+
+        btn = QPushButton("Browse")
+        btn.clicked.connect(lambda: self.browseFile(self.monoInputLine))
+        monoLayout.addWidget(btn, 0, 2)
+
+        monoLayout.addWidget(QLabel("Output Mono FITS:"), 1, 0)
+
+        self.monoOutputLine = QLineEdit()
+        monoLayout.addWidget(self.monoOutputLine, 1, 1)
+
+        btn = QPushButton("Browse")
+        btn.clicked.connect(
+            lambda: self.browseFile(self.monoOutputLine, save=True)
+        )
+        monoLayout.addWidget(btn, 1, 2)
+
+        monoLayout.addWidget(QLabel("Method:"), 2, 0)
+
+        self.monoMethodCombo = QComboBox()
+        self.monoMethodCombo.addItems([
+            "Synthetic Luminance (R+G+B)",
+            "Human Luminance (709)",
+            "Green Channel Only"
+        ])
+        monoLayout.addWidget(self.monoMethodCombo, 2, 1)
+
+        self.stack.addWidget(self.monoWidget)
+
         # ---------------- Page 3: Narrowband Combine (scrollable) ----------------
         self.narrowPage = QWidget()
         narrowPageLayout = QVBoxLayout(self.narrowPage)
@@ -252,10 +306,95 @@ class ColorWindow(QMainWindow):
             self.runCombineTricolor()
         elif op == "Create Luminance":
             self.runCreateLuminance()
+        elif op == "Convert Color FITS to Mono FITS":
+            self.runConvertMonoFits()
+
         elif op == "Narrowband Combine":
             self.runNarrowbandCombine()
         else:
             self.statusLabel.setText("Unknown operation selected.")
+
+    # ---------------- Page 4: Narrowband Combine ----------------
+    def runConvertMonoFits(self):
+
+        inputFile = self.monoInputLine.text().strip()
+        outputFile = self.monoOutputLine.text().strip()
+
+        if not inputFile or not outputFile:
+            self.statusLabel.setText(
+                "Input and output FITS files are required."
+            )
+            return
+
+        try:
+
+            with fits.open(inputFile) as hdul:
+                data = hdul[0].data.astype(np.float32)
+                header = hdul[0].header
+
+            if data.ndim != 3:
+                self.statusLabel.setText(
+                    "Input FITS is not a 3-channel color image."
+                )
+                return
+
+            # Handle channel-first RGB cube
+            if data.shape[0] == 3:
+
+                R = data[0]
+                G = data[1]
+                B = data[2]
+
+            # Handle channel-last cube
+            elif data.shape[2] == 3:
+
+                R = data[:, :, 0]
+                G = data[:, :, 1]
+                B = data[:, :, 2]
+
+            else:
+
+                self.statusLabel.setText(
+                    "Could not determine RGB channel layout."
+                )
+                return
+
+            method = self.monoMethodCombo.currentText()
+
+            if method == "Average RGB":
+
+                mono = R + G + B
+
+            elif method == "Human Luminance (709)":
+
+                mono = (
+                    0.2126 * R +
+                    0.7152 * G +
+                    0.0722 * B
+                )
+
+            elif method == "Green Channel Only":
+
+                mono = G
+
+            else:
+
+                mono = (R + G + B) / 3.0
+
+            fits.PrimaryHDU(
+                data=mono.astype(np.float32),
+                header=header
+            ).writeto(outputFile, overwrite=True)
+
+            self.statusLabel.setText(
+                "Color FITS successfully converted to Mono FITS."
+            )
+
+        except Exception as e:
+
+            self.statusLabel.setText(
+                f"Error converting FITS: {e}"
+            )
 
     # ---------------- Split Tricolor ----------------
     def runSplitTricolor(self):
