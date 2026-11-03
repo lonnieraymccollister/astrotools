@@ -16,6 +16,7 @@ import sys
 import os
 import glob
 import traceback
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -198,27 +199,110 @@ class VideoBuilderWindow(QMainWindow):
         self._log("Writing MP4 using cv2.VideoWriter")
         return self._write_video_with_cv2(files, outpath, fps, target_width=None, container_fourcc="mp4v")
 
-    def _convert_video_to_gif(self, video_path, out_gif, fps, loop_forever=True):
-        """
-        Read video_path (MP4/AVI) and write a true indexed-color GIF to out_gif.
-        Uses imageio (ffmpeg) to read frames and Pillow to write GIF with duration and loop.
-        """
-        if not os.path.exists(video_path):
-            raise FileNotFoundError(video_path)
-        self._log("Converting video to GIF:", video_path, "->", out_gif)
-        reader = imageio.get_reader(video_path, format='ffmpeg')
-        pil_frames = []
-        for frame in reader:
-            pil_frames.append(Image.fromarray(frame))
-        reader.close()
-        if not pil_frames:
-            raise RuntimeError("No frames read from video for GIF conversion")
-        duration_ms = int(round(1000.0 / float(fps)))
-        loop_val = 0 if loop_forever else 1
-        first, rest = pil_frames[0], pil_frames[1:]
-        first.save(out_gif, save_all=True, append_images=rest,
-                   duration=duration_ms, loop=loop_val, disposal=2)
-        self._log(f"Converted video {video_path} -> GIF {out_gif} (duration={duration_ms}ms, loop={'infinite' if loop_val==0 else '1'})")
+    def _convert_video_to_gif(
+        self,
+        video_path,
+        out_gif,
+        fps,
+        gif_width,
+        loop_forever=True
+    ):
+
+        palette_file = tempfile.mktemp(suffix=".png")
+
+        try:
+
+            self._log("Generating optimized GIF palette...")
+
+            gif_width = int(self.gif_width.value())
+
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    video_path,
+                    "-vf",
+                    (
+                        f"fps={fps},"
+                        f"scale={gif_width}:-1:flags=lanczos,"
+                        "palettegen=stats_mode=full"
+                    ),
+                    palette_file
+                ],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+
+            self._log("Creating GIF from optimized palette...")
+
+            loop_value = "0" if loop_forever else "1"
+
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    video_path,
+                    "-i",
+                    palette_file,
+                    "-lavfi",
+                    (
+                        f"fps={fps},"
+                        f"scale={gif_width}:-1:flags=lanczos[x];"
+                        "[x][1:v]"
+                        "paletteuse="
+                        "dither=sierra2_4a:"
+                        "diff_mode=rectangle"
+                    ),
+                    "-loop",
+                    loop_value,
+                    out_gif
+                ],
+                check=True
+            )
+
+            if not os.path.exists(palette_file):
+                raise RuntimeError(
+                    f"Palette not created: {palette_file}"
+                )
+
+            print("Palette size:", os.path.getsize(palette_file))
+
+            self._log(
+                f"Converted video {video_path} -> GIF {out_gif}"
+            )
+
+        except subprocess.CalledProcessError as e:
+
+            self._log("FFmpeg GIF conversion failed")
+            self._log(f"Return code: {e.returncode}")
+
+            if e.stdout:
+                self._log("STDOUT:")
+                self._log(e.stdout)
+
+            if e.stderr:
+                self._log("STDERR:")
+                self._log(e.stderr)
+
+            raise
+
+            self._log("FFmpeg GIF conversion failed")
+
+            if e.stderr:
+                self._log(e.stderr)
+
+            raise
+
+        finally:
+
+            if os.path.exists(palette_file):
+                try:
+                    os.remove(palette_file)
+                except Exception:
+                    pass
 
     def _write_gif_cv2_only(self, files, outpath, fps, gif_width):
         """
@@ -228,20 +312,40 @@ class VideoBuilderWindow(QMainWindow):
         """
         # pick container based on requested extension; prefer mp4v for .mp4, MJPG for .avi
         ext = Path(outpath).suffix.lower()
-        if ext == ".mp4":
-            fourcc = "mp4v"
-        elif ext == ".avi":
+        if ext == ".avi":
             fourcc = "MJPG"
         else:
-            # user requested .gif or other; write a temporary mp4 and convert
             fourcc = "mp4v"
 
-        # remember user's requested gif path for conversion after writing video
-        user_requested_gif_path = outpath if ext == ".gif" else None
-        self.last_requested_gif_path = user_requested_gif_path
+        # If GIF requested, write a temporary MP4 first
 
-        self._log("Writing video via cv2 (will convert to GIF if user requested .gif or fallback to AVI occurred).")
-        written_video_path = self._write_video_with_cv2(files, outpath, fps, target_width=gif_width, container_fourcc=fourcc)
+        if ext == ".gif":
+
+            user_requested_gif_path = outpath
+
+            temp_video = str(
+                Path(outpath).with_suffix(".tmp.mp4")
+            )
+
+            video_write_path = temp_video
+
+        else:
+
+            user_requested_gif_path = None
+            video_write_path = outpath
+
+        self._log(
+            "Writing video via cv2 "
+            "(will convert to GIF afterwards if requested)."
+        )
+
+        written_video_path = self._write_video_with_cv2(
+            files,
+            video_write_path,
+            fps,
+            target_width=None,
+            container_fourcc=fourcc
+        )
 
         # If the user asked for a .gif, or if the writer fell back to AVI and user wants GIF conversion,
         # perform conversion to a true GIF file.
@@ -264,7 +368,13 @@ class VideoBuilderWindow(QMainWindow):
         if should_convert and target_gif:
             try:
                 loop_forever = bool(self.loop_info_chk.isChecked())
-                self._convert_video_to_gif(written_video_path, target_gif, fps, loop_forever=loop_forever)
+                self._convert_video_to_gif(
+                    written_video_path,
+                    target_gif,
+                    fps,
+                    gif_width,
+                    loop_forever=loop_forever
+                )
                 self._log("GIF conversion completed:", target_gif)
             except Exception as e:
                 self._log("GIF conversion failed:", e)
